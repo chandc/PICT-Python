@@ -29,7 +29,7 @@ from src.running_mean import RunningMean
 from src.multiblock import face_slice, face_id
 from src.piso_multiblock import MultiBlockPISO
 
-RE = 100.0
+RE = 100.0                          # default; --Re overrides, for the onset sweep
 # The single most consequential setting in this case, so it is an argument, not a literal.
 # At 1e-4 -- the solver's own default -- this converges bitwise steady and NEVER sheds, at
 # Re 100, 200 and 300 and at every resolution tried: the pressure correction is under-resolved,
@@ -41,7 +41,7 @@ PULSE_UNTIL = 4.0                   # time units of symmetry breaking, then off
 PULSE_AMP = 0.05 * U_INF     # legacy inlet forcing; --kick is the better route
 
 
-def build(dt, rhie_chow=True, nz=8, tol=DEFAULT_TOL, backend=None):
+def build(dt, rhie_chow=True, nz=8, tol=DEFAULT_TOL, backend=None, Re=RE):
     d, idx = square_domain(nz=nz)
     # ddt_corr IS OFF, DELIBERATELY. It is what makes this case diverge, and neither Rhie-Chow
     # nor the persistent flux does. Isolated on the coarse grid with everything else identical:
@@ -63,7 +63,7 @@ def build(dt, rhie_chow=True, nz=8, tol=DEFAULT_TOL, backend=None):
     # backend defaults from the environment so a container can select it without editing code;
     # 'amgx' silently falls back to scipy when libamgxsh.so is absent, so this is safe locally.
     backend = backend or os.environ.get("PICT_BACKEND", "scipy")
-    m = MultiBlockPISO(d, U_INF * D / RE, dt, 2, tol, time_scheme="bdf2",
+    m = MultiBlockPISO(d, U_INF * D / Re, dt, 2, tol, time_scheme="bdf2",
                        scheme="rotational", picard_iters=2, rhie_chow=rhie_chow,
                        persistent_flux=rhie_chow, ddt_corr=False,
                        linear_backend=backend)
@@ -122,9 +122,9 @@ def probe_index(d, idx):
 
 
 def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=None,
-        tol=DEFAULT_TOL, settle=0, kick=0.0, backend=None):
-    d, idx, m = build(dt, rhie_chow, nz, tol, backend)
-    tag = tag or (f"sqcyl_Re{RE:.0f}{'_rc' if rhie_chow else ''}"
+        tol=DEFAULT_TOL, settle=0, kick=0.0, backend=None, Re=RE):
+    d, idx, m = build(dt, rhie_chow, nz, tol, backend, Re)
+    tag = tag or (f"sqcyl_Re{Re:.0f}{'_rc' if rhie_chow else ''}"
                   f"_tol{tol:.0e}_n{d.n_cells}")
     os.makedirs("results/fields", exist_ok=True)
     hist = []
@@ -137,7 +137,7 @@ def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=Non
 
     pb, pk = probe_index(d, idx)
     px, py = d.blocks[pb].x[pk[0], pk[1], 0], d.blocks[pb].y[pk[0], pk[1], 0]
-    print(f"  {d.n_cells:,} cells, dt = {dt}, Re = {RE:.0f}, tol = {tol:.0e}, "
+    print(f"  {d.n_cells:,} cells, dt = {dt}, Re = {Re:.0f}, tol = {tol:.0e}, "
           f"rhie_chow = {rhie_chow}, nz = {nz}, backend = {m._pcache.backend}")
     print(f"  probe at ({px:.3f}, {py:.3f}), asked for ({PROBE[0]}, {PROBE[1]})")
     print(f"  symmetry-breaking pulse: v = {PULSE_AMP} at the inlet until t = {PULSE_UNTIL}\n")
@@ -228,8 +228,10 @@ if __name__ == "__main__":
                    help="steps to reach the base flow before kicking")
     p.add_argument("--kick", type=float, default=0.0,
                    help="sinuous wake kick, fraction of U")
+    p.add_argument("--Re", type=float, default=RE,
+                   help="Reynolds number; the onset sweep varies this to find Re_c")
     p.add_argument("--tol", type=float, default=DEFAULT_TOL,
                    help="linear solver tolerance; 1e-4 suppresses shedding entirely")
     a = p.parse_args()
     run(a.steps, a.dt, not a.no_rc, a.nz, restart=a.restart, tag=a.tag, tol=a.tol,
-        settle=a.settle, kick=a.kick, backend=a.backend)
+        settle=a.settle, kick=a.kick, backend=a.backend, Re=a.Re)
