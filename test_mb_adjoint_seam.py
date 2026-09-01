@@ -16,11 +16,15 @@ non-symmetric one, so a forgotten transpose is fatal there and invisible in the 
 The control below asserts that forgetting it actually fails.
 """
 import numpy as np
+import torch
 from scipy import sparse
 from scipy.sparse.linalg import splu
 
 from src.multiblock import Block, Connection, Domain, face_id
 from src.piso_multiblock import MultiBlockPISO
+from src.mb_adjoint import MultiBlockMiniPISO, alignment
+
+torch.set_default_dtype(torch.float64)
 
 NTOT, NU, DT, TOL = 12, 0.05, 0.02, 1e-13
 PASS = FAIL = 0
@@ -170,8 +174,96 @@ sym = np.abs((A2 - A2.T).data).max() if (A2 - A2.T).nnz else 0.0
 check(sym > 1e-6, f"     and the momentum matrix really is non-symmetric: "
                   f"max|A - A^T| = {sym:.2e}")
 
+
+# ---------------------------------------------------------------- 6.4 gradient equivalence
+rng2 = np.random.default_rng(7)
+p1 = MultiBlockMiniPISO(d1, NU, DT)
+p2 = MultiBlockMiniPISO(d2, NU, DT)
+perm = alignment(d2, d1.blocks[0].shape)
+
+S_un = rng2.standard_normal(p1.N) * 0.1                  # in the UNSPLIT layout
+S1 = torch.tensor(S_un, requires_grad=True)
+L1 = p1.step(S1); L1.backward()
+g1 = S1.grad.detach().numpy().copy()
+
+S_sp = np.zeros(p2.N)
+S_sp[perm] = S_un                                        # same field, split layout
+S2 = torch.tensor(S_sp, requires_grad=True)
+L2 = p2.step(S2); L2.backward()
+g2 = S2.grad.detach().numpy()[perm]                      # back into the unsplit layout
+
+dL = abs(float(L1) - float(L2)) / max(abs(float(L1)), 1e-300)
+dg = np.abs(g1 - g2).max() / max(np.abs(g1).max(), 1e-300)
+check(dL < 1e-12, f"6.4  loss agrees across the split: {float(L1):.12e} vs {float(L2):.12e}, "
+                  f"rel {dL:.2e}")
+check(dg < 1e-12, f"     dL/dS agrees across the split: max rel diff {dg:.2e} "
+                  f"(|g| up to {np.abs(g1).max():.3e})")
+
+# ---------------------------------------------------------------- 6.5 FD vs adjoint
+# eps = 1e-3, NOT the reflexive 1e-6, and the reason is worth stating. u* and phi are both
+# LINEAR in S and the loss is their sum of squares, so L is exactly quadratic in S and a central
+# difference has NO truncation error whatever the step. The only error is the iterative solver's
+# residual, which enters divided by eps -- so a larger step is strictly better here, the
+# opposite of the usual trade-off. Measured worst relative error against the adjoint:
+#
+#     eps        1e-5     1e-4     1e-3     1e-2     5e-2
+#     6.5     2.7e-05  5.3e-06  1.3e-06  8.3e-08  1.4e-08
+#     6.6                       1.2e-06  4.3e-07  9.1e-08
+#
+# monotone in eps over four decades, which is the signature of a noise floor rather than
+# truncation. At 1e-6 the FD signal was ~1e-9 of a loss of order 170 and the comparison was
+# measuring CG's stopping criterion, not the gradient.
+eps = 1e-2
+# SAMPLE WHERE THE SIGNAL IS, AND NORMALISE TO THE GRADIENT'S OWN SCALE. A random cell can
+# carry a dL/dS near zero, and dividing by it turns a correct gradient into a huge "relative
+# error" -- 3.2e-05 on one such cell here while every large entry agreed to 1e-08. The bar is
+# against max|g| over the vector, which is the scale a training step actually sees.
+g2_all = S2.grad.detach().numpy()
+idxs = np.argsort(-np.abs(g2_all))[:6]
+scale = np.abs(g2_all).max()
+worst = 0.0
+for k in idxs:
+    dvec = np.zeros(p2.N); dvec[k] = eps
+    Lp = float(p2.step(torch.tensor(S_sp + dvec)))
+    Lm = float(p2.step(torch.tensor(S_sp - dvec)))
+    fd = (Lp - Lm) / (2 * eps)
+    worst = max(worst, abs(fd - float(g2_all[k])) / scale)
+check(worst < 1e-6, f"6.5  FD vs adjoint through one 2-block step, the 6 largest-|g| cells: "
+                    f"worst {worst:.2e} of max|g| = {scale:.3e}")
+
+# ---------------------------------------------------------------- 6.6 sensitivity crosses
+# The only check here that cannot pass unless the seam transmits sensitivity BACKWARDS: the
+# parameter lives entirely in block 0 and the loss entirely in block 1.
+idx_A = p2.block_slice(0)
+idx_B = p2.block_slice(1)
+theta = torch.tensor(rng2.standard_normal(len(idx_A)) * 0.1, requires_grad=True)
+
+
+def loss_from_A(th):
+    S = torch.zeros(p2.N, dtype=torch.float64)
+    S = S.index_put((torch.as_tensor(idx_A),), th)
+    return p2.step(S, loss_idx=idx_B)
+
+
+Lx = loss_from_A(theta); Lx.backward()
+gA = theta.grad.detach().numpy().copy()
+check(np.abs(gA).max() > 1e-8,
+      f"6.6  sensitivity CROSSES the seam: parameter in block 0, loss in block 1, "
+      f"max|dL/dtheta| = {np.abs(gA).max():.3e} (zero would mean the backward treats blocks "
+      f"independently)")
+
+worst6, scale6 = 0.0, np.abs(gA).max()
+base = theta.detach().numpy()
+for k in np.argsort(-np.abs(gA))[:4]:
+    dth = np.zeros(len(idx_A)); dth[k] = eps
+    Lp = float(loss_from_A(torch.tensor(base + dth)))
+    Lm = float(loss_from_A(torch.tensor(base - dth)))
+    fd = (Lp - Lm) / (2 * eps)
+    worst6 = max(worst6, abs(fd - gA[k]) / scale6)
+check(worst6 < 1e-6, f"     and it is the RIGHT sensitivity: FD agrees to {worst6:.2e} of "
+                     f"max|dL/dtheta|")
+
 print("=" * 74)
-print(f"  {PASS}/{PASS + FAIL} checks passed"
-      f"   (6.4-6.6 land with the differentiable step)")
+print(f"  {PASS}/{PASS + FAIL} checks passed")
 print("=" * 74)
 raise SystemExit(1 if FAIL else 0)
