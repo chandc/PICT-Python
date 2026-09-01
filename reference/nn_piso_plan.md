@@ -258,6 +258,55 @@ positive definiteness and the solve with it.
 | 5c.5 | positivity is enforced | adversarial input driving $\nu_t$ negative | $\min(\nu+\nu_t) > 0$ always; solver never raises | the output map is not guarding the operator |
 | 5c.6 | Smagorinsky recovery | $\nu_t = (C_s\Delta)^2\lvert\bar S\rvert$, $C_s$ the only parameter, target from $C_s=0.16$ | descent from $C_s=0$ recovers 0.16 to < 1e-3 | the sign or scale of the viscosity path is wrong — the Stage 1 test, moved to the other hook |
 
+### How $\nu_{\rm eff}$ is actually computed
+
+$$\nu_{\rm eff}(\mathbf x) = \nu + \nu_t(\mathbf x)$$
+
+$\nu$ is molecular and constant. Everything below is about $\nu_t$, and every candidate needs
+the same two ingredients.
+
+**1. The velocity gradient tensor, through the metrics.** On this grid $\partial u_i/\partial x_j$
+is not a finite difference in $x$:
+
+$$\frac{\partial u_i}{\partial x_j} = \sum_{a\in\{\xi,\eta,\zeta\}} \frac{\partial u_i}{\partial a}\,\frac{\partial a}{\partial x_j}$$
+
+with $\partial a/\partial x_j$ the `xi_x, xi_y, ... zeta_z` entries `block_metrics_cached` already
+returns. `src/forces.py` does exactly this at a wall, where the two tangential terms drop; here
+all nine survive. Then $\bar S_{ij} = \tfrac12(\partial_j u_i + \partial_i u_j)$ and
+$\lvert\bar S\rvert = \sqrt{2\bar S_{ij}\bar S_{ij}}$.
+
+**2. The filter width.** On a stretched curvilinear grid $\Delta$ is the local cell size, which
+is the cube root of the cell volume:
+
+$$\Delta = \left(J\,h_\xi h_\eta h_\zeta\right)^{1/3}$$
+
+since $J$ is physical volume per unit computational volume and $h$ are the computational
+spacings. This matters more here than in a cube: our wall cell is 0.006 D and the outer cell is
+2.18 D, a factor of 360, so a constant $\Delta$ would be wrong by that factor somewhere.
+
+**The candidates, and why the obvious one is the wrong default.**
+
+| model | $\nu_t$ | note |
+|---|---|---|
+| **Smagorinsky** | $(C_s\Delta)^2\lvert\bar S\rvert$, $C_s \approx 0.17$ isotropic, $\approx 0.1$ in shear | does **not** vanish at a wall — $\lvert\bar S\rvert$ is largest there — so it needs van Driest damping, which needs a wall distance, which on a multi-block O-grid is another thing to build |
+| **Dynamic Smagorinsky** | $C_s^2$ from the Germano identity with a test filter | no tuned constant, but $C_s^2$ can go negative and needs averaging over a homogeneous direction. **We have one**: the span is periodic in every case, `span = 4 D`, so spanwise averaging is available |
+| **WALE** | $(C_w\Delta)^2\dfrac{(S^d\!:\!S^d)^{3/2}}{(\bar S\!:\!\bar S)^{5/2}+(S^d\!:\!S^d)^{5/4}}$, $C_w\approx0.5$ | $\nu_t\to0$ like $y^3$ at a wall **by construction**, no damping function and no wall distance. The natural default for wall-bounded cases |
+| **Vreman** | positive by construction, from $\alpha_{ij}=\partial_i u_j$ | cheap, no averaging, no wall distance |
+| **Network** | $\nu_t = \mathrm{softplus}\big(\mathrm{NN}(\text{invariants of }\nabla\bar{\mathbf u},\ \Delta)\big)$ | softplus, not a clip: positivity must hold in the graph or the gradient is discontinuous where it is needed most |
+
+Constants and exact tensor forms above are from memory and must be checked against the source
+papers before they are coded.
+
+**Where it is evaluated and where it is used.** $\nu_t$ is a NODE field, like $u$ and $p$. The
+operator needs it on FACES, and the interpolation is the thing 5c.1 cannot test — see 5c.7 and
+5c.8 below.
+
+**The honest caveat.** Every production case in this repo is laminar: Re = 100, steady or a clean
+limit cycle. A correct SGS model returns $\nu_t \approx 0$ there, so the cylinders cannot test one
+— they can only test that it does no harm. The case that can test it is filtered DNS on the
+periodic box, which is where Stage 5 already lives, and TGV, where Stage 3.5's energy budget
+supplies the bar.
+
 ### How to test a variable $\nu$ — three layers, and the first one is not about gradients
 
 **5c.1 is necessary and blind.** Setting $\nu_t \equiv c$ and checking the answer matches
