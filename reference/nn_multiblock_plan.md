@@ -227,12 +227,17 @@ control exists to catch. Rejected.
 **Route C — extract the matrices by probing with unit vectors.** O(N) applications: fine at 1,728
 cells, hopeless at 82,096. Useful as a cross-check on a small domain, not as the mechanism.
 
-**The one genuinely hard part is already on record.** `implementation_plan.md` §5.1: the
-Rhie-Chow wide gradient pads to **width 2**, so its stencil reaches two cells deep across a
-seam, and "the adjoint scatter at a connection is wider than the existing width-1 machinery
-assumes". `face_pairs` as written enumerates width-1 adjacency only. Width-2 neighbour
-enumeration across connections is the new machinery this needs, and it is the reason
-`pressure_face_fluxes` is the 111-line function rather than the 63-line one.
+**The one genuinely hard part turned out not to be hard — DONE.** `implementation_plan.md` §5.1
+flags the Rhie-Chow wide gradient as reaching two cells deep across a seam, so "the adjoint
+scatter at a connection is wider than the existing width-1 machinery assumes". True of the
+stencil, and it does not follow that new enumeration is needed. The term is
+
+    0.5 (Jg_lo dpw_lo + Jg_hi dpw_hi),     dpw = central difference at a CELL
+
+a face AVERAGE (width 1) of a cell GRADIENT (width 1). Composing two width-1 operators produces
+the width-2 stencil, and each factor already resolves its own seam, so the product does too. No
+width-2 enumeration was written. Verified against the real function to **3.8e-16 relative** on
+1, 2 and 3 blocks with a spatially varying Gamma (`test_mb_adjoint_state.py` 7.6, 7.7).
 
 `face_fluxes` also has two code paths — the `_axis_aligned_seams()` fast path and the padded-
 geometry general one. Assemble the aligned case first; the periodic-box gates never leave it.
@@ -339,7 +344,7 @@ comes with its own gate rather than being folded into Stage 6.
 
 ```
 Stage 6   two blocks that are one block   <- DONE, 16/16, test_mb_adjoint_seam.py
-Stage 7   persistent state                <- PART, 5/5 done, 7.2 and 7.3 blocked
+Stage 7   persistent state                <- PART, 7/7 done; operators built, 7.3 wiring left
 Stage 8   force objective in torch        <- proves a wall-bounded loss
 Stage 9   scale + checkpointing           <- proves it is affordable
 Stage 10  a learning task                 <- the first thing that is not an instrument

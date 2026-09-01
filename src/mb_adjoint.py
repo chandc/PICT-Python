@@ -295,3 +295,117 @@ class MultiBlockChain(MultiBlockMiniPISO):
             if not final_only:
                 L = L + (u ** 2).sum()
         return (u ** 2).sum() if final_only else L
+
+
+def flux_divergence_matrix(d, Js, ms):
+    """Sparse (N, 3N) taking (u, v, w) to div F, matching `divergence(face_fluxes(...))`.
+
+    WHY THIS TARGET AND NOT `face_fluxes` ITSELF. The raw face array is indexed per block with
+    one extra entry along the axis, so both domain-boundary faces of a block appear even when
+    they are seam faces that another block also owns. Assembling that is fiddly and pointless:
+    nothing consumes the face array directly, `divergence` does, and the composition is
+    cell-to-cell with an index space that already exists.
+
+    AND THE COMPOSITION COLLAPSES. On a domain whose faces are all interior or seam, every face
+    flux is the average of the two cells it separates,
+
+        F_face = 0.5 (JU_lo + JU_hi),
+
+    so the divergence telescopes to a central difference of the contravariant component:
+
+        div F |_c = sum_a  0.5 (JU_{c+} - JU_{c-}) / h / J_c
+
+    which is exactly `cell_gradient_matrix` applied to JU_a. No new stencil, no new seam logic --
+    the operator that was proved consistent in 7.0 is reused, and JU is a diagonal scaling of
+    (u, v, w) by J times the metrics. The whole thing is three diagonal matrices and a gradient.
+
+    This holds for periodic and connected faces. A wall or inflow face takes the boundary cell's
+    own component instead of an average, which is a different row; that case is not assembled
+    here and `verify_flux_divergence` will show it as a mismatch rather than a silent error.
+    """
+    N = d.n_cells
+    flat = lambda per_block: _flatten(d, per_block)
+    Jf = flat({b: Js[b] for b in range(len(d.blocks))})
+    blocks = []
+    for comp, letter in enumerate("xyz"):
+        col = sparse.csr_matrix((N, N))
+        for axis, key in enumerate(("xi", "eta", "zeta")):
+            met = flat({b: ms[b][f"{key}_{letter}"] for b in range(len(d.blocks))})
+            col = col + cell_gradient_matrix(d, axis) @ sparse.diags(Jf * met)
+        blocks.append(sparse.diags(1.0 / Jf) @ col)
+    return sparse.hstack(blocks).tocsr()
+
+
+def _flatten(d, per_block):
+    out = np.zeros(d.n_cells)
+    for b in range(len(d.blocks)):
+        out[d.global_ids(b).ravel()] = np.asarray(per_block[b]).ravel()
+    return out
+
+
+def verify_flux_divergence(d, Js, ms, rng=None):
+    """max |D_flux (u,v,w) - divergence(face_fluxes(u,v,w))| over a random field."""
+    rng = rng or np.random.default_rng(0)
+    fields = []
+    for _ in range(3):
+        fields.append({b: rng.standard_normal(blk.shape) for b, blk in enumerate(d.blocks)})
+    us, vs, ws = fields
+    ref = _flatten(d, {b: d.divergence(b, d.face_fluxes(b, us, vs, ws), Js[b])
+                       for b in range(len(d.blocks))})
+    D = flux_divergence_matrix(d, Js, ms)
+    got = D @ np.concatenate([_flatten(d, us), _flatten(d, vs), _flatten(d, ws)])
+    return float(np.abs(got - ref).max()), float(np.abs(ref).max())
+
+
+def face_select_matrices(d, axis):
+    """(Sel_lo, Sel_hi): (n_faces, N) picking the low and high cell of each face."""
+    lo, hi, _ = face_pairs(d, axis)
+    nf, N = len(lo), d.n_cells
+    r = np.arange(nf)
+    one = np.ones(nf)
+    return (sparse.csr_matrix((one, (r, lo)), shape=(nf, N)),
+            sparse.csr_matrix((one, (r, hi)), shape=(nf, N)))
+
+
+def rc_flux_divergence_matrix(d, Js, ms, coefs):
+    """Sparse (N, N) for div(pressure_face_fluxes(p, rhie_chow=True)), coefficients frozen.
+
+    THE WIDTH-2 STENCIL NEEDS NO WIDTH-2 MACHINERY. `implementation_plan.md` 5.1 flags the
+    Rhie-Chow wide gradient as reaching two cells deep across a seam, so "the adjoint scatter at
+    a connection is wider than the existing width-1 machinery assumes". True of the stencil, and
+    it does not follow that new enumeration is needed: the term is
+
+        0.5 (Jg_lo dpw_lo + Jg_hi dpw_hi),      dpw = central difference at a CELL
+
+    which is a face AVERAGE (width 1) of a cell GRADIENT (width 1). Composing two width-1
+    operators gives the width-2 stencil, and each factor already resolves its own seam, so the
+    product does too. That is what `verify_rc_divergence` checks against the real function.
+
+    The compact half is the same face difference the diffusion operator uses, weighted by the
+    same face coefficient -- reused from 7.0 rather than rewritten.
+    """
+    N = d.n_cells
+    Jf = _flatten(d, {b: Js[b] for b in range(len(d.blocks))})
+    acc = sparse.csr_matrix((N, N))
+    for axis, key in enumerate(("xi", "eta", "zeta")):
+        F = face_difference_matrix(d, axis)
+        G = cell_gradient_matrix(d, axis)
+        Slo, Shi = face_select_matrices(d, axis)
+        w = face_weights(d, Js, ms, axis, coefs=coefs)        # 0.5 (Jg_lo + Jg_hi)
+        jg = _flatten(d, {b: coefs[b] * Js[b]
+                          * sum(ms[b][f"{key}_{c}"] ** 2 for c in "xyz")
+                          for b in range(len(d.blocks))})
+        rc = sparse.diags(w) @ F - 0.5 * (Slo + Shi) @ sparse.diags(jg) @ G
+        acc = acc - F.T @ rc                                  # div = -(1/J) F^T (flux)
+    return (sparse.diags(1.0 / Jf) @ acc).tocsr()
+
+
+def verify_rc_divergence(d, Js, ms, coefs, rng=None):
+    """max |RC matrix @ p - divergence(pressure_face_fluxes(p, rhie_chow=True))|."""
+    rng = rng or np.random.default_rng(0)
+    ps = {b: rng.standard_normal(blk.shape) for b, blk in enumerate(d.blocks)}
+    ref = _flatten(d, {b: d.divergence(
+        b, d.pressure_face_fluxes(b, ps, coefs[b], coefs, include_cross=False, rhie_chow=True),
+        Js[b]) for b in range(len(d.blocks))})
+    got = rc_flux_divergence_matrix(d, Js, ms, coefs) @ _flatten(d, ps)
+    return float(np.abs(got - ref).max()), float(np.abs(ref).max())

@@ -123,12 +123,40 @@ check(per_step < 1.0 and np.isfinite(norms).all(),
       f"upstream amplification the plan warns about, where the answer is a shorter window "
       f"rather than gradient clipping")
 
+# ---------------------------------------------------------------- 7.6 / 7.7 flux operators
+# The two blocked cases needed `face_fluxes` and `pressure_face_fluxes` differentiable. Both are
+# LINEAR in the field they consume once the coefficients are frozen, so neither needs a torch
+# port or a hand-written transpose: assemble each as a sparse matrix, which torch differentiates
+# natively, and verify it against the real function.
+from src.mb_adjoint import verify_flux_divergence, verify_rc_divergence
+
+rng2 = np.random.default_rng(4)
+worst_f = worst_rc = 0.0
+for ns in (1, 2, 3):
+    d = periodic_box(NTOT, ns)
+    p = MultiBlockMiniPISO(d, NU, DT)
+    e, sc = verify_flux_divergence(d, p.Js, p.ms, rng=np.random.default_rng(0))
+    worst_f = max(worst_f, e / sc)
+    gam = {b: rng2.uniform(0.2, 1.5, blk.shape) for b, blk in enumerate(d.blocks)}
+    e, sc = verify_rc_divergence(d, p.Js, p.ms, gam, rng=np.random.default_rng(9))
+    worst_rc = max(worst_rc, e / sc)
+
+check(worst_f < 1e-13,
+      f"7.6  the assembled operator reproduces divergence(face_fluxes(u,v,w)) for 1, 2 and 3 "
+      f"blocks: worst {worst_f:.2e} relative")
+check(worst_rc < 1e-13,
+      f"7.7  and reproduces divergence(pressure_face_fluxes(p, rhie_chow=True)) with a "
+      f"SPATIALLY VARYING Gamma: worst {worst_rc:.2e} relative -- the width-2 wide-gradient "
+      f"stencil across a seam, assembled as a face AVERAGE of a cell GRADIENT, two width-1 "
+      f"operators each of which already resolves its own seam")
+
 # ---------------------------------------------------------------- 7.2 / 7.3 not covered
-print("\n  NOT COVERED, and deliberately not faked:")
-print("    7.2  F_prev, the Rhie-Chow persistent flux")
-print("    7.3  p_flux, the projection pressure")
-print("    Both need face_fluxes / pressure_face_fluxes in torch. A surrogate state array "
-      "would\n         pass a mangle test while proving nothing about the real one.")
+print("\n  STILL TO DO:")
+print("    7.3  p_flux mangle -- the operators it needs now exist (7.6, 7.7); what remains is")
+print("         wiring them into the chain so p_flux is carried and consumed as the solver does")
+print("    7.2  re-scoped: self.F_prev is read ONLY under `if self.ddt_corr`, which is off in")
+print("         every production case, so it carries no gradient there. The live within-step")
+print("         state is the corrector's reuse of Fb. See the plan.")
 
 print("=" * 76)
 print(f"  {PASS}/{PASS + FAIL} implemented checks passed  (7.2, 7.3 not implemented)")
