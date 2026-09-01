@@ -296,7 +296,13 @@ Stage 3.5 TGV energy budget     <- proves the baseline is not numerically pollut
 Stage 4  done   frozen-coeff bias     <- angle 0.4 deg BUT loss 25% worse; use exact_A
 Stage 5a done  a-priori regression   <- corr 0.85; capacity confirmed
 Stage 5b part  a-posteriori training <- (b),(c) pass; (a) unreachable (oracle -0.3%)
+Stage 6+  plan  MULTI-BLOCK          <- see nn_multiblock_plan.md; not started
 ```
+
+Everything above runs on ONE block, 16^3, periodic, Cartesian. Every case the port actually
+simulates -- backward-facing step, square cylinder, circular cylinder -- runs on
+`MultiBlockPISO`, which has no gradients at all. Connecting the two is planned in
+[`nn_multiblock_plan.md`](nn_multiblock_plan.md) and has not been started.
 
 Each gate is cheap relative to the stage it protects; stages 1–3 should run in seconds to
 minutes on a 16³ grid, which is deliberate — they are debugging instruments, not experiments.
