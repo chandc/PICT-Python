@@ -24,8 +24,10 @@ XL, XR, YB, YT = -3.0, 12.0, -4.0, 4.0
 NX, NY = 900, 480
 
 
-def raster(tag, nz=4):
-    d, idx = square_domain(nz=nz)
+def raster(tag, nz=4, ratio=None):
+    # `ratio` must match the grid the checkpoint was written on -- cell counts differ
+    # between 1.15 (65,392) and 1.10 (82,096) and the field will not load otherwise.
+    d, idx = square_domain(nz=nz, **({} if ratio is None else {'ratio': ratio}))
     f, meta = checkpoint.load_fields(f"results/fields/{tag}.npz")
     P, U, V = [], [], []
     for b in range(len(d.blocks)):
@@ -43,8 +45,8 @@ def raster(tag, nz=4):
     return gx, gy, GX, GY, gu, gv, meta
 
 
-def main(tag="sqcyl_Re100_rc"):
-    gx, gy, GX, GY, gu, gv, meta = raster(tag)
+def main(tag="sqcyl_Re100_rc", ratio=None):
+    gx, gy, GX, GY, gu, gv, meta = raster(tag, ratio=ratio)
     spd = np.sqrt(gu**2 + gv**2)
 
     fig, axes = plt.subplots(2, 1, figsize=(14, 10),
@@ -77,7 +79,7 @@ def main(tag="sqcyl_Re100_rc"):
     lr = (gx[i0 + neg[-1]] - 0.5 * D) if len(neg) else float("nan")
 
     fig.suptitle(f"Square cylinder, Re = 100 — t = {meta['time']:.1f} "
-                 f"(STEADY, not shedding) — recirculation L_r/D = {lr:.2f}", fontsize=13)
+                 f"recirculation L_r/D = {lr:.2f}", fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     out = f"figures/{tag}_streamlines.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
@@ -87,4 +89,5 @@ def main(tag="sqcyl_Re100_rc"):
 
 
 if __name__ == "__main__":
-    main(_sys.argv[1] if len(_sys.argv) > 1 else "sqcyl_Re100_rc")
+    main(_sys.argv[1] if len(_sys.argv) > 1 else "sqcyl_Re100_rc",
+         float(_sys.argv[2]) if len(_sys.argv) > 2 else None)
