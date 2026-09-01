@@ -302,6 +302,38 @@ a-posteriori gate failed against a 30 % bar whose oracle headroom was −0.3 %:
 
 ---
 
+## A prerequisite for Stage 10 that is not a gradient problem
+
+**The network's convolutions are wrong at a seam, measured.** `TinySGSNet` and `SGSNet` both use
+`padding_mode="circular"` and `field()` takes a single `shape`: they assume ONE periodic box.
+Applied per block on a multi-block domain, each block's padding wraps to its OWN opposite face
+instead of to its neighbour. On a 12-cell box split into two blocks of 6, comparing the network
+applied to the unsplit field against the same network applied block by block:
+
+```
+max error by x-plane
+[1.015  0  0  0  0  1.155  1.189  0  0  0  0  1.029]
+        ^                  ^     ^                ^
+     x = 0                x = 5  x = 6         x = 11
+```
+
+Interior planes agree to **1.1e-16**; the four planes adjacent to a seam are wrong by **O(1)**,
+146% of the output scale. Silent, localised, and training would teach the network to compensate
+for its own bad halo.
+
+**The gate** is the NN analogue of 6.4: apply the network on 1 block and on 2, require identical
+output. It fails today, which is the point of writing it.
+
+**The fix** is the halo exchange the flux operators already use --
+`Domain.pad_field(b, fields, width)` with `width` = the number of stacked 3x3x3 convolutions
+(3 for `SGSNet`), a conv with `padding=0` on the padded input, and a trim. No new machinery.
+
+**And the stronger version**, once that passes: train on 2 blocks, evaluate on 4, require
+identical results. That exercises the whole loop rather than one layer, and catches a halo that
+happens to be right for one topology and wrong for another.
+
+---
+
 ## Decisions to take before Stage 6 starts
 
 **D1. Torch port of the step, or one hand-written adjoint for the whole step?**
