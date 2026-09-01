@@ -263,6 +263,81 @@ for k in np.argsort(-np.abs(gA))[:4]:
 check(worst6 < 1e-6, f"     and it is the RIGHT sensitivity: FD agrees to {worst6:.2e} of "
                      f"max|dL/dtheta|")
 
+# ------------------------------------------------- 6.7 the autograd primitive itself
+# 6.4-6.6 compare the adjoint against finite differences of the same forward, so they DO verify
+# the chain end to end -- but only the RHS path. `A_val` never carries requires_grad in
+# MiniPISO or in MultiBlockMiniPISO, so `LinearSolve.backward`'s dL/dA branch, -lambda x^T, had
+# never been exercised by any gate. It is exercised here, and the singular case has a limit
+# worth pinning down.
+from scipy.sparse import random as sprandom, eye as speye, diags as spdiags
+from src.adjoint_piso import LinearSolve, csr_pattern
+
+rng3 = np.random.default_rng(3)
+nn_ = 40
+B = sprandom(nn_, nn_, density=0.08, random_state=1, data_rvs=rng3.standard_normal)
+An = sparse.csr_matrix(B + speye(nn_) * 6.0)
+idxn, shpn, valn = csr_pattern(An)
+bn = torch.tensor(rng3.standard_normal(nn_))
+fn = lambda av, bb: LinearSolve.apply(av, bb, (idxn, shpn), False, False)
+okn = torch.autograd.gradcheck(fn, (valn.clone().requires_grad_(True),
+                                    bn.clone().requires_grad_(True)),
+                               eps=1e-4, atol=1e-6, rtol=1e-3, nondet_tol=1e-8)
+check(bool(okn), "6.7  torch.autograd.gradcheck passes on LinearSolve over BOTH inputs "
+                 "(non-symmetric): dL/dA and dL/db")
+
+rng4 = np.random.default_rng(5)
+nm = 30
+offm = sprandom(nm, nm, density=0.15, random_state=2,
+                data_rvs=lambda k: rng4.uniform(0.2, 1.0, k))
+offm = (offm + offm.T) * 0.5
+Lap = sparse.csr_matrix(spdiags(np.asarray(offm.sum(axis=1)).ravel()) - offm)
+idxm, shpm, valm = csr_pattern(Lap)
+bm = torch.tensor(rng4.standard_normal(nm)); bm = bm - bm.mean()
+fb = lambda bb: LinearSolve.apply(valm, bb, (idxm, shpm), True, True)
+okb = torch.autograd.gradcheck(fb, (bm.clone().requires_grad_(True),),
+                               eps=1e-4, atol=1e-6, rtol=1e-3)
+check(bool(okb), "     gradcheck passes on dL/db for the SYMMETRIC SINGULAR solve "
+                 "(the pressure system), where both passes project")
+
+avm = valm.clone().requires_grad_(True)
+xm = LinearSolve.apply(avm, bm, (idxm, shpm), True, True)
+(xm ** 2).sum().backward()
+gm = avm.grad.numpy().copy()
+rows_m, cols_m = idxm
+i_, j_ = next((int(rows_m[k]), int(cols_m[k])) for k in range(len(valm))
+              if rows_m[k] != cols_m[k])
+D = np.zeros(len(valm))
+for k in range(len(valm)):
+    rc = (int(rows_m[k]), int(cols_m[k]))
+    if rc in ((i_, j_), (j_, i_)):
+        D[k] = -1.0                      # a face coefficient: two off-diagonals ...
+    if rc in ((i_, i_), (j_, j_)):
+        D[k] = +1.0                      # ... and the two diagonals that keep row sums at zero
+
+
+def _loss_A(vec):
+    xx = LinearSolve.apply(torch.tensor(vec), bm, (idxm, shpm), True, True)
+    return float((xx ** 2).sum())
+
+
+gd = float(gm @ D)
+fd_dir = (_loss_A(valm.numpy() + 1e-4 * D) - _loss_A(valm.numpy() - 1e-4 * D)) / 2e-4
+rel_dir = abs(fd_dir - gd) / max(abs(gd), 1e-30)
+check(rel_dir < 1e-7,
+      f"     dL/dA in the singular case is correct along a STRUCTURE-PRESERVING direction "
+      f"(one face coefficient, row sums stay zero): FD {fd_dir:.9f} vs adjoint {gd:.9f}, "
+      f"rel {rel_dir:.2e}")
+
+Dbad = np.zeros(len(valm)); Dbad[0] = 1.0
+gdb = float(gm @ Dbad)
+fd_bad = (_loss_A(valm.numpy() + 1e-3 * Dbad) - _loss_A(valm.numpy() - 1e-3 * Dbad)) / 2e-3
+check(abs(fd_bad - gdb) > 1e-3 * max(abs(gdb), 1e-30),
+      f"     LIMITATION PINNED: along a null-space-BREAKING direction the formula does NOT "
+      f"apply -- FD {fd_bad:.3e} vs adjoint {gdb:.3e}. The forward projects both b and x, so a "
+      f"perturbation that destroys N(M) = span(1) barely moves the answer while -lambda x^T "
+      f"still reports a large derivative. Every parameter dependence in PISO moves FACE "
+      f"coefficients, which is structure-preserving; a raw gradcheck over A_val is not")
+
 print("=" * 74)
 print(f"  {PASS}/{PASS + FAIL} checks passed")
 print("=" * 74)

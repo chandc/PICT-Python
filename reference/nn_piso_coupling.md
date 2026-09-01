@@ -135,6 +135,26 @@ walls or full periodicity $M\mathbf{1}=0$; the null space is the constants (meas
    stability` ([`PISOtorch_simulation.py:1029`](../../PISOtorch_simulation.py)) — "backwards
    stability" is the tell.
 
+**A limit on $\partial L/\partial M$ that only bites in the singular case.** $-\lambda\mathbf x^{\mathsf T}$
+is the derivative with respect to the matrix *for perturbations that preserve the null space*.
+It has to be: the forward projects both $\mathbf b$ and $\mathbf x$ onto $\mathbf 1^\perp$, so a
+perturbation that destroys $N(M)=\mathrm{span}\{\mathbf 1\}$ barely moves the answer while the
+formula still reports a large derivative. Measured on a 30-node graph Laplacian
+(`test_mb_adjoint_seam.py` 6.7):
+
+| direction | finite difference | $-\lambda\mathbf x^{\mathsf T}$ contracted | |
+|---|---|---|---|
+| one FACE coefficient (two off-diagonals, two diagonals, row sums stay zero) | −0.358818991 | −0.358818988 | agree to 1e-8 |
+| one raw entry (row sums break) | 2.3e-10 | −0.788 | **do not agree** |
+
+This is not a defect to fix; it is the domain of validity. Every parameter dependence in PISO
+moves face coefficients — $\Gamma = J/A_{\rm diag}$ included, which is how an eddy viscosity
+reaches the pressure operator — so the physics only ever takes structure-preserving directions.
+But `torch.autograd.gradcheck` over `A_val` takes random ones, and will report a failure on a
+correct implementation. Check the singular case along a face perturbation instead.
+
+---
+
 ### Side by side
 
 | | velocity ($A$) | pressure ($M$) |
