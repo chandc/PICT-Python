@@ -91,12 +91,26 @@ def main():
     tag = a.tag or f"cyl_Re{RE:.0f}_tol{a.tol:.0e}_n{d.n_cells}"
     os.makedirs("results/fields", exist_ok=True)
 
-    settle = a.settle
+    # RESTART SEMANTICS. The restart file is written every 500 steps in BOTH phases, so a
+    # crash costs 500 steps and not the whole settle. Which phase to resume in is derived from
+    # the step count in the checkpoint rather than from the file name: below `--settle` the run
+    # is still converging to the base flow and must finish it and then be kicked; at or above
+    # it the flow has already been kicked and must NOT be kicked a second time, which would
+    # inject a fresh perturbation into an established wake and corrupt the amplitude.
+    settle, kicked = a.settle, False
+    hist = []
     if a.restart and os.path.exists(a.restart):
         checkpoint.load(m, a.restart)
-        settle = 0
-        print(f"  restarted from {a.restart}: t={m.time:.1f} -- skipping the settle stage",
-              flush=True)
+        h = f"results/{tag}_history.npy"
+        if os.path.exists(h):
+            hist = [tuple(row) for row in np.load(h)]
+        kicked = m.nstep >= a.settle
+        settle = 0 if kicked else a.settle - m.nstep
+        print(f"  restarted from {a.restart}: t={m.time:.1f}, step {m.nstep}, "
+              f"{len(hist)} history samples", flush=True)
+        where = ("already kicked; continuing the shedding stage" if kicked
+                 else f"{settle} settle steps still to run before the kick")
+        print(f"  -> {where}", flush=True)
 
     pb, pk = probe_index(d)
     print(f"  {d.n_cells:,} cells  Re={RE:.0f}  dt={a.dt}  tol={a.tol:.0e}  "
@@ -113,19 +127,25 @@ def main():
     print(f"  {'phase':<7}{'step':>7}{'t':>8}{'v_probe':>12}{'amp/500':>11}{'s/step':>9}",
           flush=True)
 
-    hist, t0 = [], time.time()
+    t0 = time.time()
     for i in range(1, settle + 1):
         m.step()
         hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
         if i % 500 == 0:
             report(i, settle, hist, t0, "settle")
+            checkpoint.save(m, f"results/fields/{tag}.npz")
+            np.save(f"results/{tag}_history.npy", np.array(hist))
     if settle:
         checkpoint.save(m, f"results/fields/{tag}_base.npz")
         print(f"  base flow saved -> results/fields/{tag}_base.npz", flush=True)
 
     v0 = float(m.v[pb][pk[0], pk[1], 0])
-    kick(m, d, a.kick)
-    print(f"\n  kicked at {100*a.kick:.3g}% of U about v0 = {v0:+.6f}\n", flush=True)
+    if kicked:
+        print(f"\n  NOT kicking: this checkpoint is already past the kick "
+              f"(step {m.nstep} >= settle {a.settle}), v = {v0:+.6f}\n", flush=True)
+    else:
+        kick(m, d, a.kick)
+        print(f"\n  kicked at {100*a.kick:.3g}% of U about v0 = {v0:+.6f}\n", flush=True)
 
     t0 = time.time()
     for i in range(1, a.steps + 1):
