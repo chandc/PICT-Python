@@ -90,24 +90,9 @@ def reattachment(m, d, nz):
 
 
 def interior_divergence(m, d):
-    """max |div F| EXCLUDING Dong's Dirichlet nodes.
-
-    step() reports a max over ALL cells, and a Dong outlet node carries a PRESCRIBED pressure:
-    it leaves the unknown set, mass leaves as the solution dictates, and its divergence is not
-    supposed to vanish. Reporting that max makes a healthy run look broken -- measured 3.8e-04
-    on the Dirichlet nodes against 1.4e-14 everywhere else.
-    """
-    nodes, _ = m._dong_nodes()
-    glob = np.zeros(d.n_cells, bool)
-    if nodes.size:
-        glob[nodes] = True
-    worst = 0.0
-    for b in range(len(d.blocks)):
-        div = np.abs(d.divergence(b, m.F_prev[b], m.Js[b]))
-        mask = glob[d.global_ids(b)]
-        if (~mask).any():
-            worst = max(worst, div[~mask].max())
-    return worst
+    """max |div F| EXCLUDING Dong's Dirichlet nodes -- see MultiBlockPISO.interior_divergence,
+    which is where this now lives so the square-cylinder driver can use it too."""
+    return m.interior_divergence()
 
 
 def run(Re=100.0, dt=0.02, nsteps=3000, rhie_chow=False, dong=True, grid=None,

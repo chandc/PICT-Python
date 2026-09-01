@@ -449,6 +449,38 @@ class MultiBlockPISO:
             div = max(div, np.abs(d.divergence(b, Fb[b], self.Js[b])).max())
         return div
 
+    def interior_divergence(self):
+        """max |div F| on the PROJECTED face flux, excluding Dong's Dirichlet nodes.
+
+        Two traps this avoids, both of which have made a healthy run look broken:
+
+        WHICH FLUX. On a collocated grid the object the projection makes solenoidal is the face
+        flux `F_prev`, NOT the flux re-interpolated from the cell velocities: with Rhie-Chow the
+        two differ by construction, and `divergence(face_fluxes(u, v, w))` is O(1) on a perfectly
+        converged step. Only `F_prev` answers "did the pressure solve do its job".
+
+        WHICH CELLS. A Dong outlet node carries a PRESCRIBED pressure, so it leaves the unknown
+        set and mass leaves as the solution dictates; its divergence is not supposed to vanish.
+        Measured 3.8e-04 on the Dirichlet nodes against 1.4e-14 everywhere else.
+
+        `step()` already returns a max over ALL cells of the same flux, which is the cheap
+        version of this and includes the Dong nodes.
+        """
+        if self.F_prev is None:
+            return float("nan")
+        d = self.d
+        nodes, _ = self._dong_nodes()
+        glob = np.zeros(d.n_cells, bool)
+        if nodes.size:
+            glob[nodes] = True
+        worst = 0.0
+        for b in range(len(d.blocks)):
+            div = np.abs(d.divergence(b, self.F_prev[b], self.Js[b]))
+            mask = glob[d.global_ids(b)]
+            if (~mask).any():
+                worst = max(worst, div[~mask].max())
+        return worst
+
     def _dong_nodes(self):
         """
         (global indices, prescribed pressure) for every Dong outflow node.

@@ -164,14 +164,21 @@ def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=Non
         if want != pulse_on:
             inlet_pulse(m, d, want)
             pulse_on = want
+        # step() returns max |div F| on the PROJECTED face flux, over all cells. The column
+        # used to report divergence(face_fluxes(u, v, w)) instead -- the flux re-interpolated
+        # from the CELL velocities, which Rhie-Chow deliberately makes different from the flux
+        # the projection solves for. That number is O(1) on a perfectly healthy step (4.2 here,
+        # 1.3e+01 in sqcyl_repro), so it could never distinguish a failing pressure solve from
+        # a collocated grid behaving exactly as designed. It also cost a full face-flux rebuild
+        # every 250 steps to say nothing. step()'s own return is the same projected flux
+        # measured over ALL cells, Dong nodes included.
         m.step()
         vp = float(m.v[pb][pk[0], pk[1], 0])
         hist.append((m.time, vp))
         if (n + 1) % 250 == 0 or n == 0:
-            dv = max(np.abs(np.where(m.wall[d.global_ids(b)], 0.0,
-                     d.divergence(b, d.face_fluxes(b, m.u, m.v, m.w),
-                                  d.block_metrics_cached(b)[0]))).max()
-                     for b in range(len(d.blocks)))
+            # Dong outlet nodes carry a prescribed pressure and their divergence is not meant
+            # to vanish, so the reported number excludes them; div_all keeps the honest max.
+            dv = m.interior_divergence()
             print(f"  {m.nstep:>7}{m.time:>9.2f}{vp:>11.5f}"
                   f"{max(np.abs(m.u[b]).max() for b in range(len(d.blocks))):>9.4f}"
                   f"{dv:>11.2e}{(time.time()-t0)/(n+1):>9.3f}", flush=True)
