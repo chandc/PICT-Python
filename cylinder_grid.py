@@ -91,7 +91,18 @@ def cylinder_domain(nblk=8, nth_tot=256, nz=8, r_out=30.0 * D, first=0.006 * D,
     # r_hold*dtheta <= dr_hold is what makes the two directions comparable there.
     r = _radial_plateau(R_CYL, r_out, first, dr_hold, r_hold, ratio)
     nr = len(r)
-    th_all = np.linspace(0.0, 2 * np.pi, nth_tot, endpoint=False)   # ring: no duplicate seam
+    # HALF-CELL OFFSET, AND IT IS NOT COSMETIC. With theta_k = k*2pi/nth_tot the reflection
+    # y -> -y maps node k to node nth_tot-k, which shifts the BLOCK partition by one node: the
+    # far-field inflow/outflow split then lands on [-90, +88.594] degrees instead of a
+    # symmetric arc, and two of the 256 outer nodes carry a different role than their mirror.
+    # The grid is symmetric, the boundary condition on it is not, and that is a standing
+    # asymmetric forcing on a wake that is unstable to exactly that perturbation -- measured
+    # 0.75 in u, 68% of max|u|, by t = 20 with no kick applied at all.
+    #
+    # With the offset, reflection maps k -> nth_tot-1-k, so block b maps to block nblk-1-b and
+    # the partition is mirror-symmetric by construction. It also keeps the wake centreline
+    # BETWEEN two node lines rather than on one.
+    th_all = (np.arange(nth_tot) + 0.5) * (2 * np.pi / nth_tot)     # ring: no duplicate seam
     z = np.arange(nz) / nz * span                                   # periodic: no far endpoint
     nth = nth_tot // nblk
     h = (1.0 / (nr - 1), 1.0 / nth_tot, 1.0 / nz)
