@@ -489,3 +489,96 @@ class MultiBlockChainRC(MultiBlockChain):
             if not final_only:
                 L = L + (u ** 2).sum()
         return (u ** 2).sum() if final_only else L
+
+
+def channel_box(ntot=12, n_split=1):
+    """Periodic in x and z, WALLS at y-min and y-max, split into `n_split` blocks along x.
+
+    The wall-bounded counterpart of `periodic_box`. Stages 6-8 all ran on a fully periodic
+    domain, where every node is an unknown; a wall introduces Dirichlet rows, and eliminating
+    them is a different code path in both the forward and the backward.
+    """
+    from src.multiblock import Block, Connection, Domain, face_id
+    assert ntot % n_split == 0
+    nxb = ntot // n_split
+    ax = np.arange(ntot) / ntot
+    ay = np.linspace(0.0, 1.0, ntot)                 # walls need both endpoints
+    X, Y, Z = np.meshgrid(ax, ay, ax, indexing="ij")
+    blocks = []
+    for b in range(n_split):
+        sl = slice(b * nxb, (b + 1) * nxb)
+        blk = Block((nxb, ntot, ntot), X[sl], Y[sl], Z[sl],
+                    (1.0 / ntot, 1.0 / (ntot - 1), 1.0 / ntot))
+        for a in (0, 2):
+            blk.faces[face_id(a, 0)] = blk.faces[face_id(a, 1)] = "periodic"
+        blk.faces[face_id(1, 0)] = blk.faces[face_id(1, 1)] = "wall"
+        blocks.append(blk)
+    conns = []
+    if n_split > 1:
+        for b in range(n_split):
+            nb = (b + 1) % n_split
+            sh = (1.0, 0.0, 0.0) if nb == 0 else (0.0, 0.0, 0.0)
+            conns.append(Connection(b, face_id(0, 1), nb, face_id(0, 0), shift=sh))
+    return Domain(blocks, conns)
+
+
+class MultiBlockWallChain(MultiBlockChainRC):
+    """The RC chain on a domain WITH WALLS: the momentum solve runs on interior nodes only.
+
+    A no-slip wall makes its nodes Dirichlet, so they leave the unknown set and the momentum
+    matrix is restricted to the interior exactly as `piso_multiblock` does
+    (`A_ib = A[interior][:, bnd]`). With a stationary wall the elimination term A_ib u_bnd is
+    zero, so the restriction is the whole of it -- a moving wall would add that term to the RHS
+    and it would carry a gradient of its own.
+
+    The pressure system stays over ALL nodes and stays singular: walls give it Neumann data, not
+    Dirichlet. A Dong outflow is what makes it non-singular, and that is a separate increment.
+    """
+
+    def __init__(self, domain, nu=0.05, dt=0.05):
+        super().__init__(domain, nu, dt)
+        self.wall = domain.wall_mask()
+        self.interior = np.where(~self.wall)[0]
+        A = sparse.csr_matrix(domain.build_momentum_matrix(
+            self.Js, self.ms, self.u0, self.u0, self.u0, nu, dt, bdf2=True))
+        Aii = A[self.interior][:, self.interior].tocsr()
+        idx, shape, val = csr_pattern(Aii)
+        self.A_pat = (idx, shape), val
+        self.ii = torch.as_tensor(self.interior)
+
+    def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
+                return_fields=False):
+        (Aidx, Ashape), Aval = self.A_pat
+        (Midx, Mshape), Mval = self.M_pat
+        Gt, Du, RCt = (to_torch_sparse(self.G), to_torch_sparse(self.D_flux[:, :self.N]),
+                       to_torch_sparse(self.RC))
+        u = torch.as_tensor(self.u_init) * torch.as_tensor(~self.wall).double()
+        u_prev = u.clone()
+        p_flux = torch.zeros(self.N, dtype=torch.float64)
+        Jt = torch.as_tensor(self.J_flat)
+        L = 0.0
+        for S in sources:
+            hist = u_prev.detach() if drop_history else u_prev
+            rhs = (Jt * (2.0 * u - 0.5 * hist) / self.dt + S)[self.ii]
+            u_int = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
+            u_star = torch.zeros(self.N, dtype=torch.float64).index_put((self.ii,), u_int)
+            pf = p_flux.detach() if drop_pflux else p_flux
+            phi = LinearSolve.apply(Mval, spmv(Du, u_star) - spmv(RCt, pf),
+                                    (Midx, Mshape), True, True)
+            corrected = u_star - self.dt * spmv(Gt, phi)
+            # the wall stays no-slip after the correction, as `piso_multiblock` re-imposes it
+            u_prev, u = u, corrected * torch.as_tensor(~self.wall).double()
+            p_flux = p_flux + phi
+            if not final_only:
+                L = L + (u ** 2).sum()
+        if return_fields:
+            return u, p_flux
+        return (u ** 2).sum() if final_only else L
+
+    def to_blocks(self, flat):
+        """A global torch vector -> per-block torch tensors, differentiably."""
+        out = {}
+        for b, blk in enumerate(self.d.blocks):
+            gid = torch.as_tensor(self.d.global_ids(b).ravel())
+            out[b] = torch.index_select(flat, 0, gid).reshape(blk.shape)
+        return out

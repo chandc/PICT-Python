@@ -164,6 +164,72 @@ check(ok.all() and anti < 1e-12,
       f"8.4  dC_L/dp is ANTISYMMETRIC under y -> -y: worst {anti:.2e} of max|g|, over "
       f"{int(ok.sum()):,} mirror pairs (|C_L| itself = {abs(float(cl_s)):.2e})")
 
+# ------------------------------------------------- 8.5 / 8.6 drag AS the loss, on a wall
+# Everything above differentiates the force with respect to the FIELDS. The objective Stage 10
+# needs is the force with respect to an ACTUATION, which means chaining it to a solver on a
+# domain that has a wall at all.
+from src.forces_torch import coefficients as t_coefficients
+from src.mb_adjoint import MultiBlockWallChain, channel_box
+
+dch = channel_box(10, 2)
+wall_chain = MultiBlockWallChain(dch, 0.05, 0.02)
+walls = [(b, face_id(1, s)) for b in range(len(dch.blocks)) for s in (0, 1)]
+wgeom = face_geometry(dch, walls)
+span_ch = 1.0
+rng5 = np.random.default_rng(41)
+S5 = [rng5.standard_normal(wall_chain.N) * 0.05 for _ in range(3)]
+
+
+def drag_of(arrays):
+    src = [torch.tensor(a) if not torch.is_tensor(a) else a for a in arrays]
+    u, pf = wall_chain.rollout(src, return_fields=True)
+    ub = wall_chain.to_blocks(u)
+    pb = wall_chain.to_blocks(pf)
+    zb = {b: torch.zeros_like(ub[b]) for b in ub}
+    cd, _ = t_coefficients(wgeom, ub, zb, zb, pb, 0.05, span_ch)
+    return cd
+
+
+src5 = [torch.tensor(a, requires_grad=True) for a in S5]
+L5 = wall_chain.rollout(src5)
+L5.backward()
+g5 = [s.grad.detach().numpy().copy() for s in src5]
+scale5 = max(np.abs(g).max() for g in g5)
+worst85 = 0.0
+for k_step in (0, 2):
+    gg = g5[k_step]
+    for k in np.argsort(-np.abs(gg))[:3]:
+        pert = [a.copy() for a in S5]
+        pert[k_step][k] += 1e-2
+        Lp = float(wall_chain.rollout([torch.tensor(a) for a in pert]))
+        pert[k_step][k] -= 2e-2
+        Lm = float(wall_chain.rollout([torch.tensor(a) for a in pert]))
+        worst85 = max(worst85, abs((Lp - Lm) / 2e-2 - gg[k]) / scale5)
+check(worst85 < 1e-6,
+      f"8.5  FD vs adjoint through a WALL-BOUNDED chain ({int(wall_chain.wall.sum())} Dirichlet "
+      f"nodes eliminated, {len(wall_chain.interior)} unknowns): worst {worst85:.2e} of max|g|")
+
+srcd = [torch.tensor(a, requires_grad=True) for a in S5]
+cd_val = drag_of(srcd)
+cd_val.backward()
+gcd = [s.grad.detach().numpy().copy() for s in srcd]
+scale86 = max(np.abs(g).max() for g in gcd)
+worst86 = 0.0
+for k_step in (0, 2):
+    gg = gcd[k_step]
+    for k in np.argsort(-np.abs(gg))[:3]:
+        pert = [a.copy() for a in S5]
+        pert[k_step][k] += 1e-2
+        cp = float(drag_of(pert))
+        pert[k_step][k] -= 2e-2
+        cm = float(drag_of(pert))
+        worst86 = max(worst86, abs((cp - cm) / 2e-2 - gg[k]) / scale86)
+check(worst86 < 1e-6 and scale86 > 0,
+      f"8.6  dC_D/d(actuation) through the solver AND the wall integral: worst {worst86:.2e} "
+      f"of max|g| = {scale86:.3e}, C_D = {float(cd_val):+.5f}. This is the objective Stage 10 "
+      f"would train against -- a body force in the interior, a drag on the wall, and one "
+      f"gradient joining them")
+
 print("=" * 76)
 print(f"  {PASS}/{PASS + FAIL} checks passed")
 print("=" * 76)

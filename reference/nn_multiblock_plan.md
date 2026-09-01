@@ -345,7 +345,7 @@ comes with its own gate rather than being folded into Stage 6.
 ```
 Stage 6   two blocks that are one block   <- DONE, 16/16, test_mb_adjoint_seam.py
 Stage 7   persistent state                <- PART, 7/7 done; operators built, 7.3 wiring left
-Stage 8   force objective in torch        <- DONE, 8/8, test_mb_forces_torch.py
+Stage 8   force objective in torch        <- DONE, 10/10, incl. a wall-bounded chain
 Stage 9   scale + checkpointing           <- PART, sparse operators done (3/3)
 Stage 10  a learning task                 <- the first thing that is not an instrument
 ```
