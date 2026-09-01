@@ -100,7 +100,12 @@ def main(tag="sqcyl_v3", nz=4):
     wz = np.gradient(gv, gx, axis=1) - np.gradient(gu, gy, axis=0)
     lim = float(np.nanpercentile(np.abs(wz), 99.0))
 
-    fig, axes = plt.subplots(2, 1, figsize=(15, 11))
+    # THE FIGURE MUST FOLLOW THE DOMAIN. Both panels are aspect-equal, so a fixed figure size
+    # fits the square cylinder's 2:1 domain and leaves the cylinder's 1:1 domain floating in
+    # half a page of white. Size the canvas from the extent instead.
+    pw = 13.0
+    ph = pw * (YT - YB) / (XR - XL)
+    fig, axes = plt.subplots(2, 1, figsize=(pw + 1.6, 2 * ph + 1.4))
 
     ax = axes[0]
     im = ax.pcolormesh(GX, GY, spd, cmap="viridis", shading="auto", vmin=0, vmax=1.4)
