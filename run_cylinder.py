@@ -80,7 +80,9 @@ def main():
     p.add_argument("--steps", type=int, default=30000, help="steps after the kick")
     p.add_argument("--dt", type=float, default=0.01)
     p.add_argument("--nz", type=int, default=4)
-    p.add_argument("--nblk", type=int, default=8)
+    p.add_argument("--nblk", type=int, default=16,
+                   help="azimuthal blocks; sets how finely the far-field "
+                        "outflow arc can be cut (16 -> |theta| <= 21.8 deg)")
     p.add_argument("--kick", type=float, default=0.01, help="fraction of U")
     p.add_argument("--backend", default="scipy")
     p.add_argument("--restart", default=None)

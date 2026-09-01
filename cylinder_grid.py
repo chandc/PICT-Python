@@ -81,7 +81,7 @@ def _radial_plateau(r0, r1, first, dr_hold, r_hold, ratio):
     return rs
 
 
-def cylinder_domain(nblk=8, nth_tot=256, nz=8, r_out=30.0 * D, first=0.006 * D,
+def cylinder_domain(nblk=16, nth_tot=256, nz=8, r_out=30.0 * D, first=0.006 * D,
                     dr_hold=0.28 * D, r_hold=12.0 * D, ratio=1.12, span=4.0 * D):
     """O-grid ring of `nblk` blocks, cylinder at the centre, far field at `r_out`."""
     if nth_tot % nblk:
@@ -125,21 +125,60 @@ def cylinder_domain(nblk=8, nth_tot=256, nz=8, r_out=30.0 * D, first=0.006 * D,
     return Domain(blocks, conns), r, arc
 
 
-def outer_role(d, nblk, flow_x=True):
+OUTFLOW_SECTOR = 45.0           # full angular width of the outflow arc, degrees
+
+
+def outer_role(d, nblk, flow_x=True, sector=OUTFLOW_SECTOR):
     """Classify each block's far-field face as 'inflow' or 'outflow' by its mean azimuth.
 
-    A face carries ONE condition, so the split can only fall on block boundaries. With the
-    stream along +x the downstream half-plane is |theta| < pi/2.
+    A face carries ONE condition, so the split can only fall on block boundaries.
+
+    THE ARC MUST BE NARROW, AND THE OBVIOUS CHOICE IS WRONG. Splitting at the downstream
+    half-plane -- |theta| < 90, which is what this did -- makes HALF the far-field ring a
+    pressure-prescribed Dong outflow, including the flanks where the boundary is nearly parallel
+    to the stream. The flow then short-circuits: measured at r = 30 with the half-plane split,
+    77% of the outgoing mass left through |theta| > 45 and only 13% through |theta| < 15, so the
+    stream escaped sideways instead of convecting past the body. Mass was conserved and the
+    inflow ring delivered exactly 2*r*U, but the near field ran at 0.74 U -- an effective
+    Re of ~75 for a case set up at 100, with St and C_D normalised on a free stream the
+    cylinder never saw.
+
+    The wake subtends about 11 degrees at r = 30 (a few D wide at 30 D out), so an arc of 45
+    contains it with room to spare, and everything else carries the free stream. Dong still
+    prescribes a pressure on the arc, so the pressure system stays non-singular.
+
+    `sector` is the FULL width, so the outflow is |theta| <= sector/2, and a block qualifies only
+    if its WHOLE angular extent fits inside that. Testing the block's mean instead puts the
+    decision on a knife edge exactly when the arc and the block width coincide -- nblk=8 with
+    sector=45 has both means sitting on the boundary, and floating point then picks ONE of the
+    two mirror blocks, which is the asymmetric far field this file was just fixed to avoid. An
+    arc no block fits raises rather than silently leaving no outflow at all, which would make
+    the pressure system singular.
+
+    Workable pairs: nblk=16 with sector=45 gives |theta| <= 21.8; nblk=8 with sector=90 gives
+    |theta| <= 44.3.
     """
-    roles = {}
+    half = np.radians(0.5 * sector)
+    roles, extents = {}, {}
     for b in range(nblk):
-        th = np.arctan2(d.blocks[b].y[-1].mean(), d.blocks[b].x[-1].mean())
-        roles[b] = "outflow" if (np.cos(th) > 0) == flow_x else "inflow"
+        th = np.arctan2(d.blocks[b].y[-1], d.blocks[b].x[-1]).ravel()
+        if not flow_x:
+            th = np.arctan2(np.sin(th), -np.cos(th))
+        th = np.abs(np.arctan2(np.sin(th), np.cos(th)))      # wrap to |theta| <= pi
+        extents[b] = th.max()
+        roles[b] = "outflow" if th.max() <= half + 1e-12 else "inflow"
+    if not any(v == "outflow" for v in roles.values()):
+        best = np.degrees(min(extents.values()))
+        raise ValueError(
+            f"no block fits inside an outflow arc of {sector} deg with nblk={nblk}: the "
+            f"narrowest block reaches |theta| = {best:.2f} deg. With no outflow face the Dong "
+            f"pressure is never prescribed and the pressure system is singular. Use sector >= "
+            f"{2*best:.1f}, or more blocks.")
     return roles
 
 
 if __name__ == "__main__":
-    NBLK = 8
+    NBLK = 16
     d, r, arc = cylinder_domain(nblk=NBLK, nz=4)
     print(f"  Cylinder vortex street, O-grid to the far field.  D = {D}")
     print(f"  {len(d.blocks)} blocks, {d.n_cells:,} cells, {len(d.connections)} connections\n")

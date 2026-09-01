@@ -1,7 +1,7 @@
 """Streamlines around the CIRCULAR cylinder, from a checkpoint.
 
 Same construction as `plot_square_streamlines.py`, and the same reason for it: streamplot needs
-a uniform grid and this is an O-grid of eight blocks clustered hard on the body, so the fields
+a uniform grid and this is an O-grid of blocks clustered hard on the body, so the fields
 are scattered into one point cloud and interpolated onto a raster.
 
 TWO DIFFERENCES FROM THE SQUARE CASE, both of which will bite if copied over carelessly:
@@ -35,9 +35,12 @@ NX, NY = 900, 480
 MARGIN = 1.0
 
 
-def raster(tag, nz=4, nblk=8):
-    d, r, arc = cylinder_domain(nblk=nblk, nz=nz)
+def raster(tag, nz=4, nblk=None):
+    # The block count comes from the CHECKPOINT unless overridden. It is recorded there, and
+    # hard-coding it means every plot silently rebuilds the wrong domain the day the
+    # decomposition changes -- which it did, 8 -> 16, to cut a narrower far-field outflow arc.
     f, meta = checkpoint.load_fields(f"results/fields/{tag}.npz")
+    d, r, arc = cylinder_domain(nblk=nblk or meta["nblocks"], nz=nz)
     P, U, V = [], [], []
     for b in range(len(d.blocks)):
         blk = d.blocks[b]
@@ -57,7 +60,7 @@ def raster(tag, nz=4, nblk=8):
     return gx, gy, GX, GY, gu, gv, meta, len(P)
 
 
-def main(tag="cyl_Re100", nz=4, nblk=8):
+def main(tag="cyl_Re100", nz=4, nblk=None):
     gx, gy, GX, GY, gu, gv, meta, npts = raster(tag, nz, nblk)
     spd = np.sqrt(gu**2 + gv**2)
 
