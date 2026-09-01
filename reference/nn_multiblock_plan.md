@@ -149,7 +149,11 @@ recompute per segment — fine. The same window unchecked is not.
 Deliberately last, and not specified here beyond the two candidates:
 
 * **SGS closure on a multi-block LES case**, continuing Stage 5's line of work into a geometry
-  that is not a periodic box.
+  that is not a periodic box. **This one depends on Stage 5c of the single-block plan**, the
+  eddy-viscosity hook, which does not exist yet: every closure stage built so far trains an
+  explicit SGS *force*, while a variable effective viscosity enters the momentum MATRIX. The
+  multi-block momentum assembly takes a scalar `nu` today (`return nu * Js[b] * g`), so this
+  stage inherits 5c's build as a prerequisite, not as a refinement.
 * **Drag reduction / flow control** — a boundary or body-force actuation trained against $C_D$
   from Stage 8.
 

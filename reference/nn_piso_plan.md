@@ -210,6 +210,63 @@ error is attributable to the closure rather than to boundary treatment.
 
 ---
 
+## Stage 5c — the eddy-viscosity hook  ⛔ not started, and Stage 5 needs it
+
+**§1 of [`nn_piso_coupling.md`](nn_piso_coupling.md) lists three hooks. Every stage above uses
+the first one.** `SGSNet` emits three channels — a force vector — and `make_sgs_data.sgs_force`
+returns $-\nabla\!\cdot\tau$, so Stages 2, 3, 4, 5a and 5b all train an explicit SGS FORCE. The
+eddy-viscosity hook, $\nu_t = \mathrm{NN}(\mathbf u^n)$ entering the momentum matrix, has never
+been built.
+
+That matters because the standard SGS closure — Smagorinsky and everything descended from it —
+IS an eddy viscosity. A force closure is a legitimate formulation and it is what PICT's
+SGS-stress hook does, but it is not the one most of the literature reports, and it cannot
+reproduce a model whose whole content is $\nu_{\rm eff}(\mathbf x) = \nu + \nu_t(\mathbf x)$.
+
+**What the solver supports today.**
+
+| | variable coefficient? | where |
+|---|---|---|
+| pressure / diffusion operator | **yes** — `build_diffusion_matrix(..., coefs)` takes a per-block array and face-averages it, $\tfrac12(J g_{lo} + J g_{hi})$ | used for the $1/A$ weighting, `piso_multiblock.py:299` |
+| momentum operator, multi-block | **no** — `nu` is a scalar: `return nu * Js[b] * g` | `multiblock.py:build_momentum_matrix` |
+| momentum operator, differentiable | **no** — `self.nu` scalar into `build_conservative_diffusion_matrix` | `piso_torch.py` |
+
+So the pattern for a spatially varying, symmetry-preserving diffusion coefficient already exists
+and is exercised every step; it has simply never been applied to $\nu$ in the momentum matrix.
+
+**THE ONE THING THAT CHANGES THE ADJOINT REQUIREMENT.** With a force closure, freezing the
+matrix coefficients drops a *correction* — Stage 4 measured 0.40° of angle error and a 25.4%
+worse converged loss. With a viscosity closure, $\nu_t$ enters **only** through $A$. Freeze $A$
+and $\partial L/\partial\nu_t$ is **identically zero**: the network receives no gradient at all,
+the loss does not move, and nothing errors. `exact_A=True` stops being a recommendation and
+becomes a precondition.
+
+**Build.** (a) accept an array $\nu$ in the momentum assembly, face-interpolated the way
+`build_diffusion_matrix` already interpolates `coefs`, so the operator stays symmetric;
+(b) route $\partial L/\partial A$ through $\partial A/\partial\nu_t$ in `MomentumAssembler`;
+(c) a positive output map, softplus or clip, since $\nu + \nu_t \le 0$ destroys the operator's
+positive definiteness and the solve with it.
+
+**Test cases and success criteria.**
+
+| # | Test case | Config | Success criterion | Failure means |
+|---|---|---|---|---|
+| 5c.1 | constant $\nu_t$ reproduces the scalar path | 16³ periodic, $\nu_t \equiv c$ | state identical to `nu = nu + c` to < 1e-14 | face interpolation or assembly is wrong before any gradient is involved |
+| 5c.2 | operator stays symmetric | random positive $\nu_{\rm eff}$ field | `max|A_diff - A_diff^T| == 0` for the diffusion part | the face average was replaced by a one-sided value; CG on the pressure system would silently degrade |
+| 5c.3 | $\partial L/\partial\nu_t$ vs central FD | 8³, one step, 8 sampled cells, tol 1e-12 | ≥ 6 digits | $\partial A/\partial\nu_t$ is wrong or missing |
+| 5c.4 | **frozen $A$ gives exactly zero** | same, `exact_A=False` | $\lVert\partial L/\partial\nu_t\rVert$ **== 0**, and the test asserts it | if it is non-zero, something else is feeding the gradient and the result is not the viscosity sensitivity |
+| 5c.5 | positivity is enforced | adversarial input driving $\nu_t$ negative | $\min(\nu+\nu_t) > 0$ always; solver never raises | the output map is not guarding the operator |
+| 5c.6 | Smagorinsky recovery | $\nu_t = (C_s\Delta)^2\lvert\bar S\rvert$, $C_s$ the only parameter, target from $C_s=0.16$ | descent from $C_s=0$ recovers 0.16 to < 1e-3 | the sign or scale of the viscosity path is wrong — the Stage 1 test, moved to the other hook |
+
+5c.4 is the one worth writing first. It is a test that a gradient is **zero**, which is unusual,
+and it exists because that zero is the silent failure this hook invites: train with the default
+`exact_A=False` and the model simply never learns, with no error anywhere.
+
+5c.6 is Stage 1 repeated through the viscosity hook — recover one scalar, prove sign and scale —
+before any field-valued network is attached.
+
+---
+
 ## Test problems and acceptance criteria at a glance
 
 Every stage names one concrete problem and a numeric bar. Stages 1–3 are deliberately tiny —
@@ -296,6 +353,7 @@ Stage 3.5 TGV energy budget     <- proves the baseline is not numerically pollut
 Stage 4  done   frozen-coeff bias     <- angle 0.4 deg BUT loss 25% worse; use exact_A
 Stage 5a done  a-priori regression   <- corr 0.85; capacity confirmed
 Stage 5b part  a-posteriori training <- (b),(c) pass; (a) unreachable (oracle -0.3%)
+Stage 5c  plan  EDDY-VISCOSITY hook   <- not started; every stage above uses the FORCE hook
 Stage 6+  plan  MULTI-BLOCK          <- see nn_multiblock_plan.md; not started
 ```
 
