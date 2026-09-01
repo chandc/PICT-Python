@@ -61,8 +61,15 @@ def kick(m, d, amp):
         blk = d.blocks[b]
         sel = (blk.x > 0.5 * D) & (blk.x < 4.0 * D) & (np.abs(blk.y) < 1.5 * D)
         if sel.any():
-            m.v[b][sel] += amp * U_INF * np.sign(blk.y[sel]) * \
-                np.exp(-((blk.x[sel] - 1.5) ** 2) / 1.0)
+            # SINUOUS, not varicose. The von Karman mode meanders the wake bodily
+            # sideways, so the transverse velocity has the SAME sign right across the wake --
+            # v EVEN in y. An earlier version used `np.sign(blk.y)`, which is v ODD in y: that
+            # is the VARICOSE mode, in which the wake breathes symmetrically, and it is stable.
+            # It excited the wrong mode and decayed every time, on every grid and at every
+            # resolution, which read as "the grid lost the instability".
+            m.v[b][sel] += amp * U_INF * \
+                np.exp(-((blk.x[sel] - 1.5) ** 2) / 1.0) * \
+                np.exp(-(blk.y[sel] / 0.75) ** 2)
 
 
 def main():

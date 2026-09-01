@@ -1,0 +1,14 @@
+warning: `VIRTUAL_ENV=/Users/danielchan/Dropbox/PICT/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+  pressure operator 82,096 x 82,096, nnz 571,712,  rtol 1e-06
+
+  method                        iters   setup s   solve s   total s    rel res
+  CG + Jacobi                     442     0.000     0.160     0.160   9.88e-07
+  CG + AMG (precond)               29     0.073     0.217     0.290   9.57e-07
+  AMG standalone (V-cycles)       196     0.000     1.290     1.290   9.83e-07
+  AMG + CG accel (pyamg)           29     0.000     0.215     0.215   9.57e-07
+
+  AMG setup cost is paid ONCE if the hierarchy is reused across steps:
+    AMG build once          0.074 s
+    then per solve, AMG     0.208 s
+    per solve, Jacobi       0.160 s
+    -> Jacobi still wins per-solve by 1.30x, so reuse cannot save AMG here

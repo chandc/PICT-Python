@@ -98,7 +98,7 @@ def _ramp_plateau_stretch(x0, x1, dx0, dx_hold, x_hold, ramp_ratio, tail_ratio):
     return xs
 
 
-def square_domain(n_obs=32, nz=8, span=4.0 * D, ratio=1.15,
+def square_domain(n_obs=32, nz=8, span=4.0 * D, ratio=1.10,
                   wake_hold=15.0 * D, wake_dx=0.15 * D, wake_ratio=1.06):
     """8 blocks around a square hole of side D centred on the origin.
 
@@ -106,7 +106,14 @@ def square_domain(n_obs=32, nz=8, span=4.0 * D, ratio=1.15,
     stored by the neighbouring blocks, so the middle strips hold n_obs - 2 nodes. It is the
     ONLY count specified: n_obs fixes dx_body = D/(n_obs-1), and every other strip grows from
     that at `ratio`, so its cell count follows. Prescribing counts instead is what allowed the
-    spacing to jump 4.65x at the trailing edge while every check passed. n_side is the count in each lateral band. The downstream count is
+    spacing to jump 4.65x at the trailing edge while every check passed.
+
+    `ratio` = 1.10, not the 1.15 first tried. 1.15 gave the same node count as the tanh it
+    replaced and spent it differently: twice as fine at the body (0.0290 against 0.0533) and
+    nearly twice as COARSE in the far field (max cell 1.264 against 0.703). Buying near-body
+    resolution out of the far field is the wrong trade for a wake instability, whose mode has
+    support several diameters out. 1.10 costs ~17,000 cells and puts the far field back where it
+    was (0.893) while keeping the near-body gain. n_side is the count in each lateral band. The downstream count is
     NOT specified: it follows from wake_hold / wake_dx / wake_ratio, because the wake spacing is
     the physically meaningful quantity and a fixed count would let it drift.
 

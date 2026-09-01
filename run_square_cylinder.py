@@ -36,10 +36,10 @@ RE = 100.0
 DEFAULT_TOL = 1e-6
 PROBE = (2.0 * D, 0.5 * D)          # in the shear layer, off the centreline where v is largest
 PULSE_UNTIL = 4.0                   # time units of symmetry breaking, then off
-PULSE_AMP = 0.05 * U_INF
+PULSE_AMP = 0.05 * U_INF     # legacy inlet forcing; --kick is the better route
 
 
-def build(dt, rhie_chow=True, nz=8, tol=DEFAULT_TOL):
+def build(dt, rhie_chow=True, nz=8, tol=DEFAULT_TOL, backend=None):
     d, idx = square_domain(nz=nz)
     # ddt_corr IS OFF, DELIBERATELY. It is what makes this case diverge, and neither Rhie-Chow
     # nor the persistent flux does. Isolated on the coarse grid with everything else identical:
@@ -58,9 +58,13 @@ def build(dt, rhie_chow=True, nz=8, tol=DEFAULT_TOL):
     #
     # Dropping it costs nothing here and keeps what matters: RC still suppresses the
     # checkerboard, amplitude 1.44e-01 -> 3.48e-03 against RC off, a factor of 41.
+    # backend defaults from the environment so a container can select it without editing code;
+    # 'amgx' silently falls back to scipy when libamgxsh.so is absent, so this is safe locally.
+    backend = backend or os.environ.get("PICT_BACKEND", "scipy")
     m = MultiBlockPISO(d, U_INF * D / RE, dt, 2, tol, time_scheme="bdf2",
                        scheme="rotational", picard_iters=2, rhie_chow=rhie_chow,
-                       persistent_flux=rhie_chow, ddt_corr=False)
+                       persistent_flux=rhie_chow, ddt_corr=False,
+                       linear_backend=backend)
     for b in range(len(d.blocks)):
         m.u[b][:] = U_INF; m.v[b][:] = 0.0; m.w[b][:] = 0.0
     apply_bc(m, d, kind="dong")
@@ -80,6 +84,29 @@ def inlet_pulse(m, d, amp):
         m.v[b][fs] = amp
 
 
+def wake_kick(m, d, amp):
+    """SINUOUS nudge in an ESTABLISHED wake -- the only perturbation that excites shedding.
+
+    Two mistakes are avoided here, both of which cost whole runs:
+
+    SYMMETRY. The von Karman mode meanders the wake bodily sideways, so the transverse velocity
+    has the SAME sign right across it -- v EVEN in y. A perturbation built from `np.sign(y)` is
+    v ODD in y, which is the VARICOSE mode: the wake breathing symmetrically. That mode is
+    stable, so such a kick decays on every grid at every resolution, and the result reads as
+    "this grid lost the instability".
+
+    TIMING. Applied at t = 0 the kick sits in undisturbed parallel flow with no wake to perturb,
+    convects away, and is gone before the recirculation region forms. Settle first, kick that.
+    """
+    for b in range(len(d.blocks)):
+        blk = d.blocks[b]
+        sel = (blk.x > 0.5 * D) & (blk.x < 4.0 * D) & (np.abs(blk.y) < 1.5 * D)
+        if sel.any():
+            m.v[b][sel] += amp * U_INF * \
+                np.exp(-((blk.x[sel] - 1.5) ** 2) / 1.0) * \
+                np.exp(-(blk.y[sel] / 0.75) ** 2)
+
+
 def probe_index(d, idx):
     """Block and index of the node nearest PROBE."""
     best = None
@@ -93,8 +120,8 @@ def probe_index(d, idx):
 
 
 def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=None,
-        tol=DEFAULT_TOL):
-    d, idx, m = build(dt, rhie_chow, nz, tol)
+        tol=DEFAULT_TOL, settle=0, kick=0.0, backend=None):
+    d, idx, m = build(dt, rhie_chow, nz, tol, backend)
     tag = tag or (f"sqcyl_Re{RE:.0f}{'_rc' if rhie_chow else ''}"
                   f"_tol{tol:.0e}_n{d.n_cells}")
     os.makedirs("results/fields", exist_ok=True)
@@ -109,10 +136,26 @@ def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=Non
     pb, pk = probe_index(d, idx)
     px, py = d.blocks[pb].x[pk[0], pk[1], 0], d.blocks[pb].y[pk[0], pk[1], 0]
     print(f"  {d.n_cells:,} cells, dt = {dt}, Re = {RE:.0f}, tol = {tol:.0e}, "
-          f"rhie_chow = {rhie_chow}, nz = {nz}")
+          f"rhie_chow = {rhie_chow}, nz = {nz}, backend = {m._pcache.backend}")
     print(f"  probe at ({px:.3f}, {py:.3f}), asked for ({PROBE[0]}, {PROBE[1]})")
     print(f"  symmetry-breaking pulse: v = {PULSE_AMP} at the inlet until t = {PULSE_UNTIL}\n")
     print(f"  {'step':>7}{'t':>9}{'v_probe':>11}{'max|u|':>9}{'max div':>11}{'s/step':>9}")
+
+    if settle and not restart:
+        print(f"  settling {settle} steps to the base flow before kicking\n", flush=True)
+        st0 = time.time()
+        for i in range(1, settle + 1):
+            m.step()
+            hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
+            if i % 500 == 0:
+                seg = np.array([h[1] for h in hist[-500:]])
+                print(f"  settle{i:>7}{m.time:>9.1f}{hist[-1][1]:>11.6f}"
+                      f"{seg.max()-seg.min():>11.3e}{(time.time()-st0)/i:>9.3f}", flush=True)
+        checkpoint.save(m, f"results/fields/{tag}_base.npz")
+        print(f"  base flow saved; v_probe = {hist[-1][1]:+.6f}", flush=True)
+    if kick:
+        wake_kick(m, d, kick)
+        print(f"  SINUOUS wake kick at {100*kick:.3g}% of U\n", flush=True)
 
     pulse_on = None
     t0 = time.time()
@@ -149,7 +192,14 @@ if __name__ == "__main__":
     p.add_argument("--no-rc", action="store_true")
     p.add_argument("--restart", default=None)
     p.add_argument("--tag", default=None)
+    p.add_argument("--backend", default=None,
+                   help="scipy | amgx (default: $PICT_BACKEND, else scipy)")
+    p.add_argument("--settle", type=int, default=0,
+                   help="steps to reach the base flow before kicking")
+    p.add_argument("--kick", type=float, default=0.0,
+                   help="sinuous wake kick, fraction of U")
     p.add_argument("--tol", type=float, default=DEFAULT_TOL,
                    help="linear solver tolerance; 1e-4 suppresses shedding entirely")
     a = p.parse_args()
-    run(a.steps, a.dt, not a.no_rc, a.nz, restart=a.restart, tag=a.tag, tol=a.tol)
+    run(a.steps, a.dt, not a.no_rc, a.nz, restart=a.restart, tag=a.tag, tol=a.tol,
+        settle=a.settle, kick=a.kick, backend=a.backend)

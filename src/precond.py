@@ -24,7 +24,53 @@ sparse mat-vec, so on wall time it still LOSES at every size tested:
     26,720    0.248 s    0.130 s   0.303 s
     52,780    0.590 s    0.290 s   0.550 s
 
-The AMG/Jacobi gap narrows with size across that range (2.7x -> 1.9x), which suggested AMG
+## AMG AS A PRECONDITIONER vs AMG AS A SOLVER
+
+Multigrid can either drive the solve itself or precondition a Krylov method. Measured on the
+82,096-unknown square-cylinder pressure operator at the production tolerance 1e-6:
+
+    method                      iters   setup s   solve s   total s
+    CG + Jacobi  (the default)    442     0.000     0.160     0.160
+    CG + AMG (preconditioner)      29     0.073     0.217     0.290
+    AMG standalone (V-cycles)     196     0.000     1.290     1.290
+    AMG + CG accel (pyamg's own)   29     0.000     0.215     0.215
+
+**Preconditioning beats standalone by 4.4x.** Pure V-cycles need 196 iterations where
+AMG-preconditioned CG needs 29 on the SAME hierarchy -- a convergence rate near 0.93 per cycle,
+which is poor for multigrid and says this hierarchy is a mediocre fit for a curvilinear
+multi-block Laplacian. The Krylov acceleration is doing most of the work. Rows 2 and 4 agreeing
+to 1% is the consistency check: SciPy's CG and pyamg's own accelerator land in the same place.
+
+So if AMG is used at all here, use it as a preconditioner. Never standalone.
+
+## AND THE SETUP COST IS NOT WHAT SINKS IT
+
+The obvious rescue is hierarchy reuse -- build once, reuse across steps, which is exactly what
+makes AmgX fast. It does not help:
+
+    AMG built once            0.074 s
+    then per solve, AMG       0.208 s
+    per solve, Jacobi         0.160 s
+
+**Jacobi still wins per-solve by 1.30x**, so there is no number of steps after which reuse pays
+back. The 442 -> 29 iteration collapse is real, but a V-cycle costs about 15x a
+Jacobi-preconditioned mat-vec and 442/29 = 15.2 -- almost exactly a wash, decided by overhead.
+
+## THE SAME LIBRARY GIVES THE OPPOSITE VERDICT ON A TOY PROBLEM
+
+On a 20,000-unknown 1-D Laplacian, pyamg was **15x FASTER** than Jacobi (52.7 ms against
+806.2 ms). Same code, same version, opposite conclusion. A 1-D Laplacian is the ideal case for
+multigrid; a 3-D curvilinear multi-block operator with stretched cells is not. Any AMG benchmark
+run on anything other than the operator you actually intend to solve is worthless here.
+
+## WHY THE GPU VERDICT DIFFERS
+
+AmgX wins on the GB10 while pyamg loses on the M3 Max, and the reason is arithmetic, not
+implementation quality: a V-cycle is bandwidth-bound and highly parallel, so the GPU does one far
+more cheaply RELATIVE TO A MAT-VEC than a single CPU core does. That is also why AmgX replaces
+the whole solve rather than preconditioning SciPy's CG -- see src/linsolve.py.
+
+The AMG/Jacobi gap narrows with size across the range below (2.7x -> 1.9x), which suggested AMG
 would overtake somewhere above it. IT DOES NOT. Measured on the square-cylinder pressure
 operator, same solver settings, 8 steps after a warm-up step:
 
@@ -46,7 +92,7 @@ operator, which is solved with BiCGStab; that path builds its own and is untouch
 import numpy as np
 import scipy.sparse.linalg as spla
 
-KINDS = ("none", "jacobi", "amg", "amgx")
+KINDS = ("none", "jacobi", "amg")     # amgx is a BACKEND, not a preconditioner
 
 
 def make(A, kind="jacobi"):
@@ -68,16 +114,14 @@ def make(A, kind="jacobi"):
             return ml.aspreconditioner(cycle="V")
 
     if kind == "amgx":
-        # NVIDIA AmgX -- see src/amgx/README.md. Measured 28x faster than Jacobi on the
-        # 86k-unknown pressure operator once the hierarchy is reused across steps. Needs an
-        # NVIDIA GPU and the built library; falls back rather than failing, because a missing
-        # GPU should not stop a run.
-        try:
-            from src.amgx.binding import make_amgx_preconditioner
-        except ImportError:
-            kind = "jacobi"
-        else:
-            return make_amgx_preconditioner(A)
+        # AmgX is NOT a preconditioner in this codebase -- it REPLACES the solve, and is
+        # selected with `linear_backend="amgx"` on MultiBlockPISO, not with this argument.
+        # This branch used to import `make_amgx_preconditioner`, WHICH DOES NOT EXIST, so it
+        # silently fell through to Jacobi: a plausible-looking option that quietly did something
+        # else. Raising beats that.
+        raise ValueError(
+            "'amgx' is not a preconditioner kind. AmgX replaces the whole solve; pass "
+            "linear_backend='amgx' to MultiBlockPISO instead. See src/linsolve.py.")
 
     if kind != "jacobi":
         raise ValueError(f"unknown preconditioner {kind!r}; expected one of {KINDS}")

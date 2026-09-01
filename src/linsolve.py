@@ -16,6 +16,18 @@ time to a host Krylov loop would pay the round trip per iteration and discard Am
 iteration control. Measured whole-system on the 86k-unknown pressure operator: 28 ms/step at 53
 iterations against 784 ms for SciPy CG+Jacobi -- about 25x.
 
+CORROBORATED ON THE CPU. The same question -- multigrid as a solver or as a preconditioner --
+is measurable without a GPU, and pyamg answers it the same way on our 82k pressure operator at
+rtol 1e-6: standalone V-cycles take 196 iterations and 1.290 s, AMG-preconditioned CG takes 29
+and 0.290 s. Multigrid alone is a poor solver on this operator (convergence ~0.93/cycle); it is
+the Krylov acceleration that does the work. AmgX therefore runs its OWN PCG internally rather
+than being handed to ours -- see src/amgx/pcg_amg_1e6.json.
+
+That same measurement is why Jacobi, not AMG, is the CPU default: AMG-preconditioned CG loses to
+CG+Jacobi 0.290 s vs 0.160 s, and still loses 0.208 vs 0.160 with the hierarchy reused. The GPU
+verdict flips only because a V-cycle is bandwidth-bound and parallel, so it costs far less there
+relative to a mat-vec. See src/precond.py for the full table.
+
 HIERARCHY REUSE IS WHAT MAKES IT FAST, and it is legal here because the pressure matrix keeps
 IDENTICAL sparsity every step. Verified on the Dong path specifically, where the solve is on a
 REDUCED system with Dirichlet outlet nodes eliminated: the Dirichlet set is geometric (outlet
