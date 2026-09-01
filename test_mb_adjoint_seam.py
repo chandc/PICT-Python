@@ -22,7 +22,7 @@ from scipy.sparse.linalg import splu
 
 from src.multiblock import Block, Connection, Domain, face_id
 from src.piso_multiblock import MultiBlockPISO
-from src.mb_adjoint import MultiBlockMiniPISO, alignment
+from src.mb_adjoint import MultiBlockMiniPISO, alignment, periodic_box
 
 torch.set_default_dtype(torch.float64)
 
@@ -38,34 +38,6 @@ def check(ok, msg):
     else:
         FAIL += 1
         print(f"  [FAIL] {msg}")
-
-
-def periodic_box(ntot=NTOT, n_split=1):
-    """A fully periodic cube split into `n_split` blocks along x.
-
-    Periodic in all three directions, so there are no walls and no boundary conditions to get
-    wrong -- the only thing that differs between n_split = 1 and n_split = 2 is the seam.
-    Nodes PARTITION without duplicating the interface, as a periodic axis must.
-    """
-    assert ntot % n_split == 0
-    nxb = ntot // n_split
-    ax = np.arange(ntot) / ntot
-    X, Y, Z = np.meshgrid(ax, ax, ax, indexing="ij")
-    blocks = []
-    for b in range(n_split):
-        sl = slice(b * nxb, (b + 1) * nxb)
-        blk = Block((nxb, ntot, ntot), X[sl], Y[sl], Z[sl], (1.0 / ntot,) * 3)
-        for a in range(3):
-            blk.faces[face_id(a, 0)] = blk.faces[face_id(a, 1)] = "periodic"
-        blocks.append(blk)
-    conns = []
-    for b in range(n_split):
-        nb = (b + 1) % n_split
-        # the wrap connection crosses the period, so the coordinate jumps by one box length
-        sh = (1.0, 0.0, 0.0) if nb == 0 and n_split > 1 else (0.0, 0.0, 0.0)
-        if n_split > 1:
-            conns.append(Connection(b, face_id(0, 1), nb, face_id(0, 0), shift=sh))
-    return Domain(blocks, conns)
 
 
 def taylor_green(blk):
@@ -96,7 +68,7 @@ def assemble(d, m):
 print("\n" + "=" * 74 + "\n  Stage 6 — two blocks that are one block\n" + "=" * 74)
 
 # ---------------------------------------------------------------- 6.1 forward equivalence
-d1, d2 = periodic_box(n_split=1), periodic_box(n_split=2)
+d1, d2 = periodic_box(NTOT, 1), periodic_box(NTOT, 2)
 m1, m2 = build_solver(d1), build_solver(d2)
 u0 = np.concatenate([m2.u[b] for b in range(2)], axis=0)
 check(np.abs(u0 - m1.u[0]).max() == 0.0,

@@ -188,8 +188,8 @@ that treats blocks independently, provided the loss and the parameters overlap.
 | # | Test case | Config | Success criterion | Failure means |
 |---|---|---|---|---|
 | 7.1 | FD vs adjoint through 3 steps | 2 blocks, `rhie_chow=True, persistent_flux=True, ddt_corr=False`, tol 1e-12 | ≥ 5 digits on 6 sampled entries | the state chain is broken somewhere between steps |
-| 7.2 | dropping `F_prev` must be **detected** | zero `F_prev` in the backward only | gradient error > 1e-12 vs the correct backward | the persistent flux is not in the graph; the gradient looked fine and was not |
-| 7.3 | dropping `p_flux` must be detected | same, for `p_flux` | > 1e-12 | as above, for the projection pressure |
+| 7.2 | dropping `F_prev` must be **detected** | zero `F_prev` in the backward only | gradient error > 1e-12 vs the correct backward | **BLOCKED**: needs `face_fluxes` in torch. Not faked -- a surrogate state array would pass this while proving nothing about the real flux |
+| 7.3 | dropping `p_flux` must be detected | same, for `p_flux` | > 1e-12 | **BLOCKED**: same port. `p_flux` has no consumer until Rhie-Chow exists in the differentiable path |
 | 7.4 | dropping `u_prev` must be detected | same, for the BDF2 history | > 1e-12 | the time scheme's second level is missing from the adjoint |
 | 7.5 | adjoint norm bounded | 20 steps, Re = 100 wake-like field | $\lVert\lambda\rVert_{\rm late} / \lVert\lambda\rVert_{\rm early} < 10$ | upstream sensitivity transport is amplifying; shorten the window, do not clip |
 
@@ -272,8 +272,8 @@ comes with its own gate rather than being folded into Stage 6.
 ## Order of work
 
 ```
-Stage 6   two blocks that are one block   <- proves seams in the backward
-Stage 7   persistent state                <- proves the PISO state chain
+Stage 6   two blocks that are one block   <- DONE, 16/16, test_mb_adjoint_seam.py
+Stage 7   persistent state                <- PART, 5/5 done, 7.2 and 7.3 blocked
 Stage 8   force objective in torch        <- proves a wall-bounded loss
 Stage 9   scale + checkpointing           <- proves it is affordable
 Stage 10  a learning task                 <- the first thing that is not an instrument
