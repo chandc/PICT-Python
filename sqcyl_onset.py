@@ -58,70 +58,63 @@ def envelope(t, v, win=None):
     return np.column_stack([0.5 * (tv[1:] + tv[:-1]), 0.5 * np.abs(np.diff(vv))])
 
 
-def growth_rate(t, v, t_kick=None, frac_hi=0.3, win=WIN):
-    """Fit sigma over the exponential range: after the kick transient, before saturation.
+def growth_rate(t, v, t_kick=None, win_pts=7, win=None):
+    """The linear growth rate: the PEAK of the local d(ln a)/dt, not a fit over a long window.
 
-    THE RANGE SELECTION IS THE WHOLE PROBLEM, and it went wrong twice.
+    THE THIRD ESTIMATOR, and the previous two were both biased by the same thing from opposite
+    sides. The local slope is not constant across a run:
 
-    Fitting the entire post-kick record of a SATURATED run returns almost nothing -- on
-    sqcyl_v3, 0.0019 against a true 0.09 -- because 250 of its 300 time units are a limit cycle
-    at constant amplitude and least squares averages the flat part into the slope.
+        Re = 55   -0.018  -0.001  +0.009  +0.028  +0.033  +0.032  +0.030  +0.028  +0.025
+        Re = 65   +0.004  +0.027  +0.044  +0.055  +0.048  +0.038  +0.028  +0.018  +0.012
 
-    Cutting at a fixed fraction of the maximum envelope fixes that and breaks the opposite case.
-    A run deliberately stopped BEFORE saturation is still growing at its last sample, so its
-    maximum IS its final value, and the cut throws away the best-conditioned 60% of the data
-    while keeping the worst. On Re = 55 that returned 0.0154 over 0.59 e-folds where the clean
-    range gives 0.033 over 1.2.
+    It RISES while the kick's stable components decay and the unstable eigenmode takes over,
+    PLATEAUS -- that plateau is sigma -- and then FALLS as the amplitude becomes nonlinear. A
+    least-squares fit over any long window averages all three regimes together, and how much of
+    each it catches depends on Re, so the bias is not even consistent across a sweep: fitting
+    the whole record gave 0.0300 and 0.0395 at Re = 55 and 65, whose ratio implies Re_c = 23,
+    while the plateaus give 0.033 and 0.055, whose ratio implies Re_c = 40 against a published
+    45-47.
 
-    So saturation is DETECTED rather than assumed: compare the log-slope of the last third
-    against the first third of the usable record. A limit cycle flattens; a growing mode does
-    not. Only a run that actually flattened gets the upper cut.
-
-    The transient is cut at the envelope's MINIMUM rather than by a fixed time. The kick is not
-    the eigenmode, so its stable component decays first and the envelope dips before it climbs
-    -- on Re = 55 the amplitude fell from 0.0090 to 0.0082 over the first 17 time units, and a
-    fit including that stretch is measuring the decay of the wrong mode.
+    So: slide a `win_pts`-point least-squares fit along the envelope and take the largest slope.
+    `plateau` reports how flat the neighbourhood of that maximum is -- a sharp peak means the
+    linear regime was never resolved and the number should not be trusted.
     """
     if t_kick is not None:
         m = t >= t_kick
         t, v = t[m], v[m]
     env = envelope(t, v, win)
-    if len(env) < 8:
+    if len(env) < win_pts + 2:
         return None
-    te, a = env[:, 0], env[:, 1]
-
-    start = int(np.argmin(a[:max(len(a) // 2, 1)]))      # bottom of the kick transient
-    if len(a) - start < 6:
-        start = 0
-    idx = np.arange(start, len(a))
-    if len(idx) < 6:
-        return None
-
-    # saturated? compare log-slope of the last third against the first third
-    third = max(len(idx) // 3, 2)
-    lo_s = np.polyfit(te[idx[:third]], np.log(a[idx[:third]]), 1)[0]
-    hi_s = np.polyfit(te[idx[-third:]], np.log(a[idx[-third:]]), 1)[0]
-    saturated = bool(lo_s > 0 and hi_s < 0.3 * lo_s)
-
-    if saturated:
-        hit = np.where(a[idx] >= frac_hi * a.max())[0]
-        if len(hit) >= 3:
-            idx = idx[:int(hit[0])]
-    if len(idx) < 4:
-        return None
-
-    s, c = np.polyfit(te[idx], np.log(a[idx]), 1)
-    resid = np.log(a[idx]) - (s * te[idx] + c)
-    return {"sigma": float(s), "n_samples": int(len(idx)),
-            "t_lo": float(te[idx].min()), "t_hi": float(te[idx].max()),
-            "e_folds": float(np.log(a[idx].max() / a[idx].min())),
-            "rms_resid": float(np.sqrt((resid**2).mean())),
-            "saturated": saturated}
+    te, a = env[:, 0], np.log(env[:, 1])
+    slopes, centres = [], []
+    for i in range(len(te) - win_pts + 1):
+        sl = np.polyfit(te[i:i + win_pts], a[i:i + win_pts], 1)[0]
+        slopes.append(sl)
+        centres.append(te[i:i + win_pts].mean())
+    slopes, centres = np.array(slopes), np.array(centres)
+    k = int(slopes.argmax())
+    near = slopes[max(k - 2, 0):k + 3]
+    return {"sigma": float(slopes[k]), "t_peak": float(centres[k]),
+            "n_windows": len(slopes),
+            "plateau": float(near.min() / slopes[k]) if slopes[k] > 0 else float("nan"),
+            "amp_at_peak": float(np.exp(np.interp(centres[k], te, a))),
+            "e_folds": float(a.max() - a.min())}
 
 
-def critical_reynolds(re, sigma):
-    """Least-squares sigma = k (Re - Re_c); returns (Re_c, k, r2)."""
+def critical_reynolds(re, sigma, re_max=None):
+    """Least-squares sigma = k (Re - Re_c); returns (Re_c, k, r2).
+
+    `re_max` DROPS points above a cutoff, and it matters more than it looks. The relation is a
+    NEAR-ONSET expansion: sigma is linear in Re only while Re - Re_c is small. Measured here,
+    sigma = 0.0342, 0.0561, 0.0902 at Re = 55, 65, 100 -- the 55/65 pair alone gives Re_c = 39,
+    and adding Re = 100 flattens the slope and drags it to 22 with an R^2 of 0.97 that looks
+    perfectly healthy. A good fit to the wrong model is the failure mode to watch for; use the
+    lowest Reynolds numbers available and check the residual of the ones left out.
+    """
     re, sigma = np.asarray(re, float), np.asarray(sigma, float)
+    if re_max is not None:
+        m = re <= re_max
+        re, sigma = re[m], sigma[m]
     k, b = np.polyfit(re, sigma, 1)
     pred = k * re + b
     ss = 1.0 - ((sigma - pred)**2).sum() / max(((sigma - sigma.mean())**2).sum(), 1e-300)
@@ -148,9 +141,8 @@ def main(pattern="results/sqcyl_onset_Re*_history.npy", t_kick=None):
         if g is None:
             print(f"  {Re:>6.0f}   too few windows to fit")
             continue
-        window = f"{g['t_lo']:.0f}-{g['t_hi']:.0f}"
-        print(f"  {Re:>6.0f}{g['sigma']:>10.5f}{g['e_folds']:>9.2f}{g['n_samples']:>9d}"
-              f"{g['rms_resid']:>10.4f}{window:>16}{str(g['saturated']):>11}")
+        print(f"  {Re:>6.0f}{g['sigma']:>10.5f}{g['e_folds']:>9.2f}{g['n_windows']:>9d}"
+              f"{g['plateau']:>10.3f}{g['t_peak']:>16.0f}{g['amp_at_peak']:>11.4f}")
         re_list.append(Re); sig_list.append(g["sigma"])
     if len(re_list) >= 2:
         Re_c, k, r2 = critical_reynolds(re_list, sig_list)
