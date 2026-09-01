@@ -72,6 +72,53 @@ confirmation if both are downstream of the same unknown cause.
 
 ---
 
+## 3a. The second silent failure — the kick excited a stable mode
+
+Found on 2026-09-01, rebuilding the grid. It is the same shape of failure as the tolerance one
+and cost about as much, so it is recorded at the same length.
+
+**Symptom.** On the rebuilt grid the case would not shed, no matter how it was perturbed.
+`sqcyl_spark2` ran 45,000 steps to t = 450 and was bitwise steady from t ≈ 105 (amp/500 ~ 5e-8);
+`sqcyl_spark3` restarted that checkpoint, kicked it again, and decayed to 1e-16 a second time.
+The reading at the time was "the rebuilt grid has lost the instability" — the grid had just
+changed, so the grid was the suspect.
+
+**Cause.** The perturbation was built from `np.sign(y)`, i.e. transverse velocity **odd in y**.
+That is the **varicose** mode: the wake breathing symmetrically about the centreline, and it is
+**stable** at Re = 100. The von Karman mode is **sinuous** — the wake meanders bodily sideways,
+so v has the SAME sign right across it, **even in y**. Every kick to that point had been
+projecting onto the wrong mode, and a stable mode decays on every grid at every resolution. The
+decay was evidence about the perturbation, not about the grid.
+
+A second error compounded it: the kick was applied at t = 0, in undisturbed parallel flow with
+no wake to perturb. It convects downstream and is gone before the recirculation region forms.
+The fix is two-stage — settle to the base flow, then perturb THAT (`--settle`, then `--kick`).
+
+**Confirmation.** `sqcyl_v3`, 82,096 cells, settled 8,000 steps to the base flow and given a 2%
+sinuous kick, grew as a clean exponential at **sigma = 0.0697 per time unit** and saturated:
+
+| window (t) | peak-to-peak | ratio |
+|---|---|---|
+| 130-140 | 0.5556 | 1.264 |
+| 140-150 | 0.5948 | 1.071 |
+| 150-160 | 0.6203 | 1.043 |
+| 160-170 | 0.6263 | 1.010 |
+| 170-180 | 0.6301 | 1.006 |
+
+**0.6301 against 0.62 on the original grid** — the same limit cycle. So the grid rebuild
+(spacing ratio 1.15 -> 1.10) cost nothing, and the instability had never been lost.
+
+**Why it is worth a section.** Both of this case's expensive failures return a *plausible*
+answer with no error anywhere: the tolerance one converges to the unstable steady solution, and
+this one decays back to it. In both, "it converged to steady" is the output, and in neither is
+steady the right answer. A stability calculation is not finished when the residual is small; it
+is finished when the perturbation that was applied is the one the physics amplifies.
+
+`figures/sqcyl_spark2_streamlines.png` is what the wrong answer looks like — symmetric twin
+vortices, L_r/D = 7.23, entirely clean.
+
+---
+
 ## 4. Reproducing it
 
 Grid — `square_cylinder_grid.py`, 8-block H-grid, 63,280 cells at `nz=4`, 5% blockage,
