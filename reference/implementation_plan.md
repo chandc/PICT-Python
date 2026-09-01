@@ -261,6 +261,37 @@ before they are coded.
 `nu_t` is a NODE field. The operator needs it on FACES, and that interpolation is the part a
 constant-`nu_t` test cannot see.
 
+#### van Driest is a known answer, and it is not the right near-wall scaling
+
+Verified here by integrating `nu_t+ = (kappa y+ D)^2 |dU+/dy+|`, `D = 1 - exp(-y+/A+)`, against
+the total-stress balance `(1 + nu_t+) dU+/dy+ = 1 - y+/Re_tau`, with kappa = 0.41, A+ = 26,
+Re_tau = 5200:
+
+| y+ | U+ | nu_t+ | kappa*y+ | ratio |
+|---|---|---|---|---|
+| 1 | 0.999 | 0.000 | 0.410 | 0.001 |
+| 30 | 13.170 | 7.911 | 12.300 | 0.643 |
+| 100 | 16.493 | 39.238 | 40.998 | 0.957 |
+| 300 | 19.117 | 118.913 | 123.015 | 0.967 |
+
+It reproduces `U+ = y+` in the sublayer, recovers the log law with an implied **B = 5.24**
+against the accepted 5.0-5.2, and `nu_t+/(kappa y+) -> 0.96` through the log layer. Form and
+constants both check out.
+
+**But the near-wall power is measured at `nu_t+ ~ (y+)^3.993` -- y^4, not the exact y^3.** It
+follows from the algebra rather than from the constants: the damping makes `l_m ~ y^2`, so
+`nu_t = l_m^2 dU/dy ~ y^4`. The exact asymptote is y^3, because `-<u'v'> ~ y^3` while
+`dU/dy -> 1`.
+
+So the two wall-relevant rows of the model table are NOT two routes to the same place. Damping
+Smagorinsky fixes the mean profile -- the log-law constant comes out right because the sublayer
+contributes almost nothing to `nu_t` either way -- while still getting the scaling of `nu_t`
+itself wrong by one power. WALE's y^3 is the reason it is the recommended default, and van
+Driest is what it improves on rather than an equally good option.
+
+That distinction is invisible if `nu_t` is an intermediate and decisive if `nu_t` is the
+quantity being LEARNED, which is exactly Stage 5c's case.
+
 #### Test cases
 
 Full table with bars and failure diagnoses in
