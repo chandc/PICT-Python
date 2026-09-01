@@ -726,6 +726,8 @@ class Domain:
         Global momentum operator  A = J/dt (or 3J/2dt) + J*convection + nu*diffusion, assembled
         across blocks as one matrix.
 
+        `nu` is a scalar OR a per-block array of nu_eff = nu + nu_t(x); see `nu_of` below.
+
         CENTRAL convection only. That is a deliberate scope choice, not an oversight: central is
         the scheme required for anything where dissipation matters -- test_energy_conservation.py
         shows its convective operator conserves kinetic energy to round-off while SOU removes
@@ -766,11 +768,20 @@ class Domain:
             core = tuple(slice(lo[a], lo[a] + self.blocks[b].shape[a]) for a in range(3))
             return JU[axis][core]
 
+        # nu MAY BE A FIELD. A scalar is the molecular viscosity; a per-block array is
+        # nu_eff = nu + nu_t(x), which is what an eddy-viscosity closure needs
+        # (reference/nn_piso_plan.md Stage 5c). Folding it in HERE rather than at the face is
+        # what keeps the operator symmetric: every face takes 0.5*(Jg_lo + Jg_hi), so a
+        # per-cell nu is arithmetically face-averaged along with J and the metric, and the two
+        # rows a face writes stay equal. Interpolating nu separately, or using one cell's
+        # value for the face, breaks that.
+        nu_of = (lambda b: nu[b]) if isinstance(nu, (dict, list, tuple)) else (lambda b: nu)
+
         def Jg_of(b, axis):
             m = metrics_list[b]
             key = ("xi", "eta", "zeta")[axis]
             g = m[f"{key}_x"] ** 2 + m[f"{key}_y"] ** 2 + m[f"{key}_z"] ** 2
-            return nu * Js[b] * g
+            return nu_of(b) * Js[b] * g
 
         def add_face(gP, gN, cf_diff, aP, aN, hh):
             """One face: symmetric diffusion, antisymmetric central convection."""
