@@ -258,6 +258,56 @@ positive definiteness and the solve with it.
 | 5c.5 | positivity is enforced | adversarial input driving $\nu_t$ negative | $\min(\nu+\nu_t) > 0$ always; solver never raises | the output map is not guarding the operator |
 | 5c.6 | Smagorinsky recovery | $\nu_t = (C_s\Delta)^2\lvert\bar S\rvert$, $C_s$ the only parameter, target from $C_s=0.16$ | descent from $C_s=0$ recovers 0.16 to < 1e-3 | the sign or scale of the viscosity path is wrong — the Stage 1 test, moved to the other hook |
 
+### How to test a variable $\nu$ — three layers, and the first one is not about gradients
+
+**5c.1 is necessary and blind.** Setting $\nu_t \equiv c$ and checking the answer matches
+`nu + c` cannot detect a wrong face interpolation, because interpolating a constant is exact
+however you do it. It catches assembly and indexing, nothing else. The interpolation is the most
+likely thing to be wrong and needs a $\nu$ that actually varies.
+
+**Layer 1 — the operator, before any network exists.**
+
+| # | Test | Why it catches what 5c.1 cannot |
+|---|---|---|
+| 5c.7 | **MMS with a varying $\nu$**: choose $u(\mathbf x)$ and $\nu(\mathbf x)$ analytically, form $f = -\nabla\!\cdot(\nu\nabla u)$ by hand, refine the grid | second-order convergence of the discrete operator against $f$. A face interpolation that is first-order, or that uses the cell value instead of the face value, shows up as a rate near 1. `accuracy_verification.md` already reports 2.0-2.5 for constant $\nu$ over $\nu \in [0.01, 10]$, so the harness and the bar both exist |
+| 5c.8 | **steep $\nu$ jump**, 10x over three cells, against the 1D two-layer analytic solution | arithmetic vs harmonic face averaging. Flux continuity across a jump wants the harmonic mean; arithmetic is second-order for smooth $\nu$ and wrong at a jump. An SGS field near a wall is closer to a jump than to smooth |
+| 5c.9 | **row sums are zero** for any $\nu(\mathbf x) > 0$ | a constant field must lie in the operator's null space, which is momentum conservation. Exact, cheap, and independent of any solution |
+| 5c.10 | **negative semi-definite**: $u^{\mathsf T} A_{\rm diff} u \le 0$ on 100 random fields | diffusion must remove energy at every wavenumber. If a face average can go negative — which it can if $\nu_t$ is unclipped — this is where it surfaces, not in a diverging run three hours later |
+
+**Layer 2 — does it do the right physics?**
+
+| # | Test | Bar |
+|---|---|---|
+| 5c.11 | **two-layer Couette**: $\nu_1$ for $y<0$, $\nu_2$ above, steady | velocity slope ratio equals $\nu_2/\nu_1$ to < 1e-10; the exact piecewise-linear solution |
+| 5c.12 | **variable-$\nu$ Poiseuille**: $\nu(y)$ smooth, integrate the analytic profile twice | matches to discretisation order |
+| 5c.13 | **Smagorinsky on TGV**, reusing the Stage 3.5 energy budget | $\nu_t \ge 0$ everywhere; $\nu_t \to 0$ where $\lvert\bar S\rvert \to 0$; measured $-\mathrm{d}E/\mathrm{d}t$ equals $2\langle(\nu+\nu_t) Z\rangle$ within the 5% the budget already achieves |
+
+5c.13 is the one that says the closure is wired in correctly rather than merely differentiable:
+the energy budget already built for Stage 3.5 becomes the instrument, and an eddy viscosity that
+does not increase dissipation is not an eddy viscosity.
+
+**Layer 3 — the gradient.** 5c.3 to 5c.6 above.
+
+### FOUR PLACES ASSUME A SCALAR $\nu$, and only one is the matrix
+
+Found by reading `piso_multiblock.py` rather than by assuming:
+
+| line | what | with $\nu(\mathbf x)$ |
+|---|---|---|
+| 238 | `build_momentum_matrix(..., self.nu, ...)` | the obvious one |
+| 278 | `rhs = base + Jg * (self.nu * cd)` — deferred-correction cross term | must use the same face-interpolated field, or the correction and the matrix disagree and the deferred correction stops contracting |
+| 439 | `self.p = ... - self.nu * div_star[b]` — the rotational scheme's pressure | becomes $\nu(\mathbf x)\,\nabla\!\cdot\mathbf u^*$, a field multiply |
+| 520 | `pv = self.nu * (un - un_i)/dn - ...` — Dong outflow pressure | needs $\nu_{\rm eff}$ AT the boundary, where an SGS model is least reliable |
+
+Lines 278, 439 and 520 are the ones that would be silently wrong: each still runs, still
+converges, and quietly mixes a molecular $\nu$ into a field that is no longer molecular. A
+grep for `self.nu` is part of this stage's build, not an afterthought.
+
+**One coupling to watch.** $\Gamma = J/A_{\rm diag}$ and $A_{\rm diag}$ now varies with
+$\nu_t$, so the Rhie-Chow damping and the pressure operator's weighting become spatially varying
+too. Nothing is wrong with that, but `pressure_checkerboard.md`'s measurements were taken with a
+constant $\nu$, and the checkerboard amplitude should be re-measured once $\nu_t$ is live.
+
 5c.4 is the one worth writing first. It is a test that a gradient is **zero**, which is unusual,
 and it exists because that zero is the silent failure this hook invites: train with the default
 `exact_A=False` and the model simply never learns, with no error anywhere.
