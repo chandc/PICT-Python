@@ -1,0 +1,8 @@
+  89,088 cells  Re=100  dt=0.01  tol=1e-06  backend=scipy  nz=4
+  probe at (2.070, 0.492)
+  reference: St = 0.164, C_D = 1.33
+
+  phase     step       t     v_probe    amp/500   s/step
+  settle     500     5.0   -0.247871  2.236e-01    2.003
+  settle    1000    10.0   -0.120827  1.368e-01    2.003
+  settle    1500    15.0    0.003579  1.240e-01    1.996
