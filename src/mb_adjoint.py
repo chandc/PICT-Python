@@ -223,6 +223,24 @@ def cell_gradient_matrix(d, axis):
     return (P @ face_difference_matrix(d, axis)).tocsr()
 
 
+def to_torch_sparse(mat):
+    """scipy sparse -> a coalesced torch sparse COO tensor.
+
+    `torch.sparse.mm(S, x)` is differentiable in the DENSE argument, which is all the chain
+    needs: the operators are geometry and stay constant, only the fields carry gradients. The
+    backward is S^T g, applied by torch, so nothing here hand-writes a transpose.
+    """
+    coo = mat.tocoo()
+    idx = torch.as_tensor(np.vstack([coo.row, coo.col]), dtype=torch.int64)
+    val = torch.as_tensor(coo.data, dtype=torch.float64)
+    return torch.sparse_coo_tensor(idx, val, coo.shape).coalesce()
+
+
+def spmv(S, x):
+    """S @ x for a sparse S and a 1-D dense x, differentiable in x."""
+    return torch.sparse.mm(S, x.reshape(-1, 1)).reshape(-1)
+
+
 class MultiBlockChain(MultiBlockMiniPISO):
     """A MULTI-STEP differentiable chain over the same domain, carrying state between steps.
 
@@ -276,7 +294,7 @@ class MultiBlockChain(MultiBlockMiniPISO):
         """
         (Aidx, Ashape), Aval = self.A_pat
         (Midx, Mshape), Mval = self.M_pat
-        Gt = torch.as_tensor(self.G.toarray()) if self.N <= 4096 else None
+        Gt = to_torch_sparse(self.G)
         u = torch.as_tensor(self.u_init)
         u_prev = torch.as_tensor(self.u_init)
         Jt = torch.as_tensor(self.J_flat)
@@ -290,8 +308,8 @@ class MultiBlockChain(MultiBlockMiniPISO):
             # and made the chain grow 1.15x per step -- an instability of the surrogate, not of
             # the adjoint. G_x u* is the divergence of a one-component velocity, and it puts
             # the RHS in the range of M by construction.
-            phi = LinearSolve.apply(Mval, Gt @ u_star, (Midx, Mshape), True, True)
-            u_prev, u = u, u_star - self.dt * (Gt @ phi)
+            phi = LinearSolve.apply(Mval, spmv(Gt, u_star), (Midx, Mshape), True, True)
+            u_prev, u = u, u_star - self.dt * spmv(Gt, phi)
             if not final_only:
                 L = L + (u ** 2).sum()
         return (u ** 2).sum() if final_only else L
@@ -451,13 +469,9 @@ class MultiBlockChainRC(MultiBlockChain):
         """`drop_pflux` detaches the carried pressure in the RC term -- the mangle for 7.3."""
         (Aidx, Ashape), Aval = self.A_pat
         (Midx, Mshape), Mval = self.M_pat
-        # DENSE, AND ONLY BECAUSE THE GATE IS 1,728 CELLS. Three N x N dense matrices are 24 MB
-        # each here and 58 GB at the square cylinder's 82,096. Stage 9 replaces these with
-        # torch.sparse matmuls; the assembly above is already sparse, so it is the three
-        # `.toarray()` calls on this line and nothing else.
-        Gt = torch.as_tensor(self.G.toarray())
-        Du = torch.as_tensor(self.D_flux[:, :self.N].toarray())
-        RCt = torch.as_tensor(self.RC.toarray())
+        Gt = to_torch_sparse(self.G)
+        Du = to_torch_sparse(self.D_flux[:, :self.N])
+        RCt = to_torch_sparse(self.RC)
         u = torch.as_tensor(self.u_init)
         u_prev = torch.as_tensor(self.u_init)
         p_flux = torch.zeros(self.N, dtype=torch.float64)
@@ -468,9 +482,9 @@ class MultiBlockChainRC(MultiBlockChain):
             rhs = Jt * (2.0 * u - 0.5 * hist) / self.dt + S
             u_star = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
             pf = p_flux.detach() if drop_pflux else p_flux
-            divF = Du @ u_star - RCt @ pf
+            divF = spmv(Du, u_star) - spmv(RCt, pf)
             phi = LinearSolve.apply(Mval, divF, (Midx, Mshape), True, True)
-            u_prev, u = u, u_star - self.dt * (Gt @ phi)
+            u_prev, u = u, u_star - self.dt * spmv(Gt, phi)
             p_flux = p_flux + phi
             if not final_only:
                 L = L + (u ** 2).sum()
