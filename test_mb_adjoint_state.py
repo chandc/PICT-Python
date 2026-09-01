@@ -13,13 +13,17 @@ WHAT IS COVERED HERE AND WHAT IS NOT, stated plainly rather than left to be disc
   7.4  dropping that history from the BACKWARD ONLY must change the gradient.
   7.5  the adjoint norm stays bounded over 20 steps.
 
-  7.2  F_prev (the Rhie-Chow persistent flux)  -- NOT COVERED
-  7.3  p_flux (the projection pressure)        -- NOT COVERED
+  7.6  the assembled flux-divergence operator matches `face_fluxes` exactly.
+  7.7  and the Rhie-Chow pressure flux, with a spatially varying Gamma.
+  7.3  p_flux carried across steps and consumed by that flux -- FD, and a mangle test.
 
-7.2 and 7.3 need `face_fluxes` and `pressure_face_fluxes` in torch, which is the next
-increment. Recording them as absent is the point: a Stage 7 that claimed to be finished while
-two of its five cases were unimplemented would be exactly the silent failure this file is
-written to catch.
+  7.2  F_prev -- RE-SCOPED, not skipped. `self.F_prev` is read in exactly one place in
+       `piso_multiblock.py`, guarded by `if self.ddt_corr`, and ddt_corr is off in every
+       production case: it is what made the square cylinder diverge at step 455. So with the
+       settings the port actually runs, F_prev feeds a diagnostic and the checkpoint and
+       nothing in the solution. There is no gradient path through it, and the test as
+       originally specified would FAIL for a CORRECT implementation. The live within-step
+       state is the corrector's reuse of Fb; see the plan.
 """
 import numpy as np
 import torch
@@ -150,15 +154,49 @@ check(worst_rc < 1e-13,
       f"stencil across a seam, assembled as a face AVERAGE of a cell GRADIENT, two width-1 "
       f"operators each of which already resolves its own seam")
 
+# ---------------------------------------------------------------- 7.3 p_flux carried
+from src.mb_adjoint import MultiBlockChainRC
+
+rc_chain = MultiBlockChainRC(d2, NU, DT)
+rng3 = np.random.default_rng(21)
+S3 = [rng3.standard_normal(rc_chain.N) * 0.05 for _ in range(3)]
+
+src3 = [torch.tensor(a, requires_grad=True) for a in S3]
+rc_chain.rollout(src3).backward()
+g3 = [s.grad.detach().numpy().copy() for s in src3]
+scale3 = max(np.abs(x).max() for x in g3)
+
+worst3 = 0.0
+for k_step in (0, 2):
+    gg = g3[k_step]
+    for k in np.argsort(-np.abs(gg))[:3]:
+        pert = [a.copy() for a in S3]
+        pert[k_step][k] += eps
+        Lp = float(rc_chain.rollout([torch.tensor(a) for a in pert]))
+        pert[k_step][k] -= 2 * eps
+        Lm = float(rc_chain.rollout([torch.tensor(a) for a in pert]))
+        worst3 = max(worst3, abs((Lp - Lm) / (2 * eps) - gg[k]) / scale3)
+check(worst3 < 1e-6,
+      f"7.3  FD vs adjoint through the chain WITH p_flux carried and consumed by the "
+      f"Rhie-Chow flux: worst {worst3:.2e} of max|g| = {scale3:.3e}")
+
+src3d = [torch.tensor(a, requires_grad=True) for a in S3]
+rc_chain.rollout(src3d, drop_pflux=True).backward()
+g3d = [s.grad.detach().numpy().copy() for s in src3d]
+rel3 = max(np.abs(a - b).max() for a, b in zip(g3, g3d)) / scale3
+check(rel3 > 1e-12,
+      f"     dropping p_flux from the BACKWARD is DETECTED: gradients differ by {rel3:.2e} of "
+      f"max|g|. Small because the Rhie-Chow term is a deliberate O(h^3) dissipation -- but it "
+      f"is four orders above the 1e-10 gradient noise floor, and a backward that ignored the "
+      f"carried pressure would differ by exactly 0")
+
 # ---------------------------------------------------------------- 7.2 / 7.3 not covered
-print("\n  STILL TO DO:")
-print("    7.3  p_flux mangle -- the operators it needs now exist (7.6, 7.7); what remains is")
-print("         wiring them into the chain so p_flux is carried and consumed as the solver does")
+print("\n  NOTE:")
 print("    7.2  re-scoped: self.F_prev is read ONLY under `if self.ddt_corr`, which is off in")
 print("         every production case, so it carries no gradient there. The live within-step")
 print("         state is the corrector's reuse of Fb. See the plan.")
 
 print("=" * 76)
-print(f"  {PASS}/{PASS + FAIL} implemented checks passed  (7.2, 7.3 not implemented)")
+print(f"  {PASS}/{PASS + FAIL} checks passed  (7.2 re-scoped: see the header)")
 print("=" * 76)
 raise SystemExit(1 if FAIL else 0)

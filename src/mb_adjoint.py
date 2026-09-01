@@ -409,3 +409,69 @@ def verify_rc_divergence(d, Js, ms, coefs, rng=None):
         Js[b]) for b in range(len(d.blocks))})
     got = rc_flux_divergence_matrix(d, Js, ms, coefs) @ _flatten(d, ps)
     return float(np.abs(got - ref).max()), float(np.abs(ref).max())
+
+
+class MultiBlockChainRC(MultiBlockChain):
+    """The chain with the RHIE-CHOW persistent pressure, `p_flux`, carried across steps.
+
+    This is the structure `piso_multiblock.step` actually runs, in divergence form:
+
+        u*        = A^{-1} [ J (2 u^n - 0.5 u^{n-1}) / dt + S ]
+        div F     = D_flux(u*)  -  RC(p_flux)        <- p_flux enters HERE, from the last step
+        phi       = M^{-1} div F
+        u^{n+1}   = u* - dt G phi
+        p_flux    = p_flux + phi                     <- and is carried out to the next
+
+    `p_flux` is the genuine cross-step state of the production configuration: it is read at
+    `piso_multiblock.py:338` whenever `persistent_flux=True`, which is every production case.
+    `self.F_prev` is NOT -- it is read only under `if self.ddt_corr`, which is off everywhere,
+    so it carries no gradient there at all. That is why 7.3 is the live mangle test and 7.2
+    had to be re-scoped.
+
+    Coefficients are frozen, so D_flux and RC are assembled once. Both were verified against
+    the real `face_fluxes` and `pressure_face_fluxes` to 4e-16 (7.6, 7.7).
+    """
+
+    def __init__(self, domain, nu=0.05, dt=0.05):
+        super().__init__(domain, nu, dt)
+        A = sparse.csr_matrix(domain.build_momentum_matrix(
+            self.Js, self.ms, self.u0, self.u0, self.u0, nu, dt, bdf2=True))
+        rowsum = np.asarray(A.sum(axis=1)).ravel()
+        Jf = self.J_flat
+        gamma_flat = Jf / rowsum
+        gam = {}
+        for b in range(len(domain.blocks)):
+            gam[b] = gamma_flat[domain.global_ids(b).ravel()].reshape(domain.blocks[b].shape)
+        self.gamma = gam
+        self.D_flux = flux_divergence_matrix(domain, self.Js, self.ms)
+        self.RC = rc_flux_divergence_matrix(domain, self.Js, self.ms, gam)
+        self.N3 = 3 * self.N
+
+    def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False):
+        """`drop_pflux` detaches the carried pressure in the RC term -- the mangle for 7.3."""
+        (Aidx, Ashape), Aval = self.A_pat
+        (Midx, Mshape), Mval = self.M_pat
+        # DENSE, AND ONLY BECAUSE THE GATE IS 1,728 CELLS. Three N x N dense matrices are 24 MB
+        # each here and 58 GB at the square cylinder's 82,096. Stage 9 replaces these with
+        # torch.sparse matmuls; the assembly above is already sparse, so it is the three
+        # `.toarray()` calls on this line and nothing else.
+        Gt = torch.as_tensor(self.G.toarray())
+        Du = torch.as_tensor(self.D_flux[:, :self.N].toarray())
+        RCt = torch.as_tensor(self.RC.toarray())
+        u = torch.as_tensor(self.u_init)
+        u_prev = torch.as_tensor(self.u_init)
+        p_flux = torch.zeros(self.N, dtype=torch.float64)
+        Jt = torch.as_tensor(self.J_flat)
+        L = 0.0
+        for S in sources:
+            hist = u_prev.detach() if drop_history else u_prev
+            rhs = Jt * (2.0 * u - 0.5 * hist) / self.dt + S
+            u_star = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
+            pf = p_flux.detach() if drop_pflux else p_flux
+            divF = Du @ u_star - RCt @ pf
+            phi = LinearSolve.apply(Mval, divF, (Midx, Mshape), True, True)
+            u_prev, u = u, u_star - self.dt * (Gt @ phi)
+            p_flux = p_flux + phi
+            if not final_only:
+                L = L + (u ** 2).sum()
+        return (u ** 2).sum() if final_only else L
