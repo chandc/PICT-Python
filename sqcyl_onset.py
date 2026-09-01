@@ -58,29 +58,29 @@ def envelope(t, v, win=None):
     return np.column_stack([0.5 * (tv[1:] + tv[:-1]), 0.5 * np.abs(np.diff(vv))])
 
 
-def growth_rate(t, v, t_kick=None, frac_hi=0.3, skip_t=2.0, win=WIN):
+def growth_rate(t, v, t_kick=None, frac_hi=0.3, win=WIN):
     """Fit sigma over the exponential range: after the kick transient, before saturation.
 
-    THE RANGE SELECTION IS THE WHOLE PROBLEM. A fit over the full post-kick record returns
-    almost nothing -- on sqcyl_v3 it gives 0.0019 against a true 0.07 -- because 250 of the 300
-    time units are a saturated limit cycle at constant amplitude, and least squares happily
-    averages a flat line into the slope. The cut is:
+    THE RANGE SELECTION IS THE WHOLE PROBLEM, and it went wrong twice.
 
-      * drop the first `skip_t` time units: the kick is not the eigenmode, and its projection
-        onto the stable modes decays first;
-      * stop where the envelope first reaches `frac_hi` of its maximum, which is where the
-        nonlinearity starts bending the curve down.
+    Fitting the entire post-kick record of a SATURATED run returns almost nothing -- on
+    sqcyl_v3, 0.0019 against a true 0.09 -- because 250 of its 300 time units are a limit cycle
+    at constant amplitude and least squares averages the flat part into the slope.
 
-    `frac_hi` = 0.3 is a compromise and it biases sigma LOW: the Landau correction to the growth
-    rate goes as the square of the amplitude ratio, so including data up to 30% of saturation
-    costs of order 10%. Tightening it on a run that saturates quickly leaves too few extrema to
-    fit. The sweep runs are deliberately stopped BEFORE saturation, where this cut does nothing
-    and the bias does not arise; it only matters when re-reading a long saturated record such as
-    sqcyl_v3.
+    Cutting at a fixed fraction of the maximum envelope fixes that and breaks the opposite case.
+    A run deliberately stopped BEFORE saturation is still growing at its last sample, so its
+    maximum IS its final value, and the cut throws away the best-conditioned 60% of the data
+    while keeping the worst. On Re = 55 that returned 0.0154 over 0.59 e-folds where the clean
+    range gives 0.033 over 1.2.
 
-    If the run never saturated the second cut does nothing and the whole record after the
-    transient is used, which is the intended behaviour for a case run only long enough to
-    measure sigma.
+    So saturation is DETECTED rather than assumed: compare the log-slope of the last third
+    against the first third of the usable record. A limit cycle flattens; a growing mode does
+    not. Only a run that actually flattened gets the upper cut.
+
+    The transient is cut at the envelope's MINIMUM rather than by a fixed time. The kick is not
+    the eigenmode, so its stable component decays first and the envelope dips before it climbs
+    -- on Re = 55 the amplitude fell from 0.0090 to 0.0082 over the first 17 time units, and a
+    fit including that stretch is measuring the decay of the wrong mode.
     """
     if t_kick is not None:
         m = t >= t_kick
@@ -89,18 +89,34 @@ def growth_rate(t, v, t_kick=None, frac_hi=0.3, skip_t=2.0, win=WIN):
     if len(env) < 8:
         return None
     te, a = env[:, 0], env[:, 1]
-    hit = np.where(a >= frac_hi * a.max())[0]
-    i_sat = int(hit[0]) if len(hit) else len(a)
-    sel = np.where((te >= te[0] + skip_t) & (np.arange(len(a)) < i_sat))[0]
-    if len(sel) < 4:
+
+    start = int(np.argmin(a[:max(len(a) // 2, 1)]))      # bottom of the kick transient
+    if len(a) - start < 6:
+        start = 0
+    idx = np.arange(start, len(a))
+    if len(idx) < 6:
         return None
-    s, c = np.polyfit(te[sel], np.log(a[sel]), 1)
-    resid = np.log(a[sel]) - (s * te[sel] + c)
-    return {"sigma": float(s), "n_samples": int(len(sel)),
-            "t_lo": float(te[sel].min()), "t_hi": float(te[sel].max()),
-            "e_folds": float(np.log(a[sel].max() / a[sel].min())),
+
+    # saturated? compare log-slope of the last third against the first third
+    third = max(len(idx) // 3, 2)
+    lo_s = np.polyfit(te[idx[:third]], np.log(a[idx[:third]]), 1)[0]
+    hi_s = np.polyfit(te[idx[-third:]], np.log(a[idx[-third:]]), 1)[0]
+    saturated = bool(lo_s > 0 and hi_s < 0.3 * lo_s)
+
+    if saturated:
+        hit = np.where(a[idx] >= frac_hi * a.max())[0]
+        if len(hit) >= 3:
+            idx = idx[:int(hit[0])]
+    if len(idx) < 4:
+        return None
+
+    s, c = np.polyfit(te[idx], np.log(a[idx]), 1)
+    resid = np.log(a[idx]) - (s * te[idx] + c)
+    return {"sigma": float(s), "n_samples": int(len(idx)),
+            "t_lo": float(te[idx].min()), "t_hi": float(te[idx].max()),
+            "e_folds": float(np.log(a[idx].max() / a[idx].min())),
             "rms_resid": float(np.sqrt((resid**2).mean())),
-            "saturated": bool(i_sat < len(a) - 2)}
+            "saturated": saturated}
 
 
 def critical_reynolds(re, sigma):

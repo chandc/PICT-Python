@@ -95,7 +95,9 @@ no wake to perturb. It convects downstream and is gone before the recirculation 
 The fix is two-stage — settle to the base flow, then perturb THAT (`--settle`, then `--kick`).
 
 **Confirmation.** `sqcyl_v3`, 82,096 cells, settled 8,000 steps to the base flow and given a 2%
-sinuous kick, grew as a clean exponential at **sigma = 0.0697 per time unit** and saturated:
+sinuous kick, grew as a clean exponential at **sigma = 0.083 per time unit** (measured over 2.1 e-folds,
+t = 83 to 109, by `sqcyl_onset.growth_rate`; a first coarse estimate over 10-unit windows
+gave 0.070 because it included windows that were already saturating) and saturated:
 
 | window (t) | peak-to-peak | ratio |
 |---|---|---|
