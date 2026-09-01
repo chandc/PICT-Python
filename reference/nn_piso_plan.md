@@ -241,11 +241,21 @@ and $\partial L/\partial\nu_t$ is **identically zero**: the network receives no 
 the loss does not move, and nothing errors. `exact_A=True` stops being a recommendation and
 becomes a precondition.
 
-**Build.** (a) accept an array $\nu$ in the momentum assembly, face-interpolated the way
-`build_diffusion_matrix` already interpolates `coefs`, so the operator stays symmetric;
-(b) route $\partial L/\partial A$ through $\partial A/\partial\nu_t$ in `MomentumAssembler`;
-(c) a positive output map, softplus or clip, since $\nu + \nu_t \le 0$ destroys the operator's
-positive definiteness and the solve with it.
+**Build.** Costed in [`implementation_plan.md`](implementation_plan.md) §5.2, which also carries
+the model formulas and the filter width. (a) accept an array $\nu$ in the momentum assembly,
+face-interpolated the way `build_diffusion_matrix` already interpolates `coefs`, so the operator
+stays symmetric; (b) route $\partial L/\partial A$ through $\partial A/\partial\nu_t$ in
+`MomentumAssembler`; (c) a positive output map — softplus, not a clip, so positivity holds inside
+the graph.
+
+**AND ONE PIECE THAT IS NEW PHYSICS, NOT PLUMBING.** Our operator is
+$\nabla\!\cdot(\nu\nabla\mathbf u)$. The full stress is
+$\nabla\!\cdot\big(\nu_{\rm eff}(\nabla\mathbf u + \nabla\mathbf u^{\mathsf T})\big)$. For
+**constant** $\nu$ the transpose part vanishes by continuity, which is why nothing in the port
+has ever needed it. With a varying $\nu_t$ it leaves $\nabla\nu_t\cdot(\nabla\mathbf u)^{\mathsf T}$,
+which is not small — it is largest exactly where the model is most active. §5.2 flagged this;
+it is the only part of this stage that is not threading an array through existing machinery, and
+it needs its own MMS (5c.7b below).
 
 **Test cases and success criteria.**
 
@@ -281,7 +291,9 @@ is the cube root of the cell volume:
 $$\Delta = \left(J\,h_\xi h_\eta h_\zeta\right)^{1/3}$$
 
 since $J$ is physical volume per unit computational volume and $h$ are the computational
-spacings. This matters more here than in a cube: our wall cell is 0.006 D and the outer cell is
+spacings. `implementation_plan.md` §5.2 previously gave $\Delta = J^{1/3}$, which omits the $h$
+factors and is **44× too large** on a measured square-cylinder cell — and $\nu_t \propto \Delta^2$,
+so ~2000× in the eddy viscosity. Corrected there. This matters more here than in a cube: our wall cell is 0.006 D and the outer cell is
 2.18 D, a factor of 360, so a constant $\Delta$ would be wrong by that factor somewhere.
 
 **The candidates, and why the obvious one is the wrong default.**
@@ -318,6 +330,7 @@ likely thing to be wrong and needs a $\nu$ that actually varies.
 
 | # | Test | Why it catches what 5c.1 cannot |
 |---|---|---|
+| 5c.7b | **MMS on the FULL stress** $\nabla\!\cdot(\nu(\nabla u + \nabla u^{\mathsf T}))$, solenoidal $u$, varying $\nu$ | second order; and a control that OMITS the transpose term must show O(1) error, not merely a degraded rate. For constant $\nu$ the term vanishes by continuity, so no existing test can detect its absence |
 | 5c.7 | **MMS with a varying $\nu$**: choose $u(\mathbf x)$ and $\nu(\mathbf x)$ analytically, form $f = -\nabla\!\cdot(\nu\nabla u)$ by hand, refine the grid | second-order convergence of the discrete operator against $f$. A face interpolation that is first-order, or that uses the cell value instead of the face value, shows up as a rate near 1. `accuracy_verification.md` already reports 2.0-2.5 for constant $\nu$ over $\nu \in [0.01, 10]$, so the harness and the bar both exist |
 | 5c.8 | **steep $\nu$ jump**, 10x over three cells, against the 1D two-layer analytic solution | arithmetic vs harmonic face averaging. Flux continuity across a jump wants the harmonic mean; arithmetic is second-order for smooth $\nu$ and wrong at a jump. An SGS field near a wall is closer to a jump than to smooth |
 | 5c.9 | **row sums are zero** for any $\nu(\mathbf x) > 0$ | a constant field must lie in the operator's null space, which is momentum conservation. Exact, cheap, and independent of any solution |

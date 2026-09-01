@@ -218,12 +218,65 @@ What remains splits into plumbing and one real physics gap:
   continuity; with variable `nu_t` it leaves `grad(nu_t) . (grad u)^T`, which is **not**
   negligible and has to be added. This is the only part that is new physics rather than
   threading an array through.
-* **The model itself.** Smagorinsky needs `|S|` from the full velocity-gradient tensor; the
-  curvilinear metrics are all present and `pad_field` handles the seams, so it is assemblable.
-  `Delta = J^(1/3)` is available. The harder pieces are wall damping (needs a wall-distance
-  field, not currently computed) and the dynamic procedure — a test filter crossing seams is
-  feasible with the existing padding, but the homogeneous-direction averaging that makes it
-  stable is case-specific.
+* **The model itself.** See *How `nu_eff` is computed* below. The curvilinear metrics are all
+  present and `pad_field` handles the seams, so the velocity-gradient tensor is assemblable.
+  The harder pieces are wall damping (needs a wall-distance field, not currently computed) and
+  the dynamic procedure — a test filter crossing seams is feasible with the existing padding,
+  but the homogeneous-direction averaging that makes it stable is case-specific.
+
+#### How `nu_eff` is computed
+
+`nu_eff(x) = nu + nu_t(x)`. Every candidate for `nu_t` needs the same two ingredients.
+
+**The velocity-gradient tensor, through the metrics.** `du_i/dx_j` is not a difference in `x`:
+it is the sum over the three computational directions weighted by `xi_x ... zeta_z` from
+`block_metrics_cached`. `src/forces.py` does exactly this at a wall, where the two tangential
+terms drop by no-slip; here all nine survive. Then `S_ij = (du_i/dx_j + du_j/dx_i)/2` and
+`|S| = sqrt(2 S_ij S_ij)`.
+
+**The filter width, and a CORRECTION to what this section used to say.** It read
+`Delta = J^(1/3)`. That is wrong: `J` is physical volume per unit COMPUTATIONAL volume, so the
+cell volume is `J * h_xi * h_eta * h_zeta` and
+
+    Delta = (J * h_xi * h_eta * h_zeta)^(1/3)
+
+Measured on one square-cylinder cell (dx, dy, dz = 0.150, 0.0323, 1.0): the true volume is
+4.8387e-03, `J*h1*h2*h3` reproduces it exactly, and `Delta = 0.169` against `J^(1/3) = 7.42`.
+The old expression is **44x too large** on that cell, and since `nu_t` scales as `Delta^2` it
+would have inflated the eddy viscosity by ~2000x. It matters more here than in a cube: the
+cylinder's wall cell is 0.006 D and its outer cell 2.18 D, a factor of 360, so a constant
+`Delta` is wrong by that factor somewhere in the domain whatever value is chosen.
+
+| model | `nu_t` | note |
+|---|---|---|
+| Smagorinsky | `(Cs*Delta)^2 * |S|`, Cs ~ 0.17 isotropic, ~0.1 in shear | does **not** vanish at a wall — `|S|` is largest there — so it needs van Driest damping, hence a wall distance |
+| Dynamic Smagorinsky | `Cs^2` from the Germano identity | no tuned constant, but `Cs^2` can go negative and needs averaging over a homogeneous direction. **We have one**: the span is periodic in every case |
+| WALE | `(Cw*Delta)^2 * (Sd:Sd)^1.5 / ((S:S)^2.5 + (Sd:Sd)^1.25)`, Cw ~ 0.5 | `nu_t -> 0` like `y^3` at a wall by construction: no damping function, no wall distance. The natural default for wall-bounded cases |
+| Vreman | positive by construction from `alpha_ij = du_j/dx_i` | cheap, no averaging, no wall distance |
+| network | `softplus(NN(invariants of grad u, Delta))` | softplus rather than a clip: positivity must hold inside the autograd graph or the gradient is discontinuous where it matters |
+
+Constants and exact tensor forms are from memory and must be checked against the source papers
+before they are coded.
+
+`nu_t` is a NODE field. The operator needs it on FACES, and that interpolation is the part a
+constant-`nu_t` test cannot see.
+
+#### Test cases
+
+Full table with bars and failure diagnoses in
+[`nn_piso_plan.md`](nn_piso_plan.md) Stage 5c. In order of what they protect:
+
+| # | test | why it exists |
+|---|---|---|
+| 5c.1 | constant `nu_t` reproduces `nu + c` to 1e-14 | assembly and indexing — **blind to the face interpolation**, since interpolating a constant is exact however you do it |
+| 5c.7 | MMS with a VARYING `nu`, refined | the interpolation. A first-order or cell-valued face coefficient shows up as a rate near 1. The harness exists and reports 2.0-2.5 for constant `nu` |
+| 5c.7b | MMS on the FULL stress `div(nu(grad u + grad u^T))` | the transpose term above. Control: omitting it must give O(1) error, not a rate drop |
+| 5c.8 | 10x jump in `nu` over three cells vs the 1D two-layer solution | arithmetic vs harmonic face averaging. An SGS field near a wall is closer to a jump than to smooth |
+| 5c.9 | row sums zero for any `nu(x) > 0` | momentum conservation; exact and solution-independent |
+| 5c.10 | `u^T A_diff u <= 0` on random fields | where an unclipped `nu_t` surfaces, instead of in a diverging run three hours later |
+| 5c.11 | two-layer Couette, slope ratio `= nu_2/nu_1` | the physics, against an exact piecewise-linear solution |
+| 5c.13 | Smagorinsky on TGV via the Stage 3.5 energy budget | an eddy viscosity that does not increase dissipation is not one |
+| 5c.3-6 | gradient: FD agreement, and **zero** under `exact_A=False` | the adjoint. 5c.4 asserts a gradient IS zero, which is the silent failure this hook invites |
 
 **Interaction with Rhie–Chow.** `Gamma = J / rowsum(A)` and A carries the diffusion, so a
 spatially varying `nu_eff` makes `Gamma` vary more sharply than it does today. The Rhie–Chow
