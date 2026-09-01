@@ -196,6 +196,72 @@ that treats blocks independently, provided the loss and the parameters overlap.
 7.2–7.4 are mangle tests in the idiom `test_checkpoint.py` already uses: the criterion is that a
 deliberately broken backward **fails**, because a silent one produces a plausible gradient.
 
+### Unblocking 7.2 and 7.3 — what it actually takes
+
+Sized from the code, not estimated.
+
+**The work is four NumPy functions, ~285 lines, all LINEAR in the field they consume** once the
+coefficients are frozen:
+
+| function | lines | consumes | linear in |
+|---|---|---|---|
+| `face_fluxes` | 63 | `pad_field`, `contravariant_components` | u, v, w |
+| `pressure_face_fluxes` | 111 | `pad_field`, the wide gradient | p |
+| `face_interp` | 30 | `pad_field` | the cell field |
+| `gradient` | 17 | `pad_field` | p |
+
+Linearity is what makes this tractable, and it points at the route.
+
+**Route A — assemble each as a sparse matrix, structurally (RECOMMENDED).** Exactly what
+`face_difference_matrix` already does for the gradient: enumerate the faces once and emit
+(row, col, value). The geometry is static, so each matrix is built once per domain and costs
+nothing per step, and a sparse matmul in torch is differentiable natively — no custom
+`autograd.Function`, no hand-derived transpose. Verification is cheap and strong: apply the
+matrix and the NumPy function to a handful of random fields and require agreement to machine
+precision, the same idiom as 7.0.
+
+**Route B — a custom Function wrapping the NumPy forward with a hand-written transpose.** No
+independent check except finite differences, and a wrong transpose is exactly the failure 6.3's
+control exists to catch. Rejected.
+
+**Route C — extract the matrices by probing with unit vectors.** O(N) applications: fine at 1,728
+cells, hopeless at 82,096. Useful as a cross-check on a small domain, not as the mechanism.
+
+**The one genuinely hard part is already on record.** `implementation_plan.md` §5.1: the
+Rhie-Chow wide gradient pads to **width 2**, so its stencil reaches two cells deep across a
+seam, and "the adjoint scatter at a connection is wider than the existing width-1 machinery
+assumes". `face_pairs` as written enumerates width-1 adjacency only. Width-2 neighbour
+enumeration across connections is the new machinery this needs, and it is the reason
+`pressure_face_fluxes` is the 111-line function rather than the 63-line one.
+
+`face_fluxes` also has two code paths — the `_axis_aligned_seams()` fast path and the padded-
+geometry general one. Assemble the aligned case first; the periodic-box gates never leave it.
+
+### 7.2 IS TESTING STATE THAT IS INERT IN EVERY PRODUCTION CONFIGURATION
+
+Found while sizing the above, and it changes the case rather than the schedule. `self.F_prev` in
+`piso_multiblock.py` is written every step (line 442) and read in exactly one place (line 344):
+
+```python
+if self.ddt_corr and self.F_prev is not None:
+```
+
+`ddt_corr` is **off in every production case** — it is what made the square cylinder diverge at
+step 455 (`rhie_chow_ddt_instability.md`). So with the settings the port actually runs, `F_prev`
+feeds a diagnostic and the checkpoint and *nothing in the solution*. There is no gradient path
+through it, and 7.2 as specified would fail for a CORRECT implementation.
+
+Consequences:
+
+* **7.3 (`p_flux`) is the live one.** It is read at line 338 by the Rhie-Chow flux whenever
+  `persistent_flux=True`, which is every production case. That is the genuine cross-step state
+  and its mangle test is the one worth building.
+* **7.2 should be re-scoped** to the within-step persistence it actually exercises: with
+  `persistent_flux=True` the corrector REUSES `Fb` rather than rebuilding it from the cell
+  velocities (line 331), and dropping that reuse from the backward is detectable.
+* A version of 7.2 as originally written is still meaningful, but only under `ddt_corr=True` —
+  a configuration the port deliberately never uses. Worth one test, labelled as such.
+
 ### Stage 8 — `test_mb_forces_torch.py` (target: < 1 min)
 
 | # | Test case | Config | Success criterion | Failure means |
