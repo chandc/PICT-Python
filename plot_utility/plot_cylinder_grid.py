@@ -17,10 +17,15 @@ from matplotlib.lines import Line2D
 
 from cylinder_grid import cylinder_domain, D, R_CYL, outer_role
 
-NBLK = 8
+NBLK = 16
 ST = 0.164
-COL = ["#e4572e", "#17bebb", "#ffc914", "#5b6c8f",
-       "#76b041", "#a26769", "#8e6bbf", "#d1495b"]
+# One colour per block, and they must stay VISIBLE as well as distinct. With 16 blocks a
+# palette of 8 repeats, and two same-coloured blocks opposite each other read as one block
+# wrapping the ring. tab20 has 20 hues but alternates dark/light, so every other block came out
+# nearly white on these thin mesh lines. Evenly spaced hues at fixed saturation, darkened a
+# little, keep all NBLK equally legible.
+COL = [matplotlib.colors.to_hex(0.85 * np.array(c[:3]))
+       for c in plt.get_cmap("hsv")(np.linspace(0, 1, NBLK, endpoint=False))]
 
 
 def draw(ax, d, step_r=1, step_t=1, lw=0.3):
@@ -38,6 +43,11 @@ d, r, arc = cylinder_domain(nblk=NBLK, nz=4)
 dr = np.diff(r)
 roles = outer_role(d, NBLK)
 lam = D / ST
+# the actual outflow arc, measured off the grid rather than assumed -- it is what the far-field
+# leak was about, so it belongs on the figure
+_th = np.concatenate([np.degrees(np.arctan2(d.blocks[b].y[-1], d.blocks[b].x[-1])).ravel()
+                      for b in roles if roles[b] == "outflow"])
+arc_half = np.abs((_th + 180) % 360 - 180).max()
 
 fig = plt.figure(figsize=(15, 10))
 
@@ -84,15 +94,18 @@ rows = [("topology", f"{NBLK}-block O-grid ring, no reentrant corners (unlike an
                        f"{min(d.block_metrics_cached(b)[0].min() for b in range(NBLK)):.3e}"),
         ("spacing", f"wall {dr[0]:.4f} D, plateau {np.median(dr):.3f} D, outer {dr[-1]:.2f} D; "
                     f"worst adjacent ratio {worst:.3f}  (limit 1.20)"),
-        ("far field", f"inflow on blocks {ins};  Dong outflow on blocks {outs}"),
+        ("far field", f"free stream on {len(ins)} blocks;  Dong outflow on blocks {outs}, "
+                      f"|theta| <= {arc_half:.1f} deg"),
         ("blockage", f"D / 2R_out = {100*D/(2*r[-1]):.1f}%")]
 for i, (a_, b_) in enumerate(rows):
     ax.text(0.01, 0.92 - i*0.16, a_, fontsize=10, weight="bold", va="top")
     ax.text(0.15, 0.92 - i*0.16, b_, fontsize=10, va="top", family="monospace")
 
-fig.legend(handles=[Line2D([], [], color=COL[b], lw=3, label=f"blk {b}") for b in range(NBLK)],
-           fontsize=8.5, ncol=NBLK, loc="lower center", bbox_to_anchor=(0.5, 0.0), frameon=False)
-fig.suptitle("Circular cylinder — O-grid, Re = 100 case", fontsize=13)
+fig.legend(handles=[Line2D([], [], color=COL[b % len(COL)], lw=3, label=f"blk {b}")
+                    for b in range(NBLK)],
+           fontsize=8.5, ncol=min(NBLK, 8), loc="lower center", bbox_to_anchor=(0.5, -0.035),
+           frameon=False)
+fig.suptitle("Circular cylinder — O-grid, Re = 100 case", fontsize=13, y=1.01)
 out = "figures/cylinder_grid.png"
 fig.savefig(out, dpi=140, bbox_inches="tight")
 print(f"  {d.n_cells:,} cells, validate() {len(d.validate())} problems")
