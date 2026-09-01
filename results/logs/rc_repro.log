@@ -1,0 +1,7 @@
+  coarse grid 5,360 cells, RC on, same pulse
+
+    step      max|u|     max|RC|      max|F|      RC/F
+     200      1.5889   4.600e+01   2.502e+02     0.184
+     311      5.6595   6.307e+03   3.470e+03     1.818
+
+  DIVERGED at step 311

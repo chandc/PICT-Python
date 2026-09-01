@@ -1,0 +1,11 @@
+  What does the step-to-step residual actually settle at?
+  The drivers break when max|u^{n+1} - u^n| < 1e-9, but every sweep ran the full
+  3000 steps -- so the test never fired. Starting from the CONVERGED Re=300 field,
+  the residual should already be at its floor.
+
+       tol    max|du|    max|dv|    max|dp|    rel du  x_r drift
+     1e-11   2.97e-05   5.11e-06   3.35e-06  1.98e-05   7.37e-04
+     1e-06   2.98e-05   5.11e-06   3.62e-06  1.98e-05   7.31e-04
+     1e-04   2.04e-08   2.15e-08   4.57e-06  1.36e-08   6.52e-06
+
+  the 1e-9 threshold is BELOW these floors -- the test can never fire.

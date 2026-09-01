@@ -1,0 +1,24 @@
+PICT-Python
+Copyright 2026 Daniel Chan
+
+This is an INDEPENDENT EDUCATIONAL REIMPLEMENTATION in pure Python and NumPy of the numerical
+methods described by PICT, the differentiable GPU multi-block PISO solver from the Physics-based
+Simulation group at the Technical University of Munich:
+
+    https://github.com/tum-pbs/PICT
+    Licensed under the Apache License, Version 2.0
+
+It is NOT a fork of that project and contains none of its source code. Where this port follows
+PICT's design -- the conservative Thomas & Lombard metrics, the multi-block connection model, the
+PISO corrector structure -- it was reimplemented from the described method rather than
+translated, and the differences are documented in reference/.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use these files
+except in compliance with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the
+License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+express or implied. See the License for the specific language governing permissions and
+limitations under the License.

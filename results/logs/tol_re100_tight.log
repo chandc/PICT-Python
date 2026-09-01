@@ -1,0 +1,38 @@
+  re100_tight: Re=100 tol=1e-10 precond=amg  23,504 cells
+    step   500  amp(last 500) = 3.3728e-01  12.36 s/step
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-danielchan-Dropbox-PICT/810ee661-8975-4326-a825-8e771c1edef9/scratchpad/tol_case.py", line 45, in <module>
+    m.step()
+  File "./src/piso_multiblock.py", line 140, in step
+    out = self._step_impl()
+  File "./src/piso_multiblock.py", line 159, in _step_impl
+    out = self._step_once(convect)
+  File "./src/piso_multiblock.py", line 284, in _step_once
+    xi, info = spla.bicgstab(A_ii, rhs[self.interior] - A_ib @ phi_b, M=Pm,
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/scipy/_lib/deprecation.py", line 213, in inner_f
+    return f(*args, **kwargs)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/scipy/sparse/linalg/_isolve/iterative.py", line 286, in bicgstab
+    phat = psolve(p)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/scipy/sparse/linalg/_interface.py", line 236, in matvec
+    y = self._matvec(x)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/scipy/sparse/linalg/_interface.py", line 593, in _matvec
+    return self.__matvec_impl(x)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/pyamg/multilevel.py", line 394, in matvec
+    return self.solve(b, maxiter=1, cycle=cycle, tol=1e-12)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/pyamg/multilevel.py", line 563, in solve
+    self.__solve(0, x, b, cycle, cycles_per_level)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/pyamg/multilevel.py", line 620, in __solve
+    self.__solve(lvl + 1, coarse_x, coarse_b, 'V')
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/pyamg/multilevel.py", line 618, in __solve
+    coarse_x[:] = self.coarse_solver(self.levels[-1].A, coarse_b)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/pyamg/multilevel.py", line 805, in __call__
+    x = solve(self, A, b)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/pyamg/multilevel.py", line 720, in solve
+    self.P = pinv(A.toarray(), **kwargs)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/scipy/_lib/deprecation.py", line 213, in inner_f
+    return f(*args, **kwargs)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/scipy/linalg/_basic.py", line 1423, in pinv
+    u, s, vh = _decomp_svd.svd(a, full_matrices=False, check_finite=False)
+  File "~/Dropbox/PICT/.venv/lib/python3.9/site-packages/scipy/linalg/_decomp_svd.py", line 145, in svd
+    raise LinAlgError("SVD did not converge")
+numpy.linalg.LinAlgError: SVD did not converge

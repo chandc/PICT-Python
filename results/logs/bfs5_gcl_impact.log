@@ -1,0 +1,8 @@
+  Armaly BFS 5-domain, Re=100, dt=0.02, up to 4000 steps, Dong outflow.
+  Identical in every respect except the background coordinates.
+
+  metrics                    x_r/S         GCL   steps  converged       s
+  GCL-violating (old)       2.7428    1.96e+00     872       True    96.0
+  background (fixed)        2.7223    2.32e-15     872       True    96.7
+
+  x_r/S shift: -0.0205  (0.75%)   Armaly reference at Re=100: ~3

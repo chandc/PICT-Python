@@ -1,0 +1,9 @@
+  coarse square cylinder, 2000 steps max, dt=0.01, same inlet pulse
+  (the full-resolution run died at step 455; this grid at 311)
+
+   rhie_chow  persist  ddt_corr               outcome    max|u|
+        True     True      True     DIVERGED step 311 5.660e+00
+        True     True     False                stable    1.5900
+        True    False     False                stable    1.6061
+        True    False      True     DIVERGED step 324 6.210e+00
+       False    False     False                stable    1.4502

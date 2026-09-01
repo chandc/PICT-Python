@@ -1,0 +1,5 @@
+    nz     cells   precond    s/step   proj. to 20k steps
+     8   126,560    jacobi     3.037              16.9 h
+     8   126,560       amg     7.361              40.9 h
+     4    63,280    jacobi     1.631               9.1 h
+     4    63,280       amg     3.733              20.7 h

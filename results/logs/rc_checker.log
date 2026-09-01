@@ -1,0 +1,7 @@
+  Pressure checkerboard after 1500 steps on the coarse grid.
+  flip fraction near 1.0 = genuine node-to-node mode.
+
+  config                              worst flips         amp     max|p|
+  RC off (what is running now)              0.975   1.438e-01  3.154e+00
+  RC on, persist, ddt_corr OFF              0.469   3.484e-03  2.160e+00
+  RC on, no persist, ddt_corr OFF           0.510   5.803e-03  2.036e+00

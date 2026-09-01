@@ -1,0 +1,8 @@
+  beta=2.5  63,280 cells
+    step  1000  amp(last 1000) = 1.9587e-02
+    step  2000  amp(last 1000) = 2.5648e-15
+    step  3000  amp(last 1000) = 7.8756e-16
+    step  4000  amp(last 1000) = 7.4723e-16
+    step  5000  amp(last 1000) = 3.6299e-16
+    step  6000  amp(last 1000) = 2.5544e-16
+  RESULT beta=2.5: amp mid 9.853e-16 late 5.026e-16  St n/a  decaying

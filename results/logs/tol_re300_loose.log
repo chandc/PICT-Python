@@ -1,0 +1,10 @@
+  re300_loose: Re=300 tol=1e-04 precond=jacobi  23,504 cells
+    step   500  amp(last 500) = 1.3820e-02  0.96 s/step
+    step  1000  amp(last 500) = 1.0234e-04  0.94 s/step
+    step  1500  amp(last 500) = 2.0364e-05  0.92 s/step
+    step  2000  amp(last 500) = 5.6738e-06  0.92 s/step
+    step  2500  amp(last 500) = 1.9312e-06  0.91 s/step
+    step  3000  amp(last 500) = 6.9615e-07  0.91 s/step
+    step  3500  amp(last 500) = 3.9453e-07  0.91 s/step
+    step  4000  amp(last 500) = 2.0882e-07  0.91 s/step
+  RESULT re300_loose: amp mid 8.729e-06 late 6.070e-07  St n/a  damped out

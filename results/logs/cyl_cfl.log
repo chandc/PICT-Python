@@ -1,0 +1,2 @@
+  step  200  max|u|  1.311   max LOCAL CFL  0.801 at (-0.172,-0.621) |u|=1.267 h=0.0158
+  step  400  max|u|  1.538   max LOCAL CFL  0.698 at (-0.217,-0.607) |u|=1.105 h=0.0158

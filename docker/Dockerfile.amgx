@@ -1,0 +1,25 @@
+# Runtime for the PICT educational port on the DGX Spark (GB10), with AmgX.
+#
+# WHY THIS FILE EXISTS. The AmgX runs before this one used `cpn-spark:latest` with the AmgX
+# library bind-mounted from /tmp/AMGX on the host -- an image nobody built from a recipe, plus a
+# library in a directory that any reboot or cleanup can empty. A published speedup number whose
+# software stack cannot be reconstructed is not a measurement.
+#
+# The base image already carries CUDA, numpy and scipy; only sympy was missing, which
+# phase1_grid_metrics imports to derive the metric expressions.
+#
+# AmgX itself is still bind-mounted rather than built here: it is a 137 MB shared object that
+# takes ~20 minutes to compile, and pinning its build is a separate job. What this file fixes is
+# that the PYTHON side is now reproducible. See src/amgx/CONFIG.md for the tolerance question,
+# which is the other half of making a GPU number trustworthy.
+ARG BASE=cpn-spark:latest
+FROM ${BASE}
+
+# Pinned: an unpinned `pip install sympy` would make this image a moving target, which is the
+# problem it exists to solve.
+RUN pip install --no-cache-dir sympy==1.14.0
+
+ENV AMGX_LIB=/tmp/AMGX/build/libamgxsh.so \
+    AMGX_CONFIG=/w/src/amgx/pcg_amg_1e6.json \
+    PYTHONUNBUFFERED=1
+WORKDIR /w

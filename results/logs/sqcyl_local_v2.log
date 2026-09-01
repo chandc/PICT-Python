@@ -1,0 +1,6 @@
+  65,392 cells, dt = 0.01, Re = 100, rhie_chow = True, nz = 4
+  probe at (2.035, 0.500), asked for (2.0, 0.5)
+  symmetry-breaking pulse: v = 0.05 at the inlet until t = 4.0
+
+     step        t    v_probe   max|u|    max div   s/step
+        1     0.01   -0.03949   1.8641   1.83e+01    2.378

@@ -1,0 +1,9 @@
+  126,560 cells, dt = 0.01, Re = 100, rhie_chow = True, nz = 8
+  probe at (2.000, 0.500), asked for (2.0, 0.5)
+  symmetry-breaking pulse: v = 0.05 at the inlet until t = 4.0
+
+     step        t    v_probe   max|u|    max div   s/step
+        1     0.01   -0.05527   1.5391   1.27e+01    3.466
+      250     2.50   -0.06934   1.6214   6.16e+00    3.027
+
+  saved results/fields/sqcyl_timing.npz and results/sqcyl_timing_history.npy

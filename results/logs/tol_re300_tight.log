@@ -1,0 +1,10 @@
+  re300_tight: Re=300 tol=1e-10 precond=amg  23,504 cells
+    step   500  amp(last 500) = 4.5695e-01  11.00 s/step
+    step  1000  amp(last 500) = 2.6839e-01  7.42 s/step
+    step  1500  amp(last 500) = 1.1153e-01  5.54 s/step
+    step  2000  amp(last 500) = 9.2147e-02  4.58 s/step
+    step  2500  amp(last 500) = 6.7565e-02  4.01 s/step
+    step  3000  amp(last 500) = 3.0962e-02  3.62 s/step
+    step  3500  amp(last 500) = 1.3398e-02  3.36 s/step
+    step  4000  amp(last 500) = 1.2782e-02  3.15 s/step
+  RESULT re300_tight: amp mid 2.043e-01 late 4.232e-02  St 0.0750  damped out

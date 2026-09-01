@@ -1,0 +1,20 @@
+  63,280 cells, dt = 0.01, Re = 100, rhie_chow = True, nz = 4
+  probe at (2.000, 0.500), asked for (2.0, 0.5)
+  symmetry-breaking pulse: v = 0.05 at the inlet until t = 4.0
+
+     step        t    v_probe   max|u|    max div   s/step
+        1     0.01   -0.05527   1.5391   1.27e+01    1.834
+      250     2.50   -0.06934   1.6213   6.15e+00    1.527
+./src/piso_multiblock.py:296: RuntimeWarning: divide by zero encountered in divide
+  coef_g = Jg / rowsum
+./src/multiblock.py:865: RuntimeWarning: invalid value encountered in multiply
+  val = 0.0 * val   # no valid wide stencil -> no correction here
+./src/multiblock.py:862: RuntimeWarning: invalid value encountered in subtract
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+./src/multiblock.py:862: RuntimeWarning: invalid value encountered in add
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+./src/piso_multiblock.py:367: RuntimeWarning: invalid value encountered in multiply
+  corr.append(lim * cf[a] * dF)
+      500     5.00        nan      nan        nan   17.290
+
+  saved results/fields/sqcyl_repro.npz and results/sqcyl_repro_history.npy

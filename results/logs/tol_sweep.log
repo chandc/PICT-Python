@@ -1,0 +1,12 @@
+  How tight does the PRESSURE solve actually need to be?
+  Restarting each case from the SAME converged Re=300 field and running 400 steps,
+  so any difference is the tolerance and not the initial transient.
+  Discretisation error here is O(h^2) ~ 1e-3, so a linear residual far below that
+  should be invisible in the answer -- the question is where 'far below' starts.
+
+      rtol   it/step   s/step   divF(int)    x_r/S  max|u-u_ref|  speedup
+     1e-12      1757    0.505     6.1e-15    6.714      0.00e+00     1.00x
+     1e-10      1662    0.482     6.2e-15    6.714      1.03e-08     1.05x
+     1e-08      1568    0.457     1.8e-12    6.714      2.45e-06     1.10x
+     1e-06       861    0.269     2.0e-10    6.714      1.04e-04     1.88x
+     1e-04        48    0.059     5.0e-08    6.720      8.97e-03     8.58x

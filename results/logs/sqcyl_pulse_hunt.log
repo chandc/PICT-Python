@@ -1,0 +1,7 @@
+  pulse v=0.05 applied at the inlet; watching momentum-matrix row sums
+    LB: 116 nodes have v_bc != 0
+    LM: 120 nodes have v_bc != 0
+    LT: 116 nodes have v_bc != 0
+    step   50  max|u|=   1.6450  min|rowsum|=1.362e+04
+    step  100  max|u|=   1.6439  min|rowsum|=1.362e+04
+    step  150  max|u|=   1.6377  min|rowsum|=1.362e+04

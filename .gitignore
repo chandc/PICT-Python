@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+
+# Simulation CHECKPOINTS -- excluded on purpose, and not because of their size today.
+# They are rewritten on every run, and git stores each version whole (no delta compression on
+# .npz), so committing them grows the repo by tens of MB per experiment forever. They are
+# regenerable from the code and the recorded settings; see reference/ for the exact
+# configurations. The MEASUREMENTS -- results/*.npy histories and results/logs/ -- are kept,
+# because those are the actual data and are small.
+results/fields/*.npz
+
+# Generated AmgX configs (written per tolerance by src/amgx/binding.py)
+src/amgx/_generated_tol_*.json
+
+# Local rescue copies
+.backups/
+
+# Session handoff notes -- machine-specific and transient; the durable content
+# belongs in reference/.
+SESSION_STATE.md

@@ -1,0 +1,29 @@
+[project]
+name = "pict-python"
+version = "0.1.0"
+description = "An educational pure-Python/NumPy port of the PICT differentiable multi-block PISO solver"
+requires-python = ">=3.9"
+
+# PINNED, because two of these have bitten this project.
+#
+#   scipy < 1.14 -- `bicgstab(..., tol=)` was REMOVED in 1.14 in favour of `rtol=`. Code here
+#   still uses the old spelling in places, so an unpinned upgrade breaks Phase 3 silently on
+#   some paths and loudly on others.
+#
+#   numpy 2.x -- `ndarray.ptp()` was removed in 2.0; several diagnostics call `np.ptp(a)`
+#   instead precisely because of that. Pinning the major version keeps that decision meaningful.
+dependencies = [
+    "numpy>=2.0,<2.1",
+    "scipy>=1.13,<1.14",
+    "matplotlib>=3.9",
+    "sympy>=1.13",       # phase1_grid_metrics derives the metric expressions symbolically
+    "pyamg>=5.0",        # the 'amg' preconditioner option
+]
+
+[project.optional-dependencies]
+# The neural-network and adjoint work only. Kept out of the core so a fluid-solver checkout does
+# not drag in a multi-GB install it never imports.
+nn = ["torch>=2.0"]
+
+[tool.uv]
+package = false

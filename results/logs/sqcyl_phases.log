@@ -1,0 +1,7 @@
+  kicked from the steady state (v0=-0.231373); saving a field every 300 steps
+
+  step   300  t=  43.00  v=-0.146061  dev=+8.531e-02  -> phase01
+  step   600  t=  46.00  v=-0.222567  dev=+8.806e-03  -> phase02
+  step   900  t=  49.00  v=-0.264986  dev=-3.361e-02  -> phase03
+  step  1200  t=  52.00  v=-0.290439  dev=-5.907e-02  -> phase04
+  step  1500  t=  55.00  v=-0.304436  dev=-7.306e-02  -> phase05

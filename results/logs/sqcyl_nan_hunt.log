@@ -1,0 +1,5 @@
+
+  rhie_chow=True
+    step  100  t=  1.00  max|u|=    1.6479  max|p|= 2.626e+00
+    step  200  t=  2.00  max|u|=    1.6479  max|p|= 2.625e+00
+    step  300  t=  3.00  max|u|=    1.6479  max|p|= 2.626e+00

@@ -1,0 +1,21 @@
+  GCL residual (uniform flow) on the 8-block obstacle topology.
+  The flow is constant, so this is pure geometry: it must be ~1e-15.
+
+    stretch   no background   with background        seam
+       0.00       4.885e-15         6.291e-16   0.000e+00
+       0.01       3.920e-04         6.374e-16   0.000e+00
+       0.05       2.056e-03         6.800e-16   0.000e+00
+       0.20       9.972e-03         8.769e-16   0.000e+00
+       0.50       3.995e-02         8.755e-16   0.000e+00
+
+  CONTROLS at stretch = 0.5 -- isolating the hole from the seam machinery:
+    9 blocks, NO hole, no background   1.298e-15
+    8 blocks, hole,    no background   3.995e-02
+    8 blocks, hole,    background      8.755e-16
+
+  THE PRODUCTION GRIDS (both now supply a background):
+    BFS 5-domain       GCL 4.81e-15  seam 0.00e+00   (GCL was 1.93)
+    square cylinder    GCL 6.15e-15  seam 0.00e+00   (GCL was 1.81)
+
+  [PASS] GCL and seam consistency now hold together. Worst GCL with a background:
+         6.15e-15, against 3.99e-02 without.

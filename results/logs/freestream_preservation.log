@@ -1,0 +1,6 @@
+  Uniform flow prescribed on ALL boundaries (obstacle 'transparent'), so u=(1,0,0)
+  is an exact solution. Any departure is the discretisation.
+   stretch    max|u-1|      max|v|      max|p|   after 20 steps
+      0.00    5.33e-15    3.86e-15    1.89e-12
+      0.05    5.05e-04    4.04e-04    4.02e-03
+      0.50    5.06e-03    4.97e-03    4.32e-02

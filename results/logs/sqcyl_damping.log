@@ -1,0 +1,4 @@
+  medium grid, kicked at t=0, 4000 steps. Reference St = 0.13
+
+  case                          Re     RC     amp mid    amp late       St
+  baseline                   100.0   True   4.328e-16   2.008e-16   0.0375   damped out
