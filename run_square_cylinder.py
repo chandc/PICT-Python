@@ -22,8 +22,10 @@ import time
 import numpy as np
 
 from square_cylinder_grid import square_domain, D
-from square_cylinder_bc import apply as apply_bc, U_INF
+from square_cylinder_bc import apply as apply_bc, classify, U_INF
 from src import checkpoint
+from src.forces import surface_force
+from src.running_mean import RunningMean
 from src.multiblock import face_slice, face_id
 from src.piso_multiblock import MultiBlockPISO
 
@@ -157,6 +159,21 @@ def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=Non
         wake_kick(m, d, kick)
         print(f"  SINUOUS wake kick at {100*kick:.3g}% of U\n", flush=True)
 
+    # C_D and C_L every step, and the MEAN field over the shedding window -- see the same
+    # block in run_cylinder.py for why neither is recoverable after the fact.
+    body = [k for k, v in classify(d).items() if v == "body"]
+    span = float(d.blocks[0].period[2])
+    q = 0.5 * U_INF**2 * D * span
+    mean = RunningMean(d, m.time)
+    forces = []
+
+    def dump():
+        np.save(f"results/{tag}_history.npy", np.array(hist))
+        np.save(f"results/{tag}_forces.npy", np.array(forces))
+        checkpoint.save(m, f"results/fields/{tag}.npz")
+        if mean.n:
+            mean.save(f"results/fields/{tag}_mean.npz")
+
     pulse_on = None
     t0 = time.time()
     for n in range(nsteps):
@@ -175,6 +192,10 @@ def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=Non
         m.step()
         vp = float(m.v[pb][pk[0], pk[1], 0])
         hist.append((m.time, vp))
+        mean.add(m)
+        R = surface_force(d, body, m.u, m.v, m.w, m.p, m.nu)
+        forces.append((m.time, R["total"][0] / q, R["total"][1] / q,
+                       R["viscous_normal"][0] / q))
         if (n + 1) % 250 == 0 or n == 0:
             # Dong outlet nodes carry a prescribed pressure and their divergence is not meant
             # to vanish, so the reported number excludes them; div_all keeps the honest max.
@@ -183,11 +204,13 @@ def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=Non
                   f"{max(np.abs(m.u[b]).max() for b in range(len(d.blocks))):>9.4f}"
                   f"{dv:>11.2e}{(time.time()-t0)/(n+1):>9.3f}", flush=True)
         if (n + 1) % every == 0:
-            checkpoint.save(m, f"results/fields/{tag}.npz")
-            np.save(f"results/{tag}_history.npy", np.array(hist))
-    checkpoint.save(m, f"results/fields/{tag}.npz")
-    np.save(f"results/{tag}_history.npy", np.array(hist))
-    print(f"\n  saved results/fields/{tag}.npz and results/{tag}_history.npy")
+            dump()
+    dump()
+    fa = np.array(forces)
+    print(f"\n  C_D {fa[:, 1].mean():+.4f}   C_L rms {np.sqrt((fa[:, 2]**2).mean()):.4f}"
+          f"   over t = {fa[0, 0]:.1f} to {fa[-1, 0]:.1f}")
+    print(f"  saved results/fields/{tag}.npz, {tag}_mean.npz, "
+          f"{tag}_history.npy and {tag}_forces.npy")
     return m, d, np.array(hist)
 
 

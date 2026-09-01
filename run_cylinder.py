@@ -34,6 +34,8 @@ import numpy as np
 from cylinder_grid import cylinder_domain, D
 from cylinder_bc import apply as apply_bc, classify, probe_index, U_INF
 from src import checkpoint
+from src.forces import surface_force
+from src.running_mean import RunningMean
 from src.piso_multiblock import MultiBlockPISO
 
 RE = 100.0
@@ -149,17 +151,42 @@ def main():
         kick(m, d, a.kick)
         print(f"\n  kicked at {100*a.kick:.3g}% of U about v0 = {v0:+.6f}\n", flush=True)
 
+    # C_D and C_L every step, and the MEAN field over the shedding window. Both are what the
+    # literature actually tabulates, and neither is recoverable afterwards from instantaneous
+    # checkpoints: the mean wake is a different object from any snapshot of it. A force
+    # evaluation is 0.26 ms, 0.07% of a step here, so there is no reason to sub-sample.
+    body = [k for k, v in classify(d, a.nblk).items() if v == "cylinder"]
+    span = float(d.blocks[0].period[2])
+    q = 0.5 * U_INF**2 * D * span
+    mean = RunningMean(d, m.time)
+    forces = []
+
+    def dump():
+        np.save(f"results/{tag}_history.npy", np.array(hist))
+        np.save(f"results/{tag}_forces.npy", np.array(forces))
+        checkpoint.save(m, f"results/fields/{tag}.npz")
+        if mean.n:
+            mean.save(f"results/fields/{tag}_mean.npz")
+
     t0 = time.time()
     for i in range(1, a.steps + 1):
         m.step()
         hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
+        mean.add(m)
+        R = surface_force(d, body, m.u, m.v, m.w, m.p, m.nu)
+        forces.append((m.time, R["total"][0] / q, R["total"][1] / q,
+                       R["viscous_normal"][0] / q))
         if i % 500 == 0:
             report(i, a.steps, hist, t0, "shed")
-            np.save(f"results/{tag}_history.npy", np.array(hist))
-            checkpoint.save(m, f"results/fields/{tag}.npz")
-    np.save(f"results/{tag}_history.npy", np.array(hist))
-    checkpoint.save(m, f"results/fields/{tag}.npz")
-    print(f"\n  saved results/fields/{tag}.npz and results/{tag}_history.npy", flush=True)
+            fa = np.array(forces)
+            print(f"           C_D {fa[-500:, 1].mean():+.4f}   C_L rms "
+                  f"{np.sqrt((fa[-500:, 2]**2).mean()):.4f}   "
+                  f"(reference C_D {CD_REF}, spurious normal stress in C_D "
+                  f"{fa[-500:, 3].mean():+.4f})", flush=True)
+            dump()
+    dump()
+    print(f"\n  saved results/fields/{tag}.npz, {tag}_mean.npz, "
+          f"{tag}_history.npy and {tag}_forces.npy", flush=True)
 
 
 if __name__ == "__main__":
