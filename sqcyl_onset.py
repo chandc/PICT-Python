@@ -92,9 +92,16 @@ def growth_rate(t, v, t_kick=None, win_pts=7, win=None):
         slopes.append(sl)
         centres.append(te[i:i + win_pts].mean())
     slopes, centres = np.array(slopes), np.array(centres)
-    k = int(slopes.argmax())
+    # GROWTH AND DECAY NEED DIFFERENT PICKS, and a near-onset sweep will produce both.
+    # For a GROWING mode the eigenvalue is the plateau before nonlinearity bends the curve down,
+    # so the maximum slope is right. For a DECAYING one there is no nonlinearity to come: the
+    # kick's faster-decaying components die first and the slope RISES towards the least-stable
+    # eigenvalue, so the asymptote is the LATE slope and taking a maximum would just return the
+    # last window's noise. Which case applies is read off the envelope, not assumed.
+    growing = a[-1] > a[0]
+    k = int(slopes.argmax()) if growing else int(len(slopes) - 1)
     near = slopes[max(k - 2, 0):k + 3]
-    return {"sigma": float(slopes[k]), "t_peak": float(centres[k]),
+    return {"sigma": float(slopes[k]), "t_peak": float(centres[k]), "growing": growing,
             "n_windows": len(slopes),
             "plateau": float(near.min() / slopes[k]) if slopes[k] > 0 else float("nan"),
             "amp_at_peak": float(np.exp(np.interp(centres[k], te, a))),
