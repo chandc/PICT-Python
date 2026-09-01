@@ -10,6 +10,12 @@ Plan: `reference/nn_multiblock_plan.md`.
   8.3  the tangential-only and full-traction gradients must DIFFER, or the contamination
        described in src/forces.py cannot be trained away.
   8.4  dC_L must be antisymmetric under y -> -y on a mirror-symmetric configuration.
+  8.5  FD vs adjoint through a WALL-BOUNDED chain, Dirichlet velocity rows eliminated.
+  8.6  dC_D/d(actuation) -- drag as the loss, through the solver and the wall integral.
+  8.7  a Dong outlet makes the pressure operator NON-SINGULAR.
+  8.8  FD vs adjoint with that non-singular solve.
+  8.9  Dong's boundary value depends on the interior solution, and that dependence is in the
+       graph -- a nonlinear BC, not a constant.
 """
 import numpy as np
 import torch
@@ -229,6 +235,52 @@ check(worst86 < 1e-6 and scale86 > 0,
       f"of max|g| = {scale86:.3e}, C_D = {float(cd_val):+.5f}. This is the objective Stage 10 "
       f"would train against -- a body force in the interior, a drag on the wall, and one "
       f"gradient joining them")
+
+# ------------------------------------------------- 8.7 / 8.8 / 8.9 the Dong outflow
+# Everything above ran with a SINGULAR pressure system -- periodic or walled, pure Neumann -- so
+# LinearSolve always took the `singular=True` branch with its projection in both passes. A Dong
+# outlet prescribes a pressure and the null space disappears.
+from src.mb_adjoint import MultiBlockDongChain, outflow_channel
+
+ddg = outflow_channel(10, 2)
+dong = MultiBlockDongChain(ddg, 0.05, 0.02)
+one = np.ones(dong.M_ff.shape[0])
+resid = np.abs(dong.M_ff @ one).max()
+check(resid > 1e-6,
+      f"8.7  the reduced pressure operator is NON-SINGULAR: |M_ff @ 1| = {resid:.3e} over "
+      f"{dong.M_ff.shape[0]} unknowns with {len(dong.pD)} Dong nodes eliminated (0 would mean "
+      f"the constant is still in the null space and the projection is still needed)")
+
+rng7 = np.random.default_rng(51)
+S7 = [rng7.standard_normal(dong.N) * 0.05 for _ in range(3)]
+src7 = [torch.tensor(a, requires_grad=True) for a in S7]
+L7 = dong.rollout(src7)
+L7.backward()
+g7 = [s.grad.detach().numpy().copy() for s in src7]
+scale7 = max(np.abs(g).max() for g in g7)
+worst88 = 0.0
+for k_step in (0, 2):
+    gg = g7[k_step]
+    for k in np.argsort(-np.abs(gg))[:3]:
+        pert = [a.copy() for a in S7]
+        pert[k_step][k] += 1e-2
+        Lp = float(dong.rollout([torch.tensor(a) for a in pert]))
+        pert[k_step][k] -= 2e-2
+        Lm = float(dong.rollout([torch.tensor(a) for a in pert]))
+        worst88 = max(worst88, abs((Lp - Lm) / 2e-2 - gg[k]) / scale7)
+check(worst88 < 1e-6,
+      f"8.8  FD vs adjoint through the chain with a non-singular pressure solve: worst "
+      f"{worst88:.2e} of max|g| = {scale7:.3e}")
+
+src7d = [torch.tensor(a, requires_grad=True) for a in S7]
+dong.rollout(src7d, detach_dong=True).backward()
+g7d = [s.grad.detach().numpy().copy() for s in src7d]
+rel89 = max(np.abs(a - b).max() for a, b in zip(g7, g7d)) / scale7
+check(rel89 > 1e-12,
+      f"8.9  Dong's pressure DEPENDS on the interior solution and that dependence carries a "
+      f"gradient: detaching it changes dL/dS by {rel89:.2e} of max|g|. The boundary value is "
+      f"nu (u_n - u_n,i)/dn - 0.5|u|^2 theta, so u_n,i at the first interior node feeds back "
+      f"through the pressure -- a nonlinear BC in the graph, not a constant")
 
 print("=" * 76)
 print(f"  {PASS}/{PASS + FAIL} checks passed")

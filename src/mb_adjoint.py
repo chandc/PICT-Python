@@ -582,3 +582,142 @@ class MultiBlockWallChain(MultiBlockChainRC):
             gid = torch.as_tensor(self.d.global_ids(b).ravel())
             out[b] = torch.index_select(flat, 0, gid).reshape(blk.shape)
         return out
+
+
+def outflow_channel(ntot=10, n_split=2, L=2.0):
+    """Walls at y, periodic in z, INFLOW at x-min and OUTFLOW at x-max.
+
+    The first domain here whose pressure system is not singular. Everything up to Stage 8 ran
+    with pure Neumann pressure -- periodic or walled -- so `LinearSolve` always took the
+    `singular=True` path with its compatibility projection in both passes. A Dong outlet
+    prescribes a pressure, the null space disappears, and a different branch runs.
+    """
+    from src.multiblock import Block, Connection, Domain, face_id
+    assert ntot % n_split == 0
+    nxb = ntot // n_split
+    axx = np.linspace(0.0, L, ntot)                 # inflow/outflow: both endpoints are real
+    ay = np.linspace(0.0, 1.0, ntot)
+    az = np.arange(ntot) / ntot
+    X, Y, Z = np.meshgrid(axx, ay, az, indexing="ij")
+    blocks = []
+    for b in range(n_split):
+        sl = slice(b * nxb, (b + 1) * nxb)
+        blk = Block((nxb, ntot, ntot), X[sl], Y[sl], Z[sl],
+                    (1.0 / (ntot - 1), 1.0 / (ntot - 1), 1.0 / ntot))
+        blk.faces[face_id(2, 0)] = blk.faces[face_id(2, 1)] = "periodic"
+        blk.faces[face_id(1, 0)] = blk.faces[face_id(1, 1)] = "wall"
+        blk.faces[face_id(0, 0)] = "inflow" if b == 0 else "connected"
+        blk.faces[face_id(0, 1)] = "outflow" if b == n_split - 1 else "connected"
+        blocks.append(blk)
+    conns = [Connection(b, face_id(0, 1), b + 1, face_id(0, 0)) for b in range(n_split - 1)]
+    return Domain(blocks, conns)
+
+
+class MultiBlockDongChain(MultiBlockWallChain):
+    """The chain with a DONG OUTFLOW: a prescribed pressure, so the system is non-singular.
+
+    Two things change from `MultiBlockWallChain`, and both are the point:
+
+    THE PRESSURE SOLVE LOSES ITS NULL SPACE. Dong nodes leave the unknown set, the reduced
+    `M_ff` is non-singular, and their columns move to the right-hand side as `M_fD p_dong`.
+    `LinearSolve` runs with `singular=False`: no compatibility projection in the forward, none
+    in the backward, and 6.7's pinned limitation on dL/dM stops applying because there is no
+    null space to break.
+
+    THE PRESCRIBED PRESSURE DEPENDS ON THE SOLUTION. Dong's value is
+
+        p = nu (u_n - u_n,i) / dn  -  0.5 |u|^2 theta,   theta = 0.5 (1 - tanh(u_n / (U0 delta)))
+
+    and `u_n,i` is the velocity at the FIRST INTERIOR node. So the boundary condition is a
+    nonlinear function of the interior solution, and the gradient path runs
+    u -> u_n,i -> p_dong -> pressure RHS -> phi -> u. Detaching it is 8.9's mangle.
+    """
+
+    def __init__(self, domain, nu=0.05, dt=0.05):
+        super().__init__(domain, nu, dt)
+        from src.multiblock import face_axis_side, face_id as _fid, face_slice
+        self.dong = []
+        for b, blk in enumerate(domain.blocks):
+            for fid, kind in enumerate(blk.faces):
+                if kind != "outflow":
+                    continue
+                axis, side = face_axis_side(fid)
+                bs = face_slice(fid)
+                isl = [slice(None)] * 3
+                isl[axis] = 1 if side == 0 else -2
+                isl = tuple(isl)
+                _, mb = domain.block_metrics_cached(b)
+                key = ("xi", "eta", "zeta")[axis]
+                nvec = np.stack([mb[f"{key}_{c}"][bs] for c in "xyz"], axis=-1)
+                nrm = np.linalg.norm(nvec, axis=-1, keepdims=True)
+                sg = -1.0 if side == 0 else 1.0
+                nhat = sg * nvec / nrm
+                dn = np.sqrt(sum((getattr(blk, c)[bs] - getattr(blk, c)[isl]) ** 2
+                                 for c in "xyz"))
+                self.dong.append({
+                    "b": b, "bs": bs, "isl": isl,
+                    "gid": domain.global_ids(b)[bs].ravel(),
+                    "gid_i": domain.global_ids(b)[isl].ravel(),
+                    "nhat": torch.as_tensor(nhat.reshape(-1, 3)),
+                    "dn": torch.as_tensor(dn.ravel()),
+                })
+        pD = np.unique(np.concatenate([g["gid"] for g in self.dong]))
+        self.pD = pD
+        M = sparse.csr_matrix(domain.build_diffusion_matrix(self.Js, self.ms))
+        mask = np.ones(M.shape[0], bool); mask[pD] = False
+        self.free = np.arange(M.shape[0])[mask]
+        self.M_ff = M[self.free][:, self.free].tocsr()
+        self.M_fD = M[self.free][:, pD].tocsr()
+        idx, shape, val = csr_pattern(self.M_ff)
+        self.Mff_pat = (idx, shape), val
+        self.free_t = torch.as_tensor(self.free)
+        self.pD_t = torch.as_tensor(pD)
+
+    def dong_pressure(self, u_flat, detach=False):
+        """Dong's prescribed pressure at the outlet nodes, differentiable in the interior u."""
+        src = u_flat.detach() if detach else u_flat
+        vals = torch.zeros(self.N, dtype=torch.float64)
+        for g in self.dong:
+            ub = torch.index_select(src, 0, torch.as_tensor(g["gid"]))
+            ui = torch.index_select(src, 0, torch.as_tensor(g["gid_i"]))
+            nx = g["nhat"][:, 0]
+            un, un_i = ub * nx, ui * nx
+            U0 = torch.clamp(un.abs().max(), min=1e-12)
+            th = 0.5 * (1.0 - torch.tanh(un / (U0 * 0.01)))
+            pv = self.nu * (un - un_i) / g["dn"] - 0.5 * ub ** 2 * th
+            vals = vals.index_put((torch.as_tensor(g["gid"]),), pv)
+        return torch.index_select(vals, 0, self.pD_t)
+
+    def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
+                detach_dong=False, return_fields=False):
+        (Aidx, Ashape), Aval = self.A_pat
+        (Mfidx, Mfshape), Mfval = self.Mff_pat
+        Gt, Du, RCt = (to_torch_sparse(self.G), to_torch_sparse(self.D_flux[:, :self.N]),
+                       to_torch_sparse(self.RC))
+        MfD = to_torch_sparse(self.M_fD)
+        keep = torch.as_tensor(~self.wall).double()
+        u = torch.as_tensor(self.u_init) * keep
+        u_prev = u.clone()
+        p_flux = torch.zeros(self.N, dtype=torch.float64)
+        Jt = torch.as_tensor(self.J_flat)
+        L = 0.0
+        for S in sources:
+            hist = u_prev.detach() if drop_history else u_prev
+            rhs = (Jt * (2.0 * u - 0.5 * hist) / self.dt + S)[self.ii]
+            u_int = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
+            u_star = torch.zeros(self.N, dtype=torch.float64).index_put((self.ii,), u_int)
+            pf = p_flux.detach() if drop_pflux else p_flux
+            divF = spmv(Du, u_star) - spmv(RCt, pf)
+            p_dong = self.dong_pressure(u_star, detach=detach_dong)
+            rhs_p = torch.index_select(divF, 0, self.free_t) - spmv(MfD, p_dong)
+            # NON-SINGULAR: no projection in either pass
+            phi_f = LinearSolve.apply(Mfval, rhs_p, (Mfidx, Mfshape), True, False)
+            phi = torch.zeros(self.N, dtype=torch.float64) \
+                .index_put((self.free_t,), phi_f).index_put((self.pD_t,), p_dong)
+            u_prev, u = u, (u_star - self.dt * spmv(Gt, phi)) * keep
+            p_flux = p_flux + phi
+            if not final_only:
+                L = L + (u ** 2).sum()
+        if return_fields:
+            return u, p_flux
+        return (u ** 2).sum() if final_only else L
