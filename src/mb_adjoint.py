@@ -721,3 +721,153 @@ class MultiBlockDongChain(MultiBlockWallChain):
         if return_fields:
             return u, p_flux
         return (u ** 2).sum() if final_only else L
+
+
+def _inout_blocks(ntot, n_split, L, wall_z):
+    """Shared builder: streamwise x with inlet/outlet, walls in y, walls or periodic in z."""
+    from src.multiblock import Block, Connection, Domain, face_id
+    assert ntot % n_split == 0
+    nxb = ntot // n_split
+    axx = np.linspace(0.0, L, ntot)
+    ay = np.linspace(0.0, 1.0, ntot)
+    az = np.linspace(0.0, 1.0, ntot) if wall_z else np.arange(ntot) / ntot
+    X, Y, Z = np.meshgrid(axx, ay, az, indexing="ij")
+    hz = 1.0 / (ntot - 1) if wall_z else 1.0 / ntot
+    blocks = []
+    for b in range(n_split):
+        sl = slice(b * nxb, (b + 1) * nxb)
+        blk = Block((nxb, ntot, ntot), X[sl], Y[sl], Z[sl],
+                    (1.0 / (ntot - 1), 1.0 / (ntot - 1), hz))
+        blk.faces[face_id(1, 0)] = blk.faces[face_id(1, 1)] = "wall"
+        if wall_z:
+            blk.faces[face_id(2, 0)] = blk.faces[face_id(2, 1)] = "wall"
+        else:
+            blk.faces[face_id(2, 0)] = blk.faces[face_id(2, 1)] = "periodic"
+        blk.faces[face_id(0, 0)] = "inflow" if b == 0 else "connected"
+        blk.faces[face_id(0, 1)] = "outflow" if b == n_split - 1 else "connected"
+        blocks.append(blk)
+    conns = [Connection(b, face_id(0, 1), b + 1, face_id(0, 0)) for b in range(n_split - 1)]
+    return Domain(blocks, conns)
+
+
+def developing_channel(ntot=10, n_split=2, L=3.0):
+    """Two walls, spanwise periodic, INLET and OUTLET: flow developing along x."""
+    return _inout_blocks(ntot, n_split, L, wall_z=False)
+
+
+def square_duct(ntot=10, n_split=2, L=3.0):
+    """FOUR walls, INLET and OUTLET. Every non-streamwise face is no-slip."""
+    return _inout_blocks(ntot, n_split, L, wall_z=True)
+
+
+class MultiBlockBCChain(MultiBlockDongChain):
+    """The chain with NO assumption that the boundary velocity is zero.
+
+    `MultiBlockWallChain` restricted the momentum solve to interior nodes and stopped there,
+    which is only correct because a stationary wall makes the elimination term A_ib u_bnd
+    vanish. An INLET does not: its velocity is prescribed and non-zero, so that term is a real
+    contribution to the right-hand side, and dropping it solves a different problem while
+    converging perfectly well.
+
+    Three kinds of Dirichlet node are distinguished, and a corner belongs to the most
+    restrictive:
+
+      wall     u = 0                       constant, no gradient
+      inlet    u = a prescribed profile    data, no gradient
+      outlet   u = the first interior node  <- SOLUTION-DEPENDENT, so it carries one
+
+    The outlet is the interesting one. A zero-gradient (convective) outflow copies the interior
+    velocity to the boundary, so u_bnd depends on the solution and the elimination term is part
+    of the graph. Combined with Dong's pressure -- itself a function of the interior velocity --
+    the outflow contributes two distinct gradient paths, neither of which exists in a periodic
+    or purely walled case.
+    """
+
+    def __init__(self, domain, nu=0.05, dt=0.05, u_inlet=1.0):
+        super().__init__(domain, nu, dt)
+        from src.multiblock import face_axis_side, face_slice
+        wall_ids, in_ids, out_ids, out_nb = set(), set(), [], []
+        for b, blk in enumerate(domain.blocks):
+            gid = domain.global_ids(b)
+            for fid, kind in enumerate(blk.faces):
+                if kind == "wall":
+                    wall_ids |= set(gid[face_slice(fid)].ravel().tolist())
+        for b, blk in enumerate(domain.blocks):
+            gid = domain.global_ids(b)
+            for fid, kind in enumerate(blk.faces):
+                if kind not in ("inflow", "outflow"):
+                    continue
+                axis, side = face_axis_side(fid)
+                isl = [slice(None)] * 3
+                isl[axis] = 1 if side == 0 else -2
+                face, nb = gid[face_slice(fid)].ravel(), gid[tuple(isl)].ravel()
+                for g, n_ in zip(face, nb):
+                    if g in wall_ids:
+                        continue
+                    if kind == "inflow":
+                        in_ids.add(int(g))
+                    else:
+                        out_ids.append(int(g)); out_nb.append(int(n_))
+        self.bnd = np.where(self.wall)[0]
+        self.wall_ids = np.array(sorted(wall_ids), dtype=int)
+        self.in_ids = np.array(sorted(in_ids), dtype=int)
+        self.out_ids = np.array(out_ids, dtype=int)
+        self.out_nb = np.array(out_nb, dtype=int)
+        # a parabolic inlet in y, uniform in z -- data, not a solution
+        yy = np.zeros(self.N)
+        for b, blk in enumerate(domain.blocks):
+            yy[domain.global_ids(b).ravel()] = blk.y.ravel()
+        self.u_in_val = torch.as_tensor(4.0 * u_inlet * yy[self.in_ids]
+                                        * (1.0 - yy[self.in_ids]))
+        A = sparse.csr_matrix(domain.build_momentum_matrix(
+            self.Js, self.ms, self.u0, self.u0, self.u0, nu, dt, bdf2=True))
+        self.A_ib = A[self.interior][:, self.bnd].tocsr()
+        self.pos_in_bnd = {int(g): i for i, g in enumerate(self.bnd)}
+
+    def boundary_velocity(self, u_flat, drop_outlet=False):
+        """u on the Dirichlet nodes, in the order `self.bnd` expects."""
+        vals = torch.zeros(len(self.bnd), dtype=torch.float64)
+        if len(self.in_ids):
+            pos = torch.as_tensor([self.pos_in_bnd[int(g)] for g in self.in_ids])
+            vals = vals.index_put((pos,), self.u_in_val)
+        if len(self.out_ids):
+            src = u_flat.detach() if drop_outlet else u_flat
+            nb = torch.index_select(src, 0, torch.as_tensor(self.out_nb))
+            pos = torch.as_tensor([self.pos_in_bnd[int(g)] for g in self.out_ids])
+            vals = vals.index_put((pos,), nb)
+        return vals
+
+    def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
+                detach_dong=False, drop_outlet=False, return_fields=False):
+        (Aidx, Ashape), Aval = self.A_pat
+        (Mfidx, Mfshape), Mfval = self.Mff_pat
+        Gt, Du, RCt = (to_torch_sparse(self.G), to_torch_sparse(self.D_flux[:, :self.N]),
+                       to_torch_sparse(self.RC))
+        MfD, Aib = to_torch_sparse(self.M_fD), to_torch_sparse(self.A_ib)
+        keep = torch.as_tensor(~self.wall).double()
+        u = torch.as_tensor(self.u_init) * keep
+        u_prev = u.clone()
+        p_flux = torch.zeros(self.N, dtype=torch.float64)
+        Jt = torch.as_tensor(self.J_flat)
+        L = 0.0
+        for S in sources:
+            hist = u_prev.detach() if drop_history else u_prev
+            u_bnd = self.boundary_velocity(u, drop_outlet=drop_outlet)
+            # THE ELIMINATION TERM, which a zero wall hides and an inlet does not
+            rhs = (Jt * (2.0 * u - 0.5 * hist) / self.dt + S)[self.ii] - spmv(Aib, u_bnd)
+            u_int = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
+            u_star = torch.zeros(self.N, dtype=torch.float64).index_put((self.ii,), u_int)
+            pf = p_flux.detach() if drop_pflux else p_flux
+            p_dong = self.dong_pressure(u_star, detach=detach_dong)
+            rhs_p = torch.index_select(spmv(Du, u_star) - spmv(RCt, pf), 0, self.free_t) \
+                - spmv(MfD, p_dong)
+            phi_f = LinearSolve.apply(Mfval, rhs_p, (Mfidx, Mfshape), True, False)
+            phi = torch.zeros(self.N, dtype=torch.float64) \
+                .index_put((self.free_t,), phi_f).index_put((self.pD_t,), p_dong)
+            u_prev, u = u, (u_star - self.dt * spmv(Gt, phi)) * keep
+            p_flux = p_flux + phi
+            if not final_only:
+                L = L + (u ** 2).sum()
+        if return_fields:
+            return u, p_flux
+        return (u ** 2).sum() if final_only else L
