@@ -20,10 +20,15 @@ are easy to get wrong:
 Restarting into a solver configured differently from the one that wrote the file (different nu,
 dt, time scheme, or grid) is refused rather than silently accepted, because the resulting run
 would be neither the old case nor a clean new one. Pass strict=False to override deliberately.
+The grid is checked by a fingerprint of the node coordinates, because block count and field
+shapes are not a grid: rotating the cylinder O-grid by half a cell changes every coordinate and
+no shape. Checkpoints written before the fingerprint existed carry none and still load.
 
 Fields are stored flat with a per-block prefix, so one .npz serves both solver types and can be
 read for post-processing without constructing a solver at all -- see load_fields().
 """
+import hashlib
+
 import numpy as np
 
 FORMAT = 3                      # bump when the on-disk layout changes incompatibly
@@ -32,6 +37,28 @@ FIELDS = ("u", "v", "w", "p")
 # not a continuation of the same simulation.
 CONFIG = ("nu", "dt", "time_scheme", "scheme", "picard_iters", "corrector_steps",
           "implicit_cross", "rhie_chow", "persistent_flux", "ddt_corr")
+
+
+def grid_fingerprint(solver):
+    """Hash of the node coordinates, or None if the solver exposes no domain.
+
+    SHAPES ARE NOT A GRID. `load` checked block count and field shapes, and the module docstring
+    claimed a grid change was refused; it was not. Rotating the cylinder O-grid by half a cell
+    changes every node coordinate and no shape at all, so a checkpoint written on the old grid
+    loaded silently onto the new one and would have been restarted as though it were a
+    continuation. This closes that hole for anything carrying a domain.
+
+    Old checkpoints have no fingerprint and are still readable -- absence is not a mismatch.
+    """
+    d = getattr(solver, "d", None)
+    blocks = getattr(d, "blocks", None)
+    if not blocks:
+        return None
+    h = hashlib.blake2b(digest_size=16)
+    for blk in blocks:
+        for axis in ("x", "y", "z"):
+            h.update(np.ascontiguousarray(getattr(blk, axis), dtype=np.float64).tobytes())
+    return h.hexdigest()
 
 
 def _is_multiblock(s):
@@ -54,6 +81,10 @@ def save(solver, path, **extra):
     for k in CONFIG:
         if hasattr(solver, k):
             out[f"cfg_{k}"] = np.array(getattr(solver, k))
+
+    fp = grid_fingerprint(solver)
+    if fp is not None:
+        out["grid"] = np.array(fp)
 
     st = _blocks(solver)
     nb = len(st["u"])
@@ -106,6 +137,7 @@ def load_fields(path):
     meta = {"nstep": int(d["nstep"]), "time": float(d["time"]),
             "multiblock": bool(d["multiblock"]), "nblocks": nb,
             "config": {k: d[f"cfg_{k}"].item() for k in CONFIG if f"cfg_{k}" in d},
+            "grid": (str(d["grid"]) if "grid" in d.files else None),
             "extra": {k[2:]: d[k] for k in d.files if k.startswith("x_")}}
     return fields, meta
 
@@ -126,6 +158,13 @@ def load(solver, path, strict=True):
             if arr.shape != want:
                 raise ValueError(f"block {b} field {f}: checkpoint {arr.shape} "
                                  f"vs solver {want}")
+    if strict and meta["grid"] is not None:
+        now = grid_fingerprint(solver)
+        if now is not None and now != meta["grid"]:
+            raise ValueError(
+                f"checkpoint was written on a DIFFERENT grid (fingerprint {meta['grid'][:12]}, "
+                f"solver {now[:12]}). Block count and field shapes match, so nothing else here "
+                f"would have caught it; pass strict=False if the change is intended.")
     if strict:
         bad = {k: (v, getattr(solver, k)) for k, v in meta["config"].items()
                if hasattr(solver, k) and getattr(solver, k) != v}
