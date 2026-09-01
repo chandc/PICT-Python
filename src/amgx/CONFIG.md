@@ -3,19 +3,26 @@
 `pcg_amg_1e6.json` is the config for the square-cylinder production runs: PCG preconditioned by
 one AMG V-cycle, converging to **relative residual 1e-6**.
 
-## The caller's rtol now wins — FIXED
+## The caller's rtol now wins — FIXED, and confirmed on the GPU
 
 `_amgx_solve()` used to discard the `rtol` it was handed, so on the GPU path the JSON *was* the
-tolerance and tightening `tol` did nothing. It now passes `rtol` down to `AmgXSolver`, which
-applies `main:tolerance=<rtol>` through `AMGX_config_add_parameters` after loading the file.
+tolerance and tightening `tol` did nothing. It now passes `rtol` down to `AmgXSolver`.
+
+**How, and why not the obvious way.** The first version called
+`AMGX_config_add_parameters(&cfg, "main:tolerance=...")` on the already-created handle. AmgX
+answered `Caught amgx exception: Invalid/null C wrapper` and the run died at step 1: that call
+does not augment a live handle the way its name suggests. `_config_with_tolerance()` now reads
+the template, substitutes `solver.tolerance`, and writes
+`_generated_tol_<rtol>.json` beside it, so `AMGX_config_create_from_file` does the only thing it
+is known to do correctly — and a failed run leaves the exact config on disk to inspect. The
+generated files are gitignored.
 
 Because the config is a **process-wide singleton**, a second solver asking for a different
 tolerance cannot quietly get one: that raises, rather than returning an answer converged to
 somebody else's tolerance. One tolerance per process.
 
-**Not yet exercised on hardware** — written while the GPU machine was unreachable. The SciPy path is
-untouched and regressions pass (multiblock 55/55), but the AmgX branch needs a GPU run to
-confirm `AMGX_config_add_parameters` is accepted with this config's scoping.
+Exercised on hardware: the `sqcyl_v3` run on spark-b85b (82,096 cells, `--tol 1e-6`,
+`backend=amgx`) initialises from `_generated_tol_1.000e-06.json` and runs clean.
 
 ## Why the file is ours anyway
 
