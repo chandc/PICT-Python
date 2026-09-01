@@ -157,6 +157,76 @@ Choosing between them is a question for when Stages 6–9 have passed, not now.
 
 ---
 
+## Test cases and success criteria, one row per test
+
+Every row is a runnable case with a numeric bar and a diagnosis for failure. Bars are set from
+what the single-block path already achieves, not from what would be convenient.
+
+New files, following the existing naming: `test_mb_adjoint_seam.py`, `test_mb_adjoint_state.py`,
+`test_mb_forces_torch.py`, `bench_mb_adjoint.py`.
+
+### Stage 6 — `test_mb_adjoint_seam.py` (target: < 30 s)
+
+| # | Test case | Config | Success criterion | Failure means |
+|---|---|---|---|---|
+| 6.1 | forward equivalence | 16³ periodic, one block vs two blocks joined by one connection, one PISO step | `max|u_2blk - u_1blk| < 1e-14` | seam indexing, `axes`/`flips`, or metrics — not an adjoint problem |
+| 6.2 | global pressure matrix symmetry | same, assembled across blocks | `max|M - M^T| == 0` exactly | an interface metric mismatch; catch it here, not as a divergence floor 20 steps in |
+| 6.3 | adjoint identity, **momentum** matrix | global non-symmetric $A$, random $v,w$ | `|<A^-1 v, w> - <v, A^-T w>| / |...| < 1e-10`; control omitting the transpose must exceed 1% | the transpose is wrong or CG is being used on a non-symmetric system |
+| 6.4 | gradient equivalence across the split | $L = \tfrac12\|u - u_{\rm tgt}\|^2$, source $S$ on all cells | `max rel diff(dL/dS_2blk, dL/dS_1blk) < 1e-12` | the backward is not carrying sensitivity through the seam consistently with the forward |
+| 6.5 | FD vs adjoint, one step | 2 blocks, solver tol 1e-12, 8 sampled entries of $S$ | agreement to ≥ 6 digits | an algebra error in the corrector adjoint |
+| 6.6 | **sensitivity must cross the seam** | loss support entirely in block B, parameter $S$ entirely in block A | `|dL/dS| > 0` and matches FD to ≥ 6 digits | the seam is transmitting flux forwards but not sensitivity backwards — the failure this whole stage exists to catch |
+
+6.6 is the one that cannot pass by accident. 6.1–6.5 can all be satisfied by a backward pass
+that treats blocks independently, provided the loss and the parameters overlap.
+
+### Stage 7 — `test_mb_adjoint_state.py` (target: < 2 min)
+
+| # | Test case | Config | Success criterion | Failure means |
+|---|---|---|---|---|
+| 7.1 | FD vs adjoint through 3 steps | 2 blocks, `rhie_chow=True, persistent_flux=True, ddt_corr=False`, tol 1e-12 | ≥ 5 digits on 6 sampled entries | the state chain is broken somewhere between steps |
+| 7.2 | dropping `F_prev` must be **detected** | zero `F_prev` in the backward only | gradient error > 1e-12 vs the correct backward | the persistent flux is not in the graph; the gradient looked fine and was not |
+| 7.3 | dropping `p_flux` must be detected | same, for `p_flux` | > 1e-12 | as above, for the projection pressure |
+| 7.4 | dropping `u_prev` must be detected | same, for the BDF2 history | > 1e-12 | the time scheme's second level is missing from the adjoint |
+| 7.5 | adjoint norm bounded | 20 steps, Re = 100 wake-like field | $\lVert\lambda\rVert_{\rm late} / \lVert\lambda\rVert_{\rm early} < 10$ | upstream sensitivity transport is amplifying; shorten the window, do not clip |
+
+7.2–7.4 are mangle tests in the idiom `test_checkpoint.py` already uses: the criterion is that a
+deliberately broken backward **fails**, because a silent one produces a plausible gradient.
+
+### Stage 8 — `test_mb_forces_torch.py` (target: < 1 min)
+
+| # | Test case | Config | Success criterion | Failure means |
+|---|---|---|---|---|
+| 8.1 | the four analytic force checks, in torch | as `test_forces.py`: uniform p, $p = a\cdot x$ inside and outside, Couette | same bars: 0, exact, 1e-4 (polygon), 1e-12 | the torch port diverged from the NumPy one; fix before any gradient is trusted |
+| 8.2 | $\partial C_D/\partial S$ vs central FD | coarse cylinder (4 blocks, 32 azimuthal, 20 radial), tol 1e-12 | ≥ 5 digits | the traction is not differentiable end to end |
+| 8.3 | tangential-only vs full traction | same, two losses | gradients differ by > 1e-3 relative | if they do NOT differ, the contamination is not separable and the objective must be reconsidered |
+| 8.4 | lift gradient antisymmetry | mirror-symmetric field, $y \to -y$ | $\partial C_L/\partial S$ antisymmetric to < 1e-10 | the wall integration or the mirror pairing is asymmetric — the same class of defect as the far-field BC offset |
+
+8.3 is a check on the *objective*, not the code: the spurious viscous normal stress is 1.7 % of
+$C_D$ and the genuine friction drag is 1.7 %, so a network told to reduce $C_D$ can reduce the
+error instead. If the two gradients are indistinguishable, that cannot be prevented by training.
+
+### Stage 9 — `bench_mb_adjoint.py` (target: minutes; the first stage that needs the GB10)
+
+| # | Test case | Config | Success criterion | Failure means |
+|---|---|---|---|---|
+| 9.1 | checkpointed == non-checkpointed | 50 steps, 2-block 16³ | difference **exactly 0**, as Stage 3 achieved | recompute and store disagree; the segment boundaries are wrong |
+| 9.2 | memory reduction | 200 steps, checkpoint every 25 | peak memory ratio ≥ 5× | checkpointing is not actually releasing the graph |
+| 9.3 | cost per gradient step | square cylinder, 82,096 cells | ≤ 4× a forward-only step | the backward is doing more than two solves |
+| 9.4 | accuracy at PRODUCTION tolerance | tol 1e-6, not 1e-12 | FD agreement ≥ 3 digits, and the number is **reported** | nothing — this row exists to document the ceiling, since the adjoint inherits the forward residual |
+
+### Stage 10 — the learning task
+
+Bars cannot be set before the task is chosen, but two rules carry over from Stage 5b, where the
+a-posteriori gate failed against a 30 % bar whose oracle headroom was −0.3 %:
+
+* **Measure the oracle first.** Train the best achievable model on the same data with the same
+  loss and report its improvement. Any bar above that is unreachable by construction.
+* **Report what moved.** For a drag objective, report the tangential and normal parts of the
+  change separately. A 2 % reduction in $C_D$ that is 2 % reduction in discretisation error is
+  not a result.
+
+---
+
 ## Decisions to take before Stage 6 starts
 
 **D1. Torch port of the step, or one hand-written adjoint for the whole step?**
