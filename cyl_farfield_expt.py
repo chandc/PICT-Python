@@ -67,7 +67,11 @@ def main():
     p.add_argument("--steps", type=int, default=1000)
     p.add_argument("--restart", default="results/fields/cyl_expt_base.npz")
     p.add_argument("--sponge-from", type=float, default=12.0)
-    p.add_argument("--sponge-mult", type=float, default=50.0)
+    p.add_argument("--sponge-mult", type=float, default=5.0)
+    p.add_argument("--sponge-outflow", action="store_true",
+                   help="also raise nu in the outflow blocks (the first attempt did, and "
+                        "diverged: the Dong condition uses nu, so a 50x sponge over the arc "
+                        "rewrites the outflow BC instead of damping the far field)")
     a = p.parse_args()
 
     if a.mode == "arc":
@@ -83,10 +87,22 @@ def main():
 
     nu = NU
     if a.mode == "sponge":
+        # THE FIRST SPONGE DIVERGED AND THE HYPOTHESIS WAS NOT WHY. It multiplied nu by 50
+        # everywhere past r = 14, WHICH INCLUDES THE OUTFLOW ARC, and the Dong condition is
+        # written in terms of nu -- so it did not damp the far field against an unchanged
+        # boundary condition, it rewrote the boundary condition. |u - U_inf| went 0.126 ->
+        # 1.011 in six time units and then to NaN, with a divide-by-zero in the Rhie-Chow row
+        # sums. That says nothing about whether the far field is convectively unstable.
+        #
+        # So: leave the outflow blocks alone by default, and default the multiplier to 5, which
+        # still takes the outer cell Peclet number from 29 to 6 -- well below the 29 that the
+        # grid rebuild reached, and the grid rebuild is what showed 218 -> 29 was not enough.
         nu = {}
         for b, blk in enumerate(d.blocks):
             rad = np.hypot(blk.x, blk.y)
             ramp = np.clip((rad - a.sponge_from) / (r[-1] - a.sponge_from), 0.0, 1.0) ** 2
+            if roles.get(b) == "outflow" and not a.sponge_outflow:
+                ramp = np.zeros_like(ramp)
             nu[b] = NU * (1.0 + (a.sponge_mult - 1.0) * ramp)
 
     m = MultiBlockPISO(d, nu, 0.01, 2, 1e-6, time_scheme="bdf2", scheme="rotational",
@@ -103,7 +119,8 @@ def main():
     if a.mode == "sponge":
         mx = max(float(v.max()) for v in nu.values())
         print(f"  sponge from r = {a.sponge_from}, nu_eff up to {mx/NU:.0f}x -> "
-              f"max Pe {2.176/mx:.0f}")
+              f"max Pe {0.285/mx:.0f};  outflow blocks {outs} "
+              f"{'INCLUDED' if a.sponge_outflow else 'left at molecular nu'}")
     b0, a0, p0 = disturbance(d, m, nb)
     print(f"  start t = {m.time:.1f}:  " + "  ".join(f"{k} {v:.3f}" for k, v in b0.items()))
     print(f"  start peak |theta| = {p0[0]:.1f} deg at r = {p0[1]:.1f}, |u-U| = {p0[2]:.4f}")
