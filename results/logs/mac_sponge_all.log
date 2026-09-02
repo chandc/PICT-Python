@@ -2,3 +2,4 @@
   sponge from r = 14.0, nu_eff up to 5x -> max Pe 6;  outflow blocks [0, 15] INCLUDED
   start t = 60.0:  r 5-10 0.089  r 10-14 0.047  r 14-17 0.042  r 17-19 0.107  r 19-20.1 0.126
   start peak |theta| = 24.6 deg at r = 19.7, |u-U| = 0.1259
+  t =    62.0  peak |th|  23.2 deg  r 19.7  |u-U| 0.1174   r 5-10 0.089  r 10-14 0.047  r 14-17 0.042  r 17-19 0.087  r 19-20.1 0.117   4.21 s/step

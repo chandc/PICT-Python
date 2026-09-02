@@ -49,6 +49,44 @@ def grid_fingerprint(solver):
     continuation. This closes that hole for anything carrying a domain.
 
     Old checkpoints have no fingerprint and are still readable -- absence is not a mismatch.
+
+    QUANTISED BEFORE HASHING, because a hash of raw float64 bytes is not a fingerprint of the
+    GRID, it is a fingerprint of the grid AND the machine that built it. The identical
+    cylinder_grid.py gives coordinates differing by 3.553e-15 -- one ULP at r = 20 -- between
+    numpy 2.0.2 on the Mac and 2.4.6 on the GB10, which flipped every bit of the digest and
+    refused a checkpoint that was perfectly valid. That blocks moving a run between machines,
+    which is the whole point of writing one.
+
+    So the coordinates are scaled by the domain extent and rounded to 12 decimals before
+    hashing: 12 significant figures, three orders finer than the round-off being tolerated and
+    nine orders coarser than any grid change anyone would make on purpose. The half-cell
+    rotation this function was written to catch moves nodes by 0.0123 in a domain of 20, which
+    is 1e9 times the quantum.
+    """
+    d = getattr(solver, "d", None)
+    blocks = getattr(d, "blocks", None)
+    if not blocks:
+        return None
+    scale = 0.0
+    for blk in blocks:
+        for axis in ("x", "y", "z"):
+            a = np.asarray(getattr(blk, axis), dtype=np.float64)
+            if a.size:
+                scale = max(scale, float(np.abs(a).max()))
+    scale = scale or 1.0
+    h = hashlib.blake2b(digest_size=16)
+    for blk in blocks:
+        for axis in ("x", "y", "z"):
+            a = np.ascontiguousarray(getattr(blk, axis), dtype=np.float64) / scale
+            h.update(np.ascontiguousarray(np.round(a, 12)).tobytes())
+    return h.hexdigest()
+
+
+def _legacy_grid_fingerprint(solver):
+    """The pre-quantisation digest: raw float64 bytes, machine-dependent.
+
+    Kept only so checkpoints written before the quantised fingerprint still verify on the
+    machine that wrote them. New files carry the quantised digest; `load` accepts either.
     """
     d = getattr(solver, "d", None)
     blocks = getattr(d, "blocks", None)
@@ -160,7 +198,12 @@ def load(solver, path, strict=True):
                                  f"vs solver {want}")
     if strict and meta["grid"] is not None:
         now = grid_fingerprint(solver)
-        if now is not None and now != meta["grid"]:
+        # Either digest is acceptable: the quantised one for files written since the fix, the
+        # raw-bytes one for files written before it AND read back on the same machine. A file
+        # carrying only the legacy digest still cannot cross machines, which is correct -- it
+        # genuinely does not record enough to tell round-off from a real change.
+        ok = {now, _legacy_grid_fingerprint(solver)} - {None}
+        if now is not None and meta["grid"] not in ok:
             raise ValueError(
                 f"checkpoint was written on a DIFFERENT grid (fingerprint {meta['grid'][:12]}, "
                 f"solver {now[:12]}). Block count and field shapes match, so nothing else here "
