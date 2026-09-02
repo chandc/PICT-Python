@@ -35,7 +35,14 @@ class MultiBlockPISO:
                  rhie_chow=False, persistent_flux=False, ddt_corr=False,
                  preconditioner='jacobi', linear_backend='scipy'):
         self.d = domain
+        # nu MAY BE A FIELD: a scalar for molecular viscosity, or a per-block array of
+        # nu_eff = nu + nu_t(x) for an eddy-viscosity closure. `nu_at(b)` and `nu_flat` are what
+        # the rest of the class uses, because a scalar `self.nu` appears in FOUR places and only
+        # one of them is the momentum matrix -- the deferred cross term, the rotational pressure
+        # correction and the Dong outflow pressure all multiply by it too, and each would
+        # silently keep using a molecular value while the matrix used the effective one.
         self.nu, self.dt = nu, dt
+        self._nu_field = isinstance(nu, (dict, list, tuple))
         # BDF2 by default, matching the single-block solver. The single-block Stokes study
         # measured order 2.00 with no-slip walls once the Richardson triple was taken inside
         # the asymptotic range, so second-order time is a real property worth carrying across
@@ -273,9 +280,9 @@ class MultiBlockPISO:
             rhs = base
             x = phi_n
             for _dc in range(self.momentum_dc_iters):
-                if self.momentum_dc_iters > 1 or self.nu != 0.0:
+                if self.momentum_dc_iters > 1 or self._nu_nonzero():
                     cd = {b: d.cross_diffusion(b, cur) for b in range(nb)}
-                    rhs = base + Jg * (self.nu * self._flat(cd))
+                    rhs = base + Jg * (self.nu_flat() * self._flat(cd))
                 if has_wall:
                     # Dirichlet elimination, as the single-block solver does: solve only for
                     # the interior and move the known wall values across to the RHS.
@@ -436,7 +443,8 @@ class MultiBlockPISO:
         elif self.scheme == 'rotational':
             # p <- p + phi - nu*div(u*), cancelling the spurious dp/dn = 0 the projection
             # otherwise imposes
-            self.p = {b: self.p[b] + phi_tot[b] - self.nu * div_star[b] for b in range(nb)}
+            self.p = {b: self.p[b] + phi_tot[b] - self.nu_at(b) * div_star[b]
+                      for b in range(nb)}
         else:
             raise ValueError(f"unknown scheme {self.scheme!r}")
         self.F_prev = {b: [f.copy() for f in Fb[b]] for b in range(nb)}
@@ -481,6 +489,19 @@ class MultiBlockPISO:
                 worst = max(worst, div[~mask].max())
         return worst
 
+    def nu_at(self, b):
+        """Viscosity for block b: the scalar itself, or that block's array."""
+        return self.nu[b] if self._nu_field else self.nu
+
+    def nu_flat(self):
+        """Viscosity as one global vector, for the flattened cross-diffusion term."""
+        if not self._nu_field:
+            return self.nu
+        return self._flat({b: self.nu[b] for b in range(len(self.d.blocks))})
+
+    def _nu_nonzero(self):
+        return bool(np.any(self.nu_flat() != 0.0)) if self._nu_field else self.nu != 0.0
+
     def _dong_nodes(self):
         """
         (global indices, prescribed pressure) for every Dong outflow node.
@@ -517,7 +538,9 @@ class MultiBlockPISO:
                          + (blk.z[bs] - blk.z[isl]) ** 2)
             U0 = max(float(np.max(np.abs(un))), 1e-12)
             th = 0.5 * (1.0 - np.tanh(un / (U0 * self.dong_delta)))
-            pv = self.nu * (un - un_i) / dn - 0.5 * (ub ** 2 + vb ** 2 + wb ** 2) * th
+            nu_b = self.nu_at(b)
+            nu_face = nu_b[bs] if np.ndim(nu_b) else nu_b
+            pv = nu_face * (un - un_i) / dn - 0.5 * (ub ** 2 + vb ** 2 + wb ** 2) * th
             idx.append(d.global_ids(b)[bs].ravel())
             val.append(pv.ravel())
         if not idx:
