@@ -123,13 +123,38 @@ def main():
           f"{d.blocks[pb].y[pk[0],pk[1],0]:.3f})", flush=True)
     print(f"  reference: St = {ST_REF}, C_D = {CD_REF}\n", flush=True)
 
+    # FAR-FIELD WATCHDOG. The previous cylinder run died of a disturbance that grew in the outer
+    # grid, where the cell Peclet number reached 218, and nothing in the reporting was watching
+    # it: max|u| went 3.13 at t = 200, 4.97 at t = 215, NaN shortly after, and 200 time units of
+    # a converged-looking shedding record turned out to be measured on a contaminated field.
+    # This column would have shown it at t = 20. The mask takes r > 10 and |y| > 4, which is
+    # outside the wake, so anything appearing there is numerical.
+    far = [(np.hypot(b.x, b.y) > 10.0) & (np.abs(b.y) > 4.0) for b in d.blocks]
+    n_far = sum(int(f.sum()) for f in far)
+
+    def farfield():
+        return max((float(np.hypot(m.u[b] - U_INF, m.v[b])[far[b]].max())
+                    for b in range(len(d.blocks)) if far[b].any()), default=0.0)
+
+    FF_ABORT = 0.5      # half of U_inf outside the wake is not a flow feature
+
     def report(i, n, hist, t0, phase):
         seg = np.array([h[1] for h in hist[-500:]])
+        ff = farfield()
         print(f"  {phase:<7}{i:>7}{m.time:>8.1f}{hist[-1][1]:>12.6f}"
-              f"{seg.max()-seg.min():>11.3e}{(time.time()-t0)/max(i,1):>9.3f}", flush=True)
+              f"{seg.max()-seg.min():>11.3e}{ff:>9.3f}{(time.time()-t0)/max(i,1):>9.3f}",
+              flush=True)
+        if not np.isfinite(ff) or ff > FF_ABORT:
+            checkpoint.save(m, f"results/fields/{tag}_ABORT.npz")
+            raise SystemExit(
+                f"\n  ABORT at t = {m.time:.1f}: far-field disturbance {ff:.3f} exceeds "
+                f"{FF_ABORT} over {n_far:,} cells with r > 10, |y| > 4.\n"
+                f"  That region has no flow feature in it, so this is the outer grid going\n"
+                f"  unstable. Field saved to results/fields/{tag}_ABORT.npz. Do not measure\n"
+                f"  anything on it.")
 
-    print(f"  {'phase':<7}{'step':>7}{'t':>8}{'v_probe':>12}{'amp/500':>11}{'s/step':>9}",
-          flush=True)
+    print(f"  {'phase':<7}{'step':>7}{'t':>8}{'v_probe':>12}{'amp/500':>11}{'far':>9}"
+          f"{'s/step':>9}", flush=True)
 
     t0 = time.time()
     for i in range(1, settle + 1):
