@@ -66,6 +66,14 @@ def main():
     p.add_argument("--mode", choices=("control", "arc", "sponge"), required=True)
     p.add_argument("--steps", type=int, default=1000)
     p.add_argument("--restart", default="results/fields/cyl_expt_base.npz")
+    p.add_argument("--dong-relax", type=float, default=1.0,
+                   help="under-relax the Dong outlet pressure; 1.0 is the original behaviour")
+    p.add_argument("--dt", type=float, default=0.01)
+    p.add_argument("--force-restart", action="store_true",
+                   help="load a checkpoint written with a different dt. The BDF2 history in the "
+                        "file is spaced at the OLD dt, so the first step after the restart is "
+                        "not a clean continuation -- fine for measuring a growth rate later in "
+                        "the run, not for anything that depends on the first few steps.")
     p.add_argument("--sponge-from", type=float, default=12.0)
     p.add_argument("--sponge-mult", type=float, default=5.0)
     p.add_argument("--sponge-outflow", action="store_true",
@@ -105,15 +113,18 @@ def main():
                 ramp = np.zeros_like(ramp)
             nu[b] = NU * (1.0 + (a.sponge_mult - 1.0) * ramp)
 
-    m = MultiBlockPISO(d, nu, 0.01, 2, 1e-6, time_scheme="bdf2", scheme="rotational",
+    m = MultiBlockPISO(d, nu, a.dt, 2, 1e-6, time_scheme="bdf2", scheme="rotational",
                        picard_iters=2, rhie_chow=True, persistent_flux=True, ddt_corr=False)
+    m.dong_relax = a.dong_relax
     for b in range(nb):
         m.u[b][:] = U_INF; m.v[b][:] = 0.0; m.w[b][:] = 0.0
     apply_bc(m, d, nb)
     # the sponge changes nu, which the checkpoint records as configuration -- a deliberate
     # change, which is exactly what strict=False documents
-    checkpoint.load(m, a.restart, strict=(a.mode != "sponge"))
+    checkpoint.load(m, a.restart,
+                    strict=(a.mode != "sponge") and not a.force_restart)
 
+    print(f"  dt = {a.dt},  dong_relax = {a.dong_relax}")
     print(f"  mode = {a.mode};  outflow blocks {outs} "
           f"({'|theta| <= 44.3' if a.mode == 'arc' else '|theta| <= 21.8'})")
     if a.mode == "sponge":

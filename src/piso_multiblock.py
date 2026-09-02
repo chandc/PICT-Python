@@ -82,6 +82,14 @@ class MultiBlockPISO:
         self.F_prev = None          # previous step's face flux, for ddt_corr
         self.momentum_dc_iters = 2
         self.dong_delta = 0.01
+        # UNDER-RELAXATION OF THE DONG PRESSURE. The condition below prescribes p on the outlet
+        # from the CURRENT velocity, and the momentum solve then uses that p -- a lagged
+        # feedback loop with gain proportional to nu/dn. Measured on the cylinder: multiplying
+        # nu by 5 at the arc took the far-field growth rate from +0.011 to +0.128, and by 50
+        # diverged. 1.0 is the original behaviour; below 1.0 blends with the previous step's
+        # value, which reduces the loop gain without changing the condition being converged to.
+        self.dong_relax = 1.0
+        self._dong_prev = None
         self._prec = None
         self.corrector_steps = corrector_steps
         # Linear-solve tolerance for the pressure system. 1e-4, not the 1e-13 this used to
@@ -547,7 +555,13 @@ class MultiBlockPISO:
             return np.empty(0, dtype=int), np.empty(0)
         i = np.concatenate(idx); v = np.concatenate(val)
         u_, first = np.unique(i, return_index=True)     # a corner may sit on two faces
-        return u_, v[first]
+        v = v[first]
+        if self.dong_relax < 1.0:
+            prev = self._dong_prev
+            if prev is not None and prev.shape == v.shape:
+                v = (1.0 - self.dong_relax) * prev + self.dong_relax * v
+            self._dong_prev = v.copy()
+        return u_, v
 
     def _solve_cross(self, M, M_ff, free, rhs, coef, Jg):
         """
