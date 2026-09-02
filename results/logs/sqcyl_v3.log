@@ -1,0 +1,12 @@
+  82,096 cells, dt = 0.01, Re = 100, tol = 1e-06, rhie_chow = True, nz = 4, backend = amgx
+  probe at (1.958, 0.500), asked for (2.0, 0.5)
+  symmetry-breaking pulse: v = 0.05 at the inlet until t = 4.0
+
+     step        t    v_probe   max|u|    max div   s/step
+  settling 8000 steps to the base flow before kicking
+
+AMGX version 2.5.0
+Built on Aug 30 2026, 11:25:55
+Compiled with CUDA Runtime 13.1, using CUDA driver 13.0
+  settle    500      5.0  -0.233615  3.155e-01    0.364
+  settle   1000     10.0   0.016574  2.492e-01    0.363

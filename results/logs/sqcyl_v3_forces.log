@@ -1,0 +1,27 @@
+  restarted from results/fields/sqcyl_v3.npz at t = 380.000, step 38000
+  82,096 cells, dt = 0.01, Re = 100, tol = 1e-06, rhie_chow = True, nz = 4, backend = amgx
+  probe at (1.958, 0.500), asked for (2.0, 0.5)
+  symmetry-breaking pulse: v = 0.05 at the inlet until t = 4.0
+
+     step        t    v_probe   max|u|    max div   s/step
+AMGX version 2.5.0
+Built on Aug 30 2026, 11:25:55
+Compiled with CUDA Runtime 13.1, using CUDA driver 13.0
+    38001   380.01   -0.04741   1.3052   8.25e-15    0.829
+    38250   382.50   -0.35543   1.3145   7.96e-15    0.416
+    38500   385.00    0.21606   1.3071   7.84e-15    0.413
+    38750   387.50   -0.29164   1.3018   7.39e-15    0.410
+    39000   390.00   -0.18787   1.3069   7.19e-15    0.407
+    39250   392.50    0.21177   1.3145   9.13e-15    0.408
+    39500   395.00   -0.38996   1.3055   7.01e-15    0.406
+    39750   397.50    0.03515   1.3016   7.58e-15    0.405
+    40000   400.00    0.01164   1.3082   7.32e-15    0.404
+    40250   402.50   -0.37300   1.3144   8.24e-15    0.403
+    40500   405.00    0.19568   1.3039   7.79e-15    0.403
+    40750   407.50   -0.24988   1.3008   7.40e-15    0.402
+    41000   410.00   -0.23166   1.3095   7.60e-15    0.401
+    41250   412.50    0.22920   1.3142   7.50e-15    0.401
+    41500   415.00   -0.38203   1.3021   7.45e-15    0.401
+
+  C_D +1.4529   C_L rms 0.1722   over t = 380.0 to 415.0
+  saved results/fields/sqcyl_v3_forces.npz, sqcyl_v3_forces_mean.npz, sqcyl_v3_forces_history.npy and sqcyl_v3_forces_forces.npy

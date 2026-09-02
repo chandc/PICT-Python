@@ -128,6 +128,11 @@ def main():
     t0 = time.time()
     for i in range(1, a.steps + 1):
         m.step()
+        if i % 500 == 0:
+            # SAVE AS WE GO. Both of these experiments were once stopped mid-flight to free the
+            # GPU and lost everything, because the only save was after the loop. A restartable
+            # experiment costs one file write per 500 steps.
+            checkpoint.save(m, f"results/fields/cyl_expt_{a.mode}.npz")
         if i % 200 == 0:
             bb, aa, pp = disturbance(d, m, nb)
             print(f"  t = {m.time:7.1f}  peak |th| {pp[0]:5.1f} deg  r {pp[1]:4.1f}  "

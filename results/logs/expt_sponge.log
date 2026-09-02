@@ -1,0 +1,17 @@
+  mode = sponge;  outflow blocks [0, 15] (|theta| <= 21.8)
+  sponge from r = 14.0, nu_eff up to 50x -> max Pe 4
+  start t = 60.0:  r 5-10 0.089  r 10-14 0.047  r 14-17 0.042  r 17-19 0.107  r 19-20.1 0.126
+  start peak |theta| = 24.6 deg at r = 19.7, |u-U| = 0.1259
+  t =    62.0  peak |th|  21.8 deg  r 19.7  |u-U| 0.2520   r 5-10 0.090  r 10-14 0.049  r 14-17 0.046  r 17-19 0.076  r 19-20.1 0.252   4.88 s/step
+  t =    64.0  peak |th|  21.8 deg  r 19.7  |u-U| 0.6421   r 5-10 0.090  r 10-14 0.052  r 14-17 0.063  r 17-19 0.200  r 19-20.1 0.642   4.86 s/step
+  t =    66.0  peak |th|  21.8 deg  r 19.7  |u-U| 1.0108   r 5-10 0.090  r 10-14 0.052  r 14-17 0.064  r 17-19 0.301  r 19-20.1 1.011   4.93 s/step
+/w/src/piso_multiblock.py:303: RuntimeWarning: divide by zero encountered in divide
+  coef_g = Jg / rowsum
+/w/src/multiblock.py:956: RuntimeWarning: invalid value encountered in multiply
+  val = 0.0 * val   # no valid wide stencil -> no correction here
+/w/src/multiblock.py:953: RuntimeWarning: invalid value encountered in subtract
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/w/src/multiblock.py:953: RuntimeWarning: invalid value encountered in add
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/w/src/multiblock.py:720: RuntimeWarning: invalid value encountered in subtract
+  d += (F[axis][tuple(hi_s)] - F[axis][tuple(lo_s)]) / blk.h[axis]

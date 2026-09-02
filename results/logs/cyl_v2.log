@@ -1,0 +1,38 @@
+  160,768 cells  Re=100  dt=0.01  tol=1e-06  backend=amgx  nz=4
+  probe at (1.999, 0.475)
+  reference: St = 0.164, C_D = 1.33
+
+  phase     step       t     v_probe    amp/500   s/step
+AMGX version 2.5.0
+Built on Aug 30 2026, 11:25:55
+Compiled with CUDA Runtime 13.1, using CUDA driver 13.0
+  settle     500     5.0   -0.286693  2.863e-01    1.050
+  restarted from results/fields/cyl_v2.npz: t=5.0, step 500, 500 history samples
+  -> 7500 settle steps still to run before the kick
+  160,768 cells  Re=100  dt=0.01  tol=1e-06  backend=amgx  nz=4
+  probe at (1.999, 0.475)
+  reference: St = 0.164, C_D = 1.33
+
+  phase     step       t     v_probe    amp/500      far   s/step
+AMGX version 2.5.0
+Built on Aug 30 2026, 11:25:55
+Compiled with CUDA Runtime 13.1, using CUDA driver 13.0
+  settle     500    10.0   -0.031449  2.547e-01    0.025    0.944
+  settle    1000    15.0    0.023531  5.472e-02    0.037    0.940
+  settle    1500    20.0    0.016085  7.661e-03    0.046    0.938
+  settle    2000    25.0    0.010265  5.800e-03    0.052    0.936
+  settle    2500    30.0    0.009126  1.135e-03    0.065    0.934
+  settle    3000    35.0    0.009041  8.949e-05    0.079    0.933
+  settle    3500    40.0    0.009085  4.406e-05    0.088    0.932
+  settle    4000    45.0    0.009133  4.823e-05    0.100    0.931
+  settle    4500    50.0    0.009148  1.475e-05    0.110    0.930
+  settle    5000    55.0    0.009155  6.619e-06    0.119    0.929
+  settle    5500    60.0    0.009153  2.304e-06    0.126    0.929
+  settle    6000    65.0    0.009145  8.054e-06    0.133    0.932
+  settle    6500    70.0    0.009139  5.173e-06    0.141    0.935
+  settle    7000    75.0    0.009123  1.625e-05    0.162    0.938
+  settle    7500    80.0    0.009119  3.921e-06    0.187    0.941
+  base flow saved -> results/fields/cyl_v2_base.npz
+
+  kicked at 1% of U about v0 = +0.009119
+
