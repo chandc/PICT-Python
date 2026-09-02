@@ -187,3 +187,31 @@ quantity that had to agree:
 
 The common structure is a **redundant invariant** -- something that must hold if everything is
 right, and that nothing in the code is trying to satisfy.
+
+---
+
+## 9. Every reported diagnostic was healthy while the run died
+
+Added 2026-09-02, after the cylinder run diverged.
+
+`run_cylinder.py` reported four things every 500 steps: the probe velocity, the amplitude
+envelope over the last 500 samples, the step time, and once shedding began, `C_D` and `C_L` rms.
+All four stayed plausible for 200 time units. `C_D` settled at 1.13, `St` at 0.144, and both were
+close enough to the published 1.33 and 0.164 to be written down as a slightly-under-resolved
+result rather than a warning.
+
+They were measured on a field with `max|u| = 3.13` in the far field at `t = 200`, 4.97 at 215, and
+NaN shortly after. The disturbance lived at `r > 10`, where the cell Peclet number reached 218 --
+central differencing needs it near 2 -- and **not one reported quantity looked there.** The probe
+sits in the near wake, the forces integrate over the body, and the envelope is a statistic of the
+probe. The instrument was pointed entirely at the region that was still fine.
+
+The general form: **a diagnostic suite assembled to measure the answer will not see the solution
+being destroyed somewhere it is not looking.** The fix is not a better version of the existing
+columns, it is one column over a region where the correct value is known a priori -- here
+`max |u - U_inf|` outside the wake, which must be small because there is nothing out there -- and
+an abort when it is not. That check crosses its threshold at `t = 20` on the old solution.
+
+This differs from every other entry above. Those are instruments that returned the wrong number.
+This is a set of instruments that all returned the right number, for the quantity each was
+measuring, while the run was already lost.
