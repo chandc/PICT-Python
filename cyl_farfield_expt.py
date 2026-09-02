@@ -69,6 +69,15 @@ def main():
     p.add_argument("--dong-relax", type=float, default=1.0,
                    help="under-relax the Dong outlet pressure; 1.0 is the original behaviour")
     p.add_argument("--dt", type=float, default=0.01)
+    p.add_argument("--bc-kind", choices=("dong", "convective"), default="dong",
+                   help="outflow treatment on the arc. 'dong' copies the velocity inward "
+                        "(t = 1, hard zero-gradient) and prescribes p, which makes the pressure "
+                        "system non-singular. 'convective' relaxes the velocity toward the "
+                        "interior value at rate dt|U|/dn and prescribes NO pressure, so the "
+                        "system is singular and the flux must be balanced instead. They differ "
+                        "in both the velocity and the pressure treatment, so this is a coarse "
+                        "test -- it asks whether the outflow treatment matters at all, not "
+                        "which half of it does.")
     p.add_argument("--force-restart", action="store_true",
                    help="load a checkpoint written with a different dt. The BDF2 history in the "
                         "file is spaced at the OLD dt, so the first step after the restart is "
@@ -118,13 +127,13 @@ def main():
     m.dong_relax = a.dong_relax
     for b in range(nb):
         m.u[b][:] = U_INF; m.v[b][:] = 0.0; m.w[b][:] = 0.0
-    apply_bc(m, d, nb)
+    apply_bc(m, d, nb, kind=a.bc_kind)
     # the sponge changes nu, which the checkpoint records as configuration -- a deliberate
     # change, which is exactly what strict=False documents
     checkpoint.load(m, a.restart,
                     strict=(a.mode != "sponge") and not a.force_restart)
 
-    print(f"  dt = {a.dt},  dong_relax = {a.dong_relax}")
+    print(f"  dt = {a.dt},  dong_relax = {a.dong_relax},  outflow kind = {a.bc_kind}")
     print(f"  mode = {a.mode};  outflow blocks {outs} "
           f"({'|theta| <= 44.3' if a.mode == 'arc' else '|theta| <= 21.8'})")
     if a.mode == "sponge":
