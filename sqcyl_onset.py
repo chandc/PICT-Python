@@ -85,7 +85,16 @@ def growth_rate(t, v, t_kick=None, win_pts=7, win=None):
     env = envelope(t, v, win)
     if len(env) < win_pts + 2:
         return None
-    te, a = env[:, 0], np.log(env[:, 1])
+    # A NOISE FLOOR, because a strongly stable case decays into round-off. Re = 44 fell from
+    # 2.1e-03 to 6e-12 with 308 exact zeros in its envelope: past that point the "extrema" are
+    # floating-point noise, not oscillations, and fitting them returned sigma = +28 -- a
+    # violently GROWING mode read off a violently decaying one. Clipping at log(0) is not
+    # enough; the noise has to be excluded, not merely made finite.
+    floor = max(1e-12, 1e-7 * float(env[0, 1]))
+    keep = env[:, 1] > floor
+    if keep.sum() < 8:
+        return None
+    te, a = env[keep, 0], np.log(env[keep, 1])
     slopes, centres = [], []
     for i in range(len(te) - win_pts + 1):
         sl = np.polyfit(te[i:i + win_pts], a[i:i + win_pts], 1)[0]

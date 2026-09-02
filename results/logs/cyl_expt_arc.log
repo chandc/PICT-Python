@@ -1,0 +1,12 @@
+  mode = arc;  outflow blocks [0, 1, 14, 15] (|theta| <= 44.3)
+  start t = 215.0:  r 5-13 0.126  r 13-20 0.639  r 20-28 4.078  r 28-30.1 2.247
+/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py:303: RuntimeWarning: divide by zero encountered in divide
+  coef_g = Jg / rowsum
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:956: RuntimeWarning: invalid value encountered in multiply
+  val = 0.0 * val   # no valid wide stencil -> no correction here
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in subtract
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in add
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/Users/danielchan/Dropbox/PICT-Python/src/precond.py:139: RuntimeWarning: invalid value encountered in multiply
+  return spla.LinearOperator((n, n), matvec=lambda v: dinv * v, dtype=float)

@@ -36,3 +36,46 @@
   shed      5500   135.0   -0.300729  4.868e-01    2.222
   shed      6000   140.0    0.153541  5.469e-01    2.234
   shed      6500   145.0   -0.044613  5.237e-01    2.238
+  shed      7000   150.0   -0.387451  6.015e-01    2.242
+  shed      7500   155.0   -0.141509  6.075e-01    2.252
+  shed      8000   160.0    0.208889  6.042e-01    2.247
+  restarted from results/fields/cyl_Re100.npz: t=160.0, step 16000, 16000 history samples
+  -> already kicked; continuing the shedding stage
+  89,088 cells  Re=100  dt=0.01  tol=1e-06  backend=scipy  nz=4
+  probe at (2.070, 0.492)
+  reference: St = 0.164, C_D = 1.33
+
+  phase     step       t     v_probe    amp/500   s/step
+
+  NOT kicking: this checkpoint is already past the kick (step 16000 >= settle 8000), v = +0.208889
+
+  shed       500   165.0   -0.276758  6.217e-01    2.530
+           C_D +1.1281   C_L rms 0.0923   (reference C_D 1.33, spurious normal stress in C_D +0.0350)
+  shed      1000   170.0   -0.367571  5.918e-01    2.360
+           C_D +1.1288   C_L rms 0.1096   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      1500   175.0    0.086398  6.250e-01    2.280
+           C_D +1.1299   C_L rms 0.1032   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      2000   180.0    0.060997  4.840e-01    2.250
+           C_D +1.1295   C_L rms 0.1040   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      2500   185.0   -0.387093  6.236e-01    2.231
+           C_D +1.1298   C_L rms 0.1101   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      3000   190.0   -0.264138  6.089e-01    2.217
+           C_D +1.1295   C_L rms 0.0984   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      3500   195.0    0.220418  6.231e-01    2.208
+           C_D +1.1289   C_L rms 0.1175   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      4000   200.0   -0.158880  6.193e-01    2.202
+           C_D +1.1292   C_L rms 0.1036   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      4500   205.0   -0.408434  6.518e-01    2.197
+           C_D +1.1341   C_L rms 0.1389   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      5000   210.0   -0.085493  6.664e-01    2.188
+           C_D +1.1370   C_L rms 0.1236   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+  shed      5500   215.0    0.226897  6.597e-01    2.182
+           C_D +1.1423   C_L rms 0.1630   (reference C_D 1.33, spurious normal stress in C_D +0.0349)
+/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py:303: RuntimeWarning: divide by zero encountered in divide
+  coef_g = Jg / rowsum
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:956: RuntimeWarning: invalid value encountered in multiply
+  val = 0.0 * val   # no valid wide stencil -> no correction here
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in add
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in subtract
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]

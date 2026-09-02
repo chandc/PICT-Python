@@ -1,0 +1,14 @@
+  mode = sponge;  outflow blocks [0, 15] (|theta| <= 21.8)
+  sponge from r = 12.0, nu_eff up to 50x -> max Pe 4
+  start t = 215.0:  r 5-13 0.126  r 13-20 0.639  r 20-28 4.078  r 28-30.1 2.247
+  t =   217.5  r 5-13 0.195  r 13-20 0.397  r 20-28 11.391  r 28-30.1 9.884   2.80 s/step
+/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py:303: RuntimeWarning: divide by zero encountered in divide
+  coef_g = Jg / rowsum
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:956: RuntimeWarning: invalid value encountered in multiply
+  val = 0.0 * val   # no valid wide stencil -> no correction here
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in subtract
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in add
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/Users/danielchan/Dropbox/PICT-Python/src/precond.py:139: RuntimeWarning: invalid value encountered in multiply
+  return spla.LinearOperator((n, n), matvec=lambda v: dinv * v, dtype=float)
