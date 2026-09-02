@@ -43,15 +43,22 @@ def disturbance(d, m, nb):
     dist = np.hypot(U - U_INF, V)
     away = np.abs(Y) > 3.0
     bands = {}
-    for lo, hi in ((5, 13), (13, 20), (20, 28), (28, 30.1)):
+    for lo, hi in ((5, 10), (10, 14), (14, 17), (17, 19), (19, 20.1)):
         s = away & (R >= lo) & (R < hi)
         bands[f"r {lo}-{hi:g}"] = float(dist[s].max()) if s.sum() else float("nan")
+    # THE PEAK ANGLE IS THE WHOLE EXPERIMENT. The disturbance sits at theta = -24.6, just
+    # outside the outflow arc edge at 21.8. If it is the junction that generates it, moving the
+    # edge to 44.3 moves the peak with it; if it is anything else -- the grid, the wake, the
+    # outer boundary as such -- the peak stays where it is. That is a far sharper test than
+    # asking whether the pattern "looks different".
+    m = away & (R > 0.85 * R.max())
+    i = int(np.argmax(dist[m]))
+    peak = (float(np.abs(TH[m][i])), float(R[m][i]), float(dist[m].max()))
     ang = {}
-    m25 = away & (R > 25)
-    for lo, hi in ((0, 22), (22, 45), (45, 90)):
-        s = m25 & (np.abs(TH) >= lo) & (np.abs(TH) < hi)
+    for lo, hi in ((0, 22), (22, 45), (45, 90), (90, 180.1)):
+        s = m & (np.abs(TH) >= lo) & (np.abs(TH) < hi)
         ang[f"|th| {lo}-{hi}"] = float(dist[s].max()) if s.sum() else float("nan")
-    return bands, ang
+    return bands, ang, peak
 
 
 def main():
@@ -97,18 +104,20 @@ def main():
         mx = max(float(v.max()) for v in nu.values())
         print(f"  sponge from r = {a.sponge_from}, nu_eff up to {mx/NU:.0f}x -> "
               f"max Pe {2.176/mx:.0f}")
-    b0, a0 = disturbance(d, m, nb)
+    b0, a0, p0 = disturbance(d, m, nb)
     print(f"  start t = {m.time:.1f}:  " + "  ".join(f"{k} {v:.3f}" for k, v in b0.items()))
+    print(f"  start peak |theta| = {p0[0]:.1f} deg at r = {p0[1]:.1f}, |u-U| = {p0[2]:.4f}")
 
     t0 = time.time()
     for i in range(1, a.steps + 1):
         m.step()
-        if i % 250 == 0:
-            bb, aa = disturbance(d, m, nb)
-            print(f"  t = {m.time:7.1f}  " + "  ".join(f"{k} {v:.3f}" for k, v in bb.items())
+        if i % 200 == 0:
+            bb, aa, pp = disturbance(d, m, nb)
+            print(f"  t = {m.time:7.1f}  peak |th| {pp[0]:5.1f} deg  r {pp[1]:4.1f}  "
+                  f"|u-U| {pp[2]:.4f}   " + "  ".join(f"{k} {v:.3f}" for k, v in bb.items())
                   + f"   {(time.time()-t0)/i:.2f} s/step", flush=True)
-    bb, aa = disturbance(d, m, nb)
-    print(f"\n  FINAL t = {m.time:.1f}")
+    bb, aa, pp = disturbance(d, m, nb)
+    print(f"\n  FINAL t = {m.time:.1f}   peak |theta| = {pp[0]:.1f} deg at r = {pp[1]:.1f}")
     print("    radial:  " + "  ".join(f"{k} {v:.4f}" for k, v in bb.items()))
     print("    angular (r>25):  " + "  ".join(f"{k} {v:.4f}" for k, v in aa.items()))
     os.makedirs("results/fields", exist_ok=True)
