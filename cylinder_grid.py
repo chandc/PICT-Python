@@ -81,9 +81,26 @@ def _radial_plateau(r0, r1, first, dr_hold, r_hold, ratio):
     return rs
 
 
-def cylinder_domain(nblk=16, nth_tot=256, nz=8, r_out=30.0 * D, first=0.006 * D,
-                    dr_hold=0.28 * D, r_hold=12.0 * D, ratio=1.12, span=4.0 * D):
-    """O-grid ring of `nblk` blocks, cylinder at the centre, far field at `r_out`."""
+def cylinder_domain(nblk=16, nth_tot=256, nz=8, r_out=20.0 * D, first=0.006 * D,
+                    dr_hold=0.15 * D, r_hold=18.0 * D, ratio=1.08, span=4.0 * D):
+    """O-grid ring of `nblk` blocks, cylinder at the centre, far field at `r_out`.
+
+    THESE DEFAULTS REPLACE A GRID THAT DESTROYED A RUN. The previous one held dr = 0.28 to
+    r = 12 and then stretched to 2.18 at r = 30, which puts the cell Peclet number
+    |u| dr / nu at 218 where central differencing needs it near 2. The oscillation that
+    produced grew from |u| = 1.13 at r = 15 to 4.97 by t = 215 and then diverged, taking the
+    run and two experiments with it. Every quantity measured on that solution -- C_D 1.13,
+    St 0.144, base C_p -0.42 -- came from a field already contaminated.
+
+    The new values cap dr at 0.28 (Pe 29, the value the surviving region ran at) and halve the
+    wake cell to 0.15, matching the square cylinder, whose St and C_D both matched published
+    values on a wake resolved to 44 cells per shedding wavelength against this grid's previous
+    25. Cost is 1.8x the cells; r_out drops 30 -> 20, raising blockage 1.7% -> 2.5%, still
+    below the square's 5%.
+
+    The azimuthal count stays at 256, so the arc exceeds lambda/20 beyond r = 14. The wake is
+    leaving the domain by then, but it is a real limit and not a free choice.
+    """
     if nth_tot % nblk:
         raise ValueError(f"nth_tot={nth_tot} must divide by nblk={nblk}")
     # AZIMUTHAL RESOLUTION IS SET BY THE WAKE, NOT THE BODY. The arc length r*dtheta grows with
