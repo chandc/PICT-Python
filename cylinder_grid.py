@@ -145,7 +145,7 @@ def cylinder_domain(nblk=16, nth_tot=256, nz=8, r_out=20.0 * D, first=0.006 * D,
 OUTFLOW_SECTOR = 45.0           # full angular width of the outflow arc, degrees
 
 
-def outer_role(d, nblk, flow_x=True, sector=OUTFLOW_SECTOR):
+def outer_role(d, nblk, flow_x=True, sector=OUTFLOW_SECTOR, slip_sector=None):
     """Classify each block's far-field face as 'inflow' or 'outflow' by its mean azimuth.
 
     A face carries ONE condition, so the split can only fall on block boundaries.
@@ -174,8 +174,26 @@ def outer_role(d, nblk, flow_x=True, sector=OUTFLOW_SECTOR):
 
     Workable pairs: nblk=16 with sector=45 gives |theta| <= 21.8; nblk=8 with sector=90 gives
     |theta| <= 44.3.
+
+    `slip_sector`, if given, makes the blocks between the outflow arc and that full width carry
+    a SLIP condition instead of the free stream: the normal velocity is prescribed and the
+    tangential component is free.
+
+    WHY THAT EXISTS. Pinning BOTH velocity components over 94% of a CLOSED perimeter, with the
+    remaining 6% free, over-determines the discrete problem: there is no state satisfying every
+    constraint, so the iteration cannot converge and drifts instead. Measured on this case, the
+    far-field deviation is EXACTLY ZERO on all fourteen Dirichlet blocks and nonzero only on the
+    two outflow blocks, and it grows per STEP rather than per unit time -- amplification
+    1.000116 per step at dt = 0.01 against 1.000143 at dt = 0.005, while sigma per unit time
+    differed by 2.6x. That is a non-convergent fixed point, not a flow instability, and five
+    physical mechanisms were refuted before the evidence pointed here.
+
+    Slip relieves it by removing one constraint per node where the boundary is nearly parallel
+    to the stream, which is also the standard far-field treatment there. The upstream blocks
+    keep the free stream, because that is where information genuinely enters.
     """
     half = np.radians(0.5 * sector)
+    slip_half = np.radians(0.5 * slip_sector) if slip_sector else None
     roles, extents = {}, {}
     for b in range(nblk):
         th = np.arctan2(d.blocks[b].y[-1], d.blocks[b].x[-1]).ravel()
@@ -183,7 +201,12 @@ def outer_role(d, nblk, flow_x=True, sector=OUTFLOW_SECTOR):
             th = np.arctan2(np.sin(th), -np.cos(th))
         th = np.abs(np.arctan2(np.sin(th), np.cos(th)))      # wrap to |theta| <= pi
         extents[b] = th.max()
-        roles[b] = "outflow" if th.max() <= half + 1e-12 else "inflow"
+        if th.max() <= half + 1e-12:
+            roles[b] = "outflow"
+        elif slip_half is not None and th.max() <= slip_half + 1e-12:
+            roles[b] = "slip"
+        else:
+            roles[b] = "inflow"
     if not any(v == "outflow" for v in roles.values()):
         best = np.degrees(min(extents.values()))
         raise ValueError(

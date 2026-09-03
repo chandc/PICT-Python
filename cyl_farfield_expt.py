@@ -69,6 +69,14 @@ def main():
     p.add_argument("--dong-relax", type=float, default=1.0,
                    help="under-relax the Dong outlet pressure; 1.0 is the original behaviour")
     p.add_argument("--dt", type=float, default=0.01)
+    p.add_argument("--slip-sector", type=float, default=None,
+                   help="full width in degrees within which the far field carries SLIP (normal "
+                        "velocity prescribed, tangential free) instead of the free stream. "
+                        "180 gives slip on the downstream flanks and the lateral boundary, "
+                        "leaving the upstream blocks with the free stream.")
+    p.add_argument("--dong-copy", type=float, default=1.0,
+                   help="relax the per-step outflow velocity copy; 1.0 is the original hard "
+                        "zero-gradient. Keeps the prescribed pressure, unlike --bc-kind.")
     # THE GROWTH IS PER STEP, NOT PER UNIT TIME: halving dt multiplied sigma by 2.6 while the
     # amplification per step stayed within 23% (1.000116 vs 1.000143). So the suspect is an
     # operation applied ONCE PER STEP, and these switches remove them one at a time.
@@ -106,7 +114,8 @@ def main():
 
     d, r, _ = cylinder_domain(nblk=16, nz=4)
     nb = len(d.blocks)
-    roles = outer_role(d, nb, sector=90.0 if a.mode == "arc" else 45.0)
+    roles = outer_role(d, nb, sector=90.0 if a.mode == "arc" else 45.0,
+                       slip_sector=a.slip_sector)
     outs = sorted(b for b in roles if roles[b] == "outflow")
 
     nu = NU
@@ -133,16 +142,22 @@ def main():
                        picard_iters=2, rhie_chow=not a.no_rhie_chow,
                        persistent_flux=not a.no_persistent_flux, ddt_corr=False)
     m.dong_relax = a.dong_relax
+    m.dong_copy = a.dong_copy
     for b in range(nb):
         m.u[b][:] = U_INF; m.v[b][:] = 0.0; m.w[b][:] = 0.0
-    apply_bc(m, d, nb, kind=a.bc_kind)
+    apply_bc(m, d, nb, kind=a.bc_kind, slip_sector=a.slip_sector)
     # the sponge changes nu, which the checkpoint records as configuration -- a deliberate
     # change, which is exactly what strict=False documents
     checkpoint.load(m, a.restart,
                     strict=(a.mode != "sponge") and not a.force_restart)
 
     print(f"  dt = {a.dt},  dong_relax = {a.dong_relax},  outflow kind = {a.bc_kind},"
-          f"  rhie_chow = {not a.no_rhie_chow},  persistent_flux = {not a.no_persistent_flux}")
+          f"  rhie_chow = {not a.no_rhie_chow},  persistent_flux = {not a.no_persistent_flux},"
+          f"  dong_copy = {a.dong_copy}")
+    if a.slip_sector:
+        print(f"  slip blocks {sorted(b for b in roles if roles[b] == 'slip')}"
+              f"  (|theta| up to {a.slip_sector/2:.0f} deg), free stream on "
+              f"{sum(1 for v in roles.values() if v == 'inflow')} upstream blocks")
     print(f"  mode = {a.mode};  outflow blocks {outs} "
           f"({'|theta| <= 44.3' if a.mode == 'arc' else '|theta| <= 21.8'})")
     if a.mode == "sponge":

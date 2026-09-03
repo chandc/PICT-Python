@@ -89,6 +89,15 @@ class MultiBlockPISO:
         # diverged. 1.0 is the original behaviour; below 1.0 blends with the previous step's
         # value, which reduces the loop gain without changing the condition being converged to.
         self.dong_relax = 1.0
+        # THE OUTFLOW VELOCITY COPY, isolated. For kind="dong" the boundary velocity is set
+        # equal to the first interior node EVERY step -- a hard zero-gradient, applied once per
+        # step. The far-field disturbance was measured to grow per STEP rather than per unit
+        # time (amplification 1.000116 per step at dt = 0.01 and 1.000143 at 0.005, while sigma
+        # per unit time differed by 2.6x), so a once-per-step boundary operation is the
+        # remaining suspect. This factor relaxes that copy WITHOUT touching the prescribed
+        # pressure, which is what separates it from kind="convective" -- that changes the
+        # pressure treatment too, and diverged to 45.6 in four time units.
+        self.dong_copy = 1.0
         self._dong_prev = None
         self._prec = None
         self.corrector_steps = corrector_steps
@@ -217,14 +226,35 @@ class MultiBlockPISO:
             # ON the boundary, so the distance is h_n not h_n/2.
             # Dong's tangential condition is zero normal-gradient; the traction is carried by
             # the DIRICHLET PRESSURE instead, so the velocity is simply copied inward.
-            t = 1.0 if kind == "dong" else 1.0 - 1.0 / (1.0 + self.dt * abs(U_c) / dn)
+            if kind == "slip":
+                # u_boundary = tangential(u_interior) + (U_inf . n) n
+                _, mb = d.block_metrics_cached(b)
+                key = ("xi", "eta", "zeta")[axis]
+                nx_, ny_, nz_ = mb[f"{key}_x"][bs], mb[f"{key}_y"][bs], mb[f"{key}_z"][bs]
+                nrm = np.sqrt(nx_ ** 2 + ny_ ** 2 + nz_ ** 2)
+                sg = -1.0 if side == 0 else 1.0
+                nx_, ny_, nz_ = sg * nx_ / nrm, sg * ny_ / nrm, sg * nz_ / nrm
+                ui, vi, wi = self.u[b][isl], self.v[b][isl], self.w[b][isl]
+                un_i = ui * nx_ + vi * ny_ + wi * nz_
+                un_p = U_c * nx_                 # free stream is (U_c, 0, 0)
+                for arr, bc, ic, nc in ((self.u, self.u_bc, ui, nx_),
+                                        (self.v, self.v_bc, vi, ny_),
+                                        (self.w, self.w_bc, wi, nz_)):
+                    bc[b][bs] = (ic - un_i * nc) + un_p * nc
+                    arr[b][bs] = bc[b][bs]
+                continue
+            t = (self.dong_copy if kind == "dong"
+                 else 1.0 - 1.0 / (1.0 + self.dt * abs(U_c) / dn))
             for arr, bc in ((self.u, self.u_bc), (self.v, self.v_bc), (self.w, self.w_bc)):
                 bc[b][bs] = bc[b][bs] - t * (bc[b][bs] - arr[b][isl])
                 arr[b][bs] = bc[b][bs]
         # Flux balancing is needed ONLY for the singular all-Neumann system. A Dong outlet
         # carries a Dirichlet pressure, which makes the system non-singular, so its flux must
         # NOT be rescaled -- mass leaves as the solution dictates.
-        conv = [sp for sp in self.outflow if (sp[3] if len(sp) > 3 else "convective") != "dong"]
+        # A slip face prescribes its NORMAL component, so its mass flux is determined and it
+        # must not be rebalanced any more than a Dong outlet must.
+        conv = [sp for sp in self.outflow
+                if (sp[3] if len(sp) > 3 else "convective") not in ("dong", "slip")]
         if not conv:
             return
         faces = [(sp[0], sp[1]) for sp in conv]
