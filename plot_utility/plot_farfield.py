@@ -16,6 +16,10 @@ the edges:
   of its mass through the flanks -- shows up here as streamlines bending toward the sides long
   before they reach the body.
 
+VORTICITY IS COMPUTED ON THE MESH AND THEN INTERPOLATED, NOT THE OTHER WAY ROUND. See the
+comment at the wz assignment: differentiating the interpolant paints one band per mesh cell and
+produced far-wake stripes that were mistaken for a flow feature.
+
 VORTICITY NEEDS ITS OWN SCALE OUT HERE. The near wake reaches |omega| ~ 4 and the far wake is
 two orders below that, so the near-field colour limits render everything past x ~ 10 as blank
 white. The scale is set from a high PERCENTILE of the field rather than its maximum, so the
@@ -97,7 +101,20 @@ def main(tag="sqcyl_v3", nz=4):
     gu[m] = np.nan; gv[m] = np.nan
 
     spd = np.sqrt(gu**2 + gv**2)
-    wz = np.gradient(gv, gx, axis=1) - np.gradient(gu, gy, axis=0)
+    # VORTICITY IS DIFFERENTIATED ON THE MESH, NOT ON THE INTERPOLANT. Taking np.gradient of
+    # the interpolated velocity -- which this did -- differentiates a piecewise-LINEAR function,
+    # whose derivative is piecewise CONSTANT and jumps at every mesh cell edge. That paints one
+    # band per cell, so the square's far wake came out in vertical stripes past x = 18, exactly
+    # where the wake plateau ends and dx grows 0.15 -> 0.94. The flow was smooth there all
+    # along: native omega on y = 1 for x > 16 has a node-to-node alternating component of 1.7%
+    # of its own rms. Mean |d(omega)/d(pixel)| past x = 18 falls from 0.00813 to 0.00295 when
+    # the order is corrected. Interpolating a scalar for a picture is fine; differentiating an
+    # interpolant is not.
+    Ud = {b: f["u"][b] for b in range(len(d.blocks))}
+    Vd = {b: f["v"][b] for b in range(len(d.blocks))}
+    Wn = np.concatenate([(d.gradient(b, Vd)[0] - d.gradient(b, Ud)[1])[:, :, 0].ravel()
+                         for b in range(len(d.blocks))])
+    wz = LinearNDInterpolator(P, Wn)(GX, GY)
     lim = float(np.nanpercentile(np.abs(wz), 99.0))
 
     # THE FIGURE MUST FOLLOW THE DOMAIN. Both panels are aspect-equal, so a fixed figure size
