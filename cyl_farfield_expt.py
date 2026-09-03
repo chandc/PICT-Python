@@ -69,6 +69,11 @@ def main():
     p.add_argument("--dong-relax", type=float, default=1.0,
                    help="under-relax the Dong outlet pressure; 1.0 is the original behaviour")
     p.add_argument("--dt", type=float, default=0.01)
+    p.add_argument("--tag", default=None,
+                   help="name for the checkpoint. Defaults to the mode, which COLLIDES when "
+                        "several runs share a mode: the dt, slip, persistent-flux and control "
+                        "runs were all mode=control and all wrote cyl_expt_control.npz, so each "
+                        "overwrote the last and none of their states is recoverable.")
     p.add_argument("--slip-sector", type=float, default=None,
                    help="full width in degrees within which the far field carries SLIP (normal "
                         "velocity prescribed, tangential free) instead of the free stream. "
@@ -176,7 +181,7 @@ def main():
             # SAVE AS WE GO. Both of these experiments were once stopped mid-flight to free the
             # GPU and lost everything, because the only save was after the loop. A restartable
             # experiment costs one file write per 500 steps.
-            checkpoint.save(m, f"results/fields/cyl_expt_{a.mode}.npz")
+            checkpoint.save(m, f"results/fields/cyl_expt_{a.tag or a.mode}.npz")
         if i % 200 == 0:
             bb, aa, pp = disturbance(d, m, nb)
             print(f"  t = {m.time:7.1f}  peak |th| {pp[0]:5.1f} deg  r {pp[1]:4.1f}  "
@@ -187,7 +192,7 @@ def main():
     print("    radial:  " + "  ".join(f"{k} {v:.4f}" for k, v in bb.items()))
     print("    angular (r>25):  " + "  ".join(f"{k} {v:.4f}" for k, v in aa.items()))
     os.makedirs("results/fields", exist_ok=True)
-    checkpoint.save(m, f"results/fields/cyl_expt_{a.mode}.npz")
+    checkpoint.save(m, f"results/fields/cyl_expt_{a.tag or a.mode}.npz")
 
 
 if __name__ == "__main__":
