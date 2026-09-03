@@ -98,6 +98,88 @@ it out and you simply learn nothing there, which is the honest outcome.
 
 ---
 
+## The loss function, term by term
+
+PICT's complete training loss for the channel SGS model (their eq. 16, §5.3 p. 17):
+
+    L  =  L_stats  +  λ_S · (1/N) · Σ_n ‖S_θⁿ‖²₂
+
+Two terms doing different jobs, and it is worth being precise about which is which.
+
+### `L_stats` — the objective
+
+Match the turbulence statistics: mean profile, Reynolds stresses, energy budget. This is the
+only term that says what a *correct* answer looks like.
+
+It is a statistics loss rather than a field loss for the reason above — a coarse run and a fine
+run decorrelate within a few time units, so a field-matching target is unattainable regardless
+of model quality. What survives that decorrelation is the moments.
+
+### `λ_S ‖S‖²` — a regulariser, not a second objective
+
+**There is no term comparing S to a "true" S.** The exact subgrid force CAN be computed by
+filtering a DNS — that is a-priori training — and PICT deliberately does not use it.
+
+The penalty is on the force's own magnitude, averaged over every step of the rollout. Three
+reasons, in order of importance:
+
+**1. Non-uniqueness.** Many different force fields produce nearly the same statistics. Without a
+penalty the optimiser may pick a violent `S` whose effects largely cancel: statistically right,
+physically absurd. The term says *among all forces that work, take the smallest*. It selects one
+member of a family; it does not encode physics.
+
+This is the same structural problem this repo measured in Stage 2 — only the SOLENOIDAL part of
+a source is identifiable from velocity data, so the velocity matched to 8.9e-04 while the
+recovered source was 18% wrong and both were correct. A magnitude penalty narrows the family; a
+divergence-free projection removes one whole dimension of it. **They are complementary, not
+alternatives.**
+
+**2. Stability.** A large forcing can destabilise the solve, or push the flow outside the regime
+the model was trained in — which for an autoregressive rollout compounds.
+
+**3. A physical prior.** A subgrid correction should be small next to the resolved terms. If it
+is not, the network is driving the simulation rather than correcting it, and whatever statistics
+come out are the network's, not the flow's.
+
+### The hard clamp, which is a different mechanism
+
+> "We additionally constrain the forcing to the [−2, 2] range to stabilize early training."
+
+The clamp and the penalty are not redundant. The clamp protects the first steps, when a
+randomly-initialised network can output anything and one bad step ends the rollout. The penalty
+shapes the converged answer. A clamp alone would permit a force pinned at the limit everywhere;
+a penalty alone would not survive initialisation.
+
+### The hazard: λ_S trades physics for loss
+
+**The penalty competes with the objective.** If the statistics can only be matched by a large
+force, the optimiser lowers `L` by giving up statistical accuracy to reduce `‖S‖²`. That is
+`measurement_traps.md` §6 in a new costume — fitting van Driest's constants against a target the
+discretisation could not reproduce BEAT THE ORACLE by 68x while making the physics 10% worse,
+because the optimiser moved the physical constants to absorb an error that was not theirs.
+
+So λ_S needs a diagnostic rather than a default. The cheap one:
+
+> **Check whether the converged `‖S‖` sits at the clamp or well inside it.** Pressed against
+> [−2, 2] means the model needs more freedom than it is being given, and the statistics match is
+> being bought by the regulariser rather than earned.
+
+A second, stronger check follows the pattern of `nn_fit_constants.py`: sweep λ_S and require the
+recovered statistics to be insensitive over a decade of it. If they are not, the answer is a
+property of the regulariser weight, not of the flow.
+
+### What this implies for our loss, concretely
+
+| term | ours | source |
+|---|---|---|
+| `L_stats` | mean profile + Reynolds stresses over a rollout | to build (§2.2) |
+| `λ_S ‖S‖²` | magnitude penalty, averaged over steps | to build, trivial |
+| clamp | `[−2, 2]` or scaled to the case | to build, trivial |
+| divergence-free `S` | projection via the existing pressure solve | to build (§2.1) |
+| λ_S diagnostic | is `‖S‖` at the clamp? does a decade sweep move the answer? | **required, not optional** |
+
+---
+
 ## What this means for the build
 
 **It simplifies it, and by more than it first appears.** Three consequences:
