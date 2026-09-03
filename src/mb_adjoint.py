@@ -278,8 +278,17 @@ class MultiBlockChain(MultiBlockMiniPISO):
         self.J_flat = self.flat({b: self.Js[b] for b in range(len(domain.blocks))})
         self.u_init = self.flat(self.u0)
 
-    def rollout(self, sources, drop_history=False, final_only=False):
+    def rollout(self, sources, drop_history=False, final_only=False, source_fn=None):
         """sources: list of per-step torch tensors. Returns the scalar loss.
+
+        `source_fn`, if given, is called as source_fn(u) at each step and its result REPLACES
+        the entry from `sources` (which may then be a list of None used only for its length).
+        That is what puts a NETWORK in the loop: the source becomes a function of the current
+        state, so the gradient reaches the network's weights through every step of the solve
+        rather than through a raw parameter vector. Every one of the 38 gates in this file
+        drives the chain with a fixed vector, and a defect reachable only through a network --
+        the seam-blind circular padding in src/sgs_net.py, O(1) wrong on four planes per seam --
+        sat in that blind spot undetected.
 
         `drop_history` detaches u^{n-1} in the RHS -- the backward then ignores the BDF2 level,
         which is the mangle 7.4 requires to be DETECTED.
@@ -300,6 +309,8 @@ class MultiBlockChain(MultiBlockMiniPISO):
         Jt = torch.as_tensor(self.J_flat)
         L = 0.0
         for S in sources:
+            if source_fn is not None:
+                S = source_fn(u)
             hist = u_prev.detach() if drop_history else u_prev
             rhs = Jt * (2.0 * u - 0.5 * hist) / self.dt + S
             u_star = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
@@ -465,7 +476,8 @@ class MultiBlockChainRC(MultiBlockChain):
         self.RC = rc_flux_divergence_matrix(domain, self.Js, self.ms, gam)
         self.N3 = 3 * self.N
 
-    def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False):
+    def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
+                source_fn=None):
         """`drop_pflux` detaches the carried pressure in the RC term -- the mangle for 7.3."""
         (Aidx, Ashape), Aval = self.A_pat
         (Midx, Mshape), Mval = self.M_pat
@@ -478,6 +490,8 @@ class MultiBlockChainRC(MultiBlockChain):
         Jt = torch.as_tensor(self.J_flat)
         L = 0.0
         for S in sources:
+            if source_fn is not None:
+                S = source_fn(u)
             hist = u_prev.detach() if drop_history else u_prev
             rhs = Jt * (2.0 * u - 0.5 * hist) / self.dt + S
             u_star = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
@@ -547,7 +561,7 @@ class MultiBlockWallChain(MultiBlockChainRC):
         self.ii = torch.as_tensor(self.interior)
 
     def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
-                return_fields=False):
+                return_fields=False, source_fn=None):
         (Aidx, Ashape), Aval = self.A_pat
         (Midx, Mshape), Mval = self.M_pat
         Gt, Du, RCt = (to_torch_sparse(self.G), to_torch_sparse(self.D_flux[:, :self.N]),
@@ -558,6 +572,8 @@ class MultiBlockWallChain(MultiBlockChainRC):
         Jt = torch.as_tensor(self.J_flat)
         L = 0.0
         for S in sources:
+            if source_fn is not None:
+                S = source_fn(u)
             hist = u_prev.detach() if drop_history else u_prev
             rhs = (Jt * (2.0 * u - 0.5 * hist) / self.dt + S)[self.ii]
             u_int = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
@@ -689,7 +705,7 @@ class MultiBlockDongChain(MultiBlockWallChain):
         return torch.index_select(vals, 0, self.pD_t)
 
     def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
-                detach_dong=False, return_fields=False):
+                detach_dong=False, return_fields=False, source_fn=None):
         (Aidx, Ashape), Aval = self.A_pat
         (Mfidx, Mfshape), Mfval = self.Mff_pat
         Gt, Du, RCt = (to_torch_sparse(self.G), to_torch_sparse(self.D_flux[:, :self.N]),
@@ -702,6 +718,8 @@ class MultiBlockDongChain(MultiBlockWallChain):
         Jt = torch.as_tensor(self.J_flat)
         L = 0.0
         for S in sources:
+            if source_fn is not None:
+                S = source_fn(u)
             hist = u_prev.detach() if drop_history else u_prev
             rhs = (Jt * (2.0 * u - 0.5 * hist) / self.dt + S)[self.ii]
             u_int = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
@@ -838,7 +856,7 @@ class MultiBlockBCChain(MultiBlockDongChain):
         return vals
 
     def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
-                detach_dong=False, drop_outlet=False, return_fields=False):
+                detach_dong=False, drop_outlet=False, return_fields=False, source_fn=None):
         (Aidx, Ashape), Aval = self.A_pat
         (Mfidx, Mfshape), Mfval = self.Mff_pat
         Gt, Du, RCt = (to_torch_sparse(self.G), to_torch_sparse(self.D_flux[:, :self.N]),
@@ -851,6 +869,8 @@ class MultiBlockBCChain(MultiBlockDongChain):
         Jt = torch.as_tensor(self.J_flat)
         L = 0.0
         for S in sources:
+            if source_fn is not None:
+                S = source_fn(u)
             hist = u_prev.detach() if drop_history else u_prev
             u_bnd = self.boundary_velocity(u, drop_outlet=drop_outlet)
             # THE ELIMINATION TERM, which a zero wall hides and an inlet does not

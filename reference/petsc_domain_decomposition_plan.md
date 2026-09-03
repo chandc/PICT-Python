@@ -56,6 +56,13 @@ already done, as a side effect of the multiblock design.
 `src/multiblock.py`, 20 call sites between them. Everything that reads across a block boundary
 goes through there. That is the entire halo exchange surface.
 
+**And the network now consumes that same halo.** `src/sgs_net.py` gained `pad_mode="none"`,
+which drops the self-padding and takes the neighbour data from the caller. Measured on a split
+periodic box: per-block circular padding is wrong by 68% of the output scale, and the halo-fed
+path reproduces the whole-box answer to **1.11e-16**. This matters for sequencing -- a
+seam-aware convolution IS the halo-exchange problem solved for one component, so the interface
+Gate 1 generalises is already defined and tested rather than invented during the port.
+
 **The repo already enforces exact reproducibility.** `checkpoint.py` verifies exact restart,
 `grid_fingerprint` refuses a mismatched grid, and `measurement_traps.md` documents nine ways a
 plausible number has been wrong. The discipline needed to keep a parallel path honest is in
@@ -127,6 +134,14 @@ evidence that it is wrong.
 MPI implementation building on both the Mac (ARM) and inside the GB10 container;
 `test_mpi_equivalence.py` written and passing trivially at N = 1.
 
+**PREREQUISITE, now satisfied (2026-09-03).** The plan as first written assumed a serial
+baseline for the network path that did not exist. Gate 7 asks to prove the adjoint survives MPI,
+and until now **no test drove the solver with a network at all** -- all 38 gates used raw
+parameter vectors, which is exactly the blind spot the seam-blind circular padding lived in.
+`test_sgs_net_seam.py` closes it: 5/5, including finite differences against the adjoint on the
+network's own weights with the multi-block PISO chain in between (1.76e-09 of max|g|), and a
+mangle that must fail and does (1.00e+00). Gate 7 now has something to preserve.
+
 **Test plan.**
 1. Save 10-step reference trajectories from `sqcyl_v3_forces.npz` and `cyl_shed_mac.npz`.
 2. Record per-step profile (solve vs assembly) for both cases.
@@ -138,6 +153,8 @@ MPI implementation building on both the Mac (ARM) and inside the GB10 container;
 - petsc4py imports under `mpirun -n {1,2,4,8}` on both machines.
 - Reference trajectories stored with their grid fingerprints.
 - Existing suite result recorded; any test already failing is documented, not silently inherited.
+- **`test_sgs_net_seam.py` passes serially** -- the network-in-the-loop baseline Gate 7 compares
+  against. Without it, "the network path still works under MPI" is unfalsifiable.
 
 **Abort criteria.** PETSc will not build on ARM macOS with a working MPI after one day of
 effort — in which case the plan continues GB10-only, or stops.
@@ -316,7 +333,7 @@ this repo has already validated against Sohankar et al.
 
 | risk | consequence | mitigation |
 |---|---|---|
-| **Adjoint under MPI proves impractical** | the project's actual purpose does not survive the port | Gate 6 is the decision point; do not start Gate 7 without the scaling result |
+| **Adjoint under MPI proves impractical** | the project's actual purpose does not survive the port | Gate 6 is the decision point; do not start Gate 7 without the scaling result. The serial network-in-the-loop baseline now exists (`test_sgs_net_seam.py`), so failure would at least be attributable |
 | 25% halo on the cylinder caps speedup | effort spent for 2-3× | measured at Gate 2, decided at Gate 6 |
 | Square block imbalance (4.6×) | poor scaling on the square specifically | known now; may need block splitting, which is a grid change and therefore a fingerprint change |
 | Partition-dependent preconditioner | answers cost differently at different rank counts, silently | iteration count tracked from Gate 3 |

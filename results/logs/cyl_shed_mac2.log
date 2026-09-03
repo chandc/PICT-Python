@@ -12,3 +12,5 @@
            C_D +1.0753   C_L rms 0.0097   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
   shed      1000   112.5    0.018521  5.160e-02    0.124    0.268    4.550
            C_D +1.0850   C_L rms 0.0200   (reference C_D 1.33, spurious normal stress in C_D +0.0197)
+  shed      1500   115.0   -0.104988  1.234e-01    0.123    0.278    4.607
+           C_D +1.0989   C_L rms 0.0247   (reference C_D 1.33, spurious normal stress in C_D +0.0197)
