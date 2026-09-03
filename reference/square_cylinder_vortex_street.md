@@ -182,25 +182,45 @@ the wake only to 18.6 D.
 Updated 2026-09-03, when the run reached t = 535 and the forces, the onset sweep and the far
 field had all been measured.
 
-### 6.1 What is measured
+### 6.1 What is measured, against data at the SAME blockage
 
-| quantity | value | reference | how |
-|---|---|---|---|
-| Strouhal number | **0.1488** (repeatable to 2e-6) | 0.145–0.150 (2D, low blockage) | C_L zero crossings |
-| drag coefficient | **1.4529** | 1.4–1.5 | surface integral, `src/forces.py` |
-| lift rms | **0.1722** | 0.16–0.20 | same |
-| drag frequency | exactly **2×** the lift frequency | required by symmetry | force record |
-| front stagnation `C_p` | **+1.019** | **+1.0000 exactly** | 1.9% error |
-| onset | **52 < Re_c < 55** | 45–47 at low blockage | sign bracket, no model |
+Reference: **Sohankar, Norberg & Davidson, IJNMF 26:39-56 (1998)**, Table III case 5 — Re = 100,
+zero incidence, **5% blockage**, which is exactly this grid. That match matters: the same paper
+shows base suction changing 7.6% between 5% and 2.5% blockage, so comparing against a
+"low-blockage band" is not a comparison.
 
-The stagnation point is the most useful of these because it is the only number in the whole case
-with an analytic answer independent of the solver: the flow is brought to rest, so `C_p = 1`
-whatever the Reynolds number. 1.9% is a bound on the pressure field and on the normalisation
-together.
+| quantity | ours | reference | error | their own grid-to-grid spread |
+|---|---|---|---|---|
+| `C_D` | **1.4529** | 1.460 | **−0.5%** | 1.2% |
+| `St` | **0.1488** | 0.146 | **+1.9%** | 0.0% |
+| `C_ps` stagnation | **+1.0725** | +1.052 | **+1.9%** | 0.7% |
+| `C_pb` base | **−0.7045** | −0.661 | −6.6% | 2.6% |
+| `L_r` recirculation | **1.887** | 2.20 | −14.3% | — |
+| `C_L` rms | **0.1722** | 0.139 | **+23.9%** | 12.2% |
+| `Re_c` | 52 < Re_c < 55, fit **51.3** | **51.2 ± 1.0** | **+0.2%** | — |
 
-The drag oscillating at exactly twice the lift frequency is the second such check. It is forced
-by symmetry -- each shed vortex, of either sign, pulls the body downstream once -- so it is not
-something a tuned run can fake.
+`C_D`, `St` and the stagnation pressure land inside or beside the reference's own spread.
+`Re_c` is the standout: 51.31 from the near-onset fit against a published 51.2 ± 1.0, and the
+sign bracket 52–55 straddles it.
+
+**`C_L` rms at +23.9% is the real disagreement.** It is also the quantity the reference itself
+cannot pin down — their three grids give 0.139, 0.156, 0.153, a 12% spread with no sign of
+convergence, and their outlet study produces 0.024 for one case, an order of magnitude off the
+rest. So the discrepancy is partly ours and partly theirs, and nothing here separates the two.
+`L_r` at −14.3% is second, and is a near-wake length, hence sensitive to the same resolution.
+
+**Two corrections this comparison forced.**
+
+`C_p = +1` at the front stagnation is **not** exact at finite blockage. The flow accelerates past
+the body, so the stagnation coefficient exceeds 1: the reference gives 1.052 at 5% blockage and
+1.083 at 2.5%. Earlier notes in this file treated +1 as the exact answer and read our 1.0725 as
+a 7% error; against the right value at the right blockage it is **+1.9%**.
+
+`sqcyl_onset.py` carried `RE_C_REF = (45, 47)`, which is the **zero-blockage experimental**
+estimate. At 5% blockage the reference is 51.2 ± 1.0, and the paper states explicitly that
+`Re_c` rises with blockage. Comparing a 5%-blockage result against a zero-blockage number made a
+correct answer look 10% wrong — section 1 of `measurement_traps.md`, committed inside the file
+that documents it.
 
 ### 6.2 St is 60x sharper than the spectrum suggests, and this was quoted wrongly
 

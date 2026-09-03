@@ -1,7 +1,7 @@
 """Critical Reynolds number for the square cylinder, from growth rates rather than from runs
 that shed.
 
-WHY THIS IS THE CHEAP EXPERIMENT. Re_c is a sharp published number -- about 45-47 at ~5%
+WHY THIS IS THE CHEAP EXPERIMENT. Re_c is a sharp published number -- 51.2 +/- 1.0 at 5%
 blockage -- and finding it by asking "did this case shed?" needs runs long enough to SATURATE at
 every Re, which is 380 time units each. The growth rate does not: after the kick the amplitude
 grows as exp(sigma t) for as long as the perturbation stays small, so ~70 time units at each Re
@@ -29,7 +29,13 @@ import sys
 import numpy as np
 
 FLATNESS_MAX = 0.1
-RE_C_REF = (45.0, 47.0)          # published onset band, ~5% blockage
+# THE PREVIOUS VALUE HERE WAS THE WRONG COMPARISON. (45, 47) is the ZERO-blockage experimental
+# estimate (Norberg, quoted as 47 +/- 2 in Sohankar, Norberg & Davidson, IJNMF 26:39-56, 1998).
+# Our grid is 5% blockage, and at 5% the same paper computes Re_cr = 51.2 +/- 1.0, stating that
+# the critical Reynolds number increases with blockage. Comparing our 5%-blockage result against
+# a zero-blockage reference made a correct answer look 10% wrong -- section 1 of
+# measurement_traps.md, "a bar taken from the wrong regime", committed again in this file.
+RE_C_REF = (50.2, 52.2)          # Sohankar et al. 1998, Re_cr = 51.2 +/- 1.0 at 5% blockage
 WIN = None                       # kept for the API; the envelope needs no window
 
 
@@ -198,7 +204,9 @@ def main(pattern="results/sqcyl_onset_Re*_history.npy", t_kick=None):
             print(f"  all {len(re_a)} points:  Re_c = {Re_all:.2f}, R^2 = {r2_all:.5f}  "
                   f"-- shown to be discarded: sigma(Re) is curved, so a fit reaching away from\n"
                   f"     onset crosses zero too early however good its R^2 looks")
-            print(f"  published {RE_C_REF[0]:.0f}-{RE_C_REF[1]:.0f} at ~5% blockage")
+            print(f"  published Re_cr = 51.2 +/- 1.0 at 5% blockage (Sohankar et al. 1998); "
+                  f"the zero-blockage\n  experimental estimate is 47 +/- 2, which is NOT the "
+                  f"right comparison for this grid")
 
 
 if __name__ == "__main__":
