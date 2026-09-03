@@ -527,6 +527,16 @@ class MultiBlockPISO:
                 worst = max(worst, div[~mask].max())
         return worst
 
+    def set_nu(self, nu):
+        """Replace the viscosity between steps, which is what an LES does every step.
+
+        `_nu_field` is decided at construction from the type of `nu`, so assigning `self.nu`
+        directly would leave a solver built with a scalar treating a dict as a scalar and
+        multiplying an array by a dict. This is the supported way to change it.
+        """
+        self.nu = nu
+        self._nu_field = isinstance(nu, (dict, list, tuple))
+
     def nu_at(self, b):
         """Viscosity for block b: the scalar itself, or that block's array."""
         return self.nu[b] if self._nu_field else self.nu
