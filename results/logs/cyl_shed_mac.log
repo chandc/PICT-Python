@@ -10,3 +10,19 @@
 
   shed       500    87.5    0.010964  3.221e-03    0.143    4.576
            C_D +1.0628   C_L rms 0.0792   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
+  shed      1000    90.0    0.001837  9.105e-03    0.143    4.561
+           C_D +1.0628   C_L rms 0.0033   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
+  shed      1500    92.5    0.013384  1.155e-02    0.151    4.594
+           C_D +1.0628   C_L rms 0.0034   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
+  shed      2000    95.0    0.017734  6.689e-03    0.159    4.578
+           C_D +1.0629   C_L rms 0.0046   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
+  shed      2500    97.5   -0.005161  2.287e-02    0.174    4.577
+           C_D +1.0631   C_L rms 0.0030   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
+  shed      3000   100.0    0.005637  1.379e-02    0.189    4.576
+           C_D +1.0635   C_L rms 0.0053   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
+  shed      3500   102.5    0.035159  2.945e-02    0.205    4.577
+           C_D +1.0644   C_L rms 0.0062   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
+  shed      4000   105.0   -0.006736  4.189e-02    0.222    4.572
+           C_D +1.0661   C_L rms 0.0062   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
+  shed      4500   107.5   -0.028295  2.873e-02    0.238    4.570
+           C_D +1.0694   C_L rms 0.0125   (reference C_D 1.33, spurious normal stress in C_D +0.0198)

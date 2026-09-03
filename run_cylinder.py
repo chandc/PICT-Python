@@ -136,31 +136,45 @@ def main():
     # This column would have shown it at t = 20. The mask takes r > 10 and |y| > 4, which is
     # outside the wake, so anything appearing there is numerical.
     far = [(np.hypot(b.x, b.y) > 10.0) & (np.abs(b.y) > 4.0) for b in d.blocks]
+    # NEAR-BODY, OUTSIDE THE WAKE. This is the region the forces actually come from, and it is
+    # the one the abort should gate on. Measured on this case: 0.1270 before the kick and
+    # 0.1270 twenty-two time units later, while the FAR-field metric went 0.148 -> 0.238. The
+    # outer-boundary mode is confined to r > 17 and does not reach here, so aborting on the far
+    # field alone would have killed a run whose measurement region was untouched.
+    nearm = [(np.hypot(b.x, b.y) > 2.0) & (np.hypot(b.x, b.y) < 8.0) & (np.abs(b.y) > 2.5)
+             for b in d.blocks]
     n_far = sum(int(f.sum()) for f in far)
 
-    def farfield():
-        return max((float(np.hypot(m.u[b] - U_INF, m.v[b])[far[b]].max())
-                    for b in range(len(d.blocks)) if far[b].any()), default=0.0)
+    def _mx(masks):
+        return max((float(np.hypot(m.u[b] - U_INF, m.v[b])[masks[b]].max())
+                    for b in range(len(d.blocks)) if masks[b].any()), default=0.0)
 
-    FF_ABORT = 0.5      # half of U_inf outside the wake is not a flow feature
+    def farfield():
+        return _mx(far)
+
+    def nearfield():
+        return _mx(nearm)
+
+    NEAR_ABORT = 0.30      # 2.4x the value this region holds steady at
+    FF_ABORT = 1.5         # backstop only: the first run reached 4.08 before NaN
 
     def report(i, n, hist, t0, phase):
         seg = np.array([h[1] for h in hist[-500:]])
-        ff = farfield()
+        ff, nf = farfield(), nearfield()
         print(f"  {phase:<7}{i:>7}{m.time:>8.1f}{hist[-1][1]:>12.6f}"
-              f"{seg.max()-seg.min():>11.3e}{ff:>9.3f}{(time.time()-t0)/max(i,1):>9.3f}",
-              flush=True)
-        if not np.isfinite(ff) or ff > FF_ABORT:
+              f"{seg.max()-seg.min():>11.3e}{nf:>9.3f}{ff:>9.3f}"
+              f"{(time.time()-t0)/max(i,1):>9.3f}", flush=True)
+        bad = (not np.isfinite(nf)) or nf > NEAR_ABORT or (not np.isfinite(ff)) or ff > FF_ABORT
+        if bad:
             checkpoint.save(m, f"results/fields/{tag}_ABORT.npz")
             raise SystemExit(
-                f"\n  ABORT at t = {m.time:.1f}: far-field disturbance {ff:.3f} exceeds "
-                f"{FF_ABORT} over {n_far:,} cells with r > 10, |y| > 4.\n"
-                f"  That region has no flow feature in it, so this is the outer grid going\n"
-                f"  unstable. Field saved to results/fields/{tag}_ABORT.npz. Do not measure\n"
-                f"  anything on it.")
+                f"\n  ABORT at t = {m.time:.1f}: near-body {nf:.3f} (limit {NEAR_ABORT}), "
+                f"far-field {ff:.3f} (limit {FF_ABORT}).\n"
+                f"  The near-body figure is the one that invalidates a force measurement; the\n"
+                f"  far-field one is a backstop. Field saved to results/fields/{tag}_ABORT.npz.")
 
-    print(f"  {'phase':<7}{'step':>7}{'t':>8}{'v_probe':>12}{'amp/500':>11}{'far':>9}"
-          f"{'s/step':>9}", flush=True)
+    print(f"  {'phase':<7}{'step':>7}{'t':>8}{'v_probe':>12}{'amp/500':>11}{'near':>9}"
+          f"{'far':>9}{'s/step':>9}", flush=True)
 
     t0 = time.time()
     for i in range(1, settle + 1):
