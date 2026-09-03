@@ -176,6 +176,55 @@ if __name__ == "__main__":
         check(np.abs(f["u"][0] - s.u[0]).max() == 0.0,
               "fields read back bit-identical to the solver state")
 
+    # ---------------------------------------------------------------- field viscosity
+    # nu MAY BE A FIELD for an eddy-viscosity closure. Stored with np.array() that becomes an
+    # OBJECT array, which SAVES WITHOUT COMPLAINT and then fails to load with
+    # allow_pickle=False -- so an LES would checkpoint happily for hours and be unrestartable,
+    # with nothing wrong until the moment it was needed.
+    print("\nField viscosity: an LES checkpoint must be restartable")
+    from src import sgs as _sgs
+    from src.mb_adjoint import periodic_box as _pb
+    from src.piso_multiblock import MultiBlockPISO as _P
+
+    def _les(nu):
+        d = _pb(8, 2)
+        return d, _P(d, nu, 0.01, 2, 1e-8, time_scheme="bdf2", scheme="rotational",
+                     picard_iters=2, rhie_chow=True, persistent_flux=True, ddt_corr=False)
+
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "field_nu.npz")
+        d, s = _les(0.01)
+        nb = len(d.blocks)
+        for b in range(nb):
+            s.u[b][:] = np.random.default_rng(0).standard_normal(s.u[b].shape)
+        U = {b: s.u[b] for b in range(nb)}
+        nu1, _ = _sgs.effective_viscosity(d, U, U, U, 0.01, model="wale")
+        s.set_nu(nu1)
+        s.step()
+        ck.save(s, path)
+
+        # nu_t is recomputed from the velocity every step, so a restart legitimately holds a
+        # DIFFERENT field. Demanding equality would refuse every real restart.
+        _, s2 = _les(0.01)
+        s2.set_nu({b: nu1[b] * 1.3 for b in nu1})
+        ok = True
+        try:
+            ck.load(s2, path)
+        except Exception as e:
+            ok = False
+            print(f"    {type(e).__name__}: {str(e)[:70]}")
+        check(ok and s2.nstep == 1,
+              "field-nu checkpoint saves and restarts into a DIFFERENT field")
+
+        # but a SCALAR nu is a genuine configuration change and must still be refused
+        _, s3 = _les(0.01)
+        refused = False
+        try:
+            ck.load(s3, path)
+        except ValueError:
+            refused = True
+        check(refused, "a scalar-nu solver is refused when resuming a field-nu run")
+
     n = len(PASS)
     print("\n" + "=" * 70)
     print(f"  {sum(PASS)}/{n} checks passed")

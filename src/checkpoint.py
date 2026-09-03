@@ -99,6 +99,35 @@ def _legacy_grid_fingerprint(solver):
     return h.hexdigest()
 
 
+def _config_repr(v):
+    """A savable, comparable descriptor for a config value.
+
+    `nu` MAY BE A FIELD -- a dict of per-block arrays -- for an eddy-viscosity closure. Storing
+    that with np.array() produces an OBJECT array, which saves without complaint and then fails
+    to load with `allow_pickle=False`:
+
+        ValueError: Object arrays cannot be loaded when allow_pickle=False
+
+    So an LES would checkpoint happily for hours and be unrestartable, with nothing wrong until
+    the moment it was needed. That is the worst shape a bug can have on a long run.
+
+    Only the KIND is recorded, not the values. An eddy viscosity is recomputed from the velocity
+    at every step, so demanding that the restored field match the saved one would refuse every
+    legitimate restart. What the check must still catch is a solver built with a SCALAR nu
+    resuming a run that used a field, or vice versa -- a genuine configuration change that would
+    silently produce a different simulation.
+
+    The field itself is not restored. For an LES it does not need to be; for a prescribed field
+    such as a sponge, the caller sets it before or after loading, exactly as it was set before
+    the first step.
+    """
+    if isinstance(v, dict):
+        return f"field[{len(v)}]"
+    if isinstance(v, (list, tuple)):
+        return f"field[{len(v)}]"
+    return v
+
+
 def _is_multiblock(s):
     return isinstance(getattr(s, "u", None), dict)
 
@@ -118,7 +147,7 @@ def save(solver, path, **extra):
            "multiblock": np.array(_is_multiblock(solver))}
     for k in CONFIG:
         if hasattr(solver, k):
-            out[f"cfg_{k}"] = np.array(getattr(solver, k))
+            out[f"cfg_{k}"] = np.array(_config_repr(getattr(solver, k)))
 
     fp = grid_fingerprint(solver)
     if fp is not None:
@@ -209,8 +238,8 @@ def load(solver, path, strict=True):
                 f"solver {now[:12]}). Block count and field shapes match, so nothing else here "
                 f"would have caught it; pass strict=False if the change is intended.")
     if strict:
-        bad = {k: (v, getattr(solver, k)) for k, v in meta["config"].items()
-               if hasattr(solver, k) and getattr(solver, k) != v}
+        bad = {k: (v, _config_repr(getattr(solver, k))) for k, v in meta["config"].items()
+               if hasattr(solver, k) and _config_repr(getattr(solver, k)) != v}
         if bad:
             detail = ", ".join(f"{k}: file={a!r} solver={b!r}" for k, (a, b) in bad.items())
             raise ValueError(
