@@ -69,6 +69,13 @@ def main():
     p.add_argument("--dong-relax", type=float, default=1.0,
                    help="under-relax the Dong outlet pressure; 1.0 is the original behaviour")
     p.add_argument("--dt", type=float, default=0.01)
+    # THE GROWTH IS PER STEP, NOT PER UNIT TIME: halving dt multiplied sigma by 2.6 while the
+    # amplification per step stayed within 23% (1.000116 vs 1.000143). So the suspect is an
+    # operation applied ONCE PER STEP, and these switches remove them one at a time.
+    p.add_argument("--no-persistent-flux", action="store_true",
+                   help="stop carrying p_flux between steps")
+    p.add_argument("--no-rhie-chow", action="store_true",
+                   help="drop Rhie-Chow; risks checkerboarding, but this is a diagnostic")
     p.add_argument("--bc-kind", choices=("dong", "convective"), default="dong",
                    help="outflow treatment on the arc. 'dong' copies the velocity inward "
                         "(t = 1, hard zero-gradient) and prescribes p, which makes the pressure "
@@ -123,7 +130,8 @@ def main():
             nu[b] = NU * (1.0 + (a.sponge_mult - 1.0) * ramp)
 
     m = MultiBlockPISO(d, nu, a.dt, 2, 1e-6, time_scheme="bdf2", scheme="rotational",
-                       picard_iters=2, rhie_chow=True, persistent_flux=True, ddt_corr=False)
+                       picard_iters=2, rhie_chow=not a.no_rhie_chow,
+                       persistent_flux=not a.no_persistent_flux, ddt_corr=False)
     m.dong_relax = a.dong_relax
     for b in range(nb):
         m.u[b][:] = U_INF; m.v[b][:] = 0.0; m.w[b][:] = 0.0
@@ -133,7 +141,8 @@ def main():
     checkpoint.load(m, a.restart,
                     strict=(a.mode != "sponge") and not a.force_restart)
 
-    print(f"  dt = {a.dt},  dong_relax = {a.dong_relax},  outflow kind = {a.bc_kind}")
+    print(f"  dt = {a.dt},  dong_relax = {a.dong_relax},  outflow kind = {a.bc_kind},"
+          f"  rhie_chow = {not a.no_rhie_chow},  persistent_flux = {not a.no_persistent_flux}")
     print(f"  mode = {a.mode};  outflow blocks {outs} "
           f"({'|theta| <= 44.3' if a.mode == 'arc' else '|theta| <= 21.8'})")
     if a.mode == "sponge":

@@ -2,3 +2,15 @@
   mode = control;  outflow blocks [0, 15] (|theta| <= 21.8)
   start t = 60.0:  r 5-10 0.089  r 10-14 0.047  r 14-17 0.042  r 17-19 0.107  r 19-20.1 0.126
   start peak |theta| = 24.6 deg at r = 19.7, |u-U| = 0.1259
+  t =    62.0  peak |th|  21.8 deg  r 19.7  |u-U| 0.3096   r 5-10 0.089  r 10-14 0.048  r 14-17 0.048  r 17-19 0.224  r 19-20.1 0.310   7.36 s/step
+  t =    64.0  peak |th|  21.8 deg  r 18.6  |u-U| 45.6403   r 5-10 0.111  r 10-14 0.837  r 14-17 19.307  r 17-19 45.640  r 19-20.1 41.686   7.29 s/step
+/Users/danielchan/Dropbox/PICT-Python/.venv/lib/python3.9/site-packages/scipy/sparse/linalg/_isolve/iterative.py:301: RuntimeWarning: invalid value encountered in scalar divide
+  omega = dotprod(t, s) / dotprod(t, t)
+/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py:311: RuntimeWarning: divide by zero encountered in divide
+  coef_g = Jg / rowsum
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:956: RuntimeWarning: invalid value encountered in multiply
+  val = 0.0 * val   # no valid wide stencil -> no correction here
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in subtract
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in add
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]

@@ -1,0 +1,4 @@
+  dt = 0.01,  dong_relax = 1.0,  outflow kind = dong,  rhie_chow = True,  persistent_flux = False
+  mode = control;  outflow blocks [0, 15] (|theta| <= 21.8)
+  start t = 60.0:  r 5-10 0.089  r 10-14 0.047  r 14-17 0.042  r 17-19 0.107  r 19-20.1 0.126
+  start peak |theta| = 24.6 deg at r = 19.7, |u-U| = 0.1259
