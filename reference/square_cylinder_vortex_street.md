@@ -1,14 +1,17 @@
 # Vortex street behind a square cylinder — and the one setting that decided it
 
-**Result: St = 0.1467 ± 0.0067 at Re = 100**, against a computational consensus of 0.145–0.150
-at ~5% blockage. Saturated limit cycle, amplitude 0.62, stationary to +0.1% over 28 shedding
-periods.
+**Result at Re = 100, 5% blockage, against Sohankar, Norberg & Davidson (1998) at the same
+blockage:** `St = 0.1488` (+1.9%), `C_D = 1.4529` (−0.5%), stagnation `C_p = +1.073` (+1.9%),
+base `C_p = −0.705` (−6.6%), `C_L` rms `= 0.1722` (+23.9%, against a reference whose own three
+grids spread 12%), and `Re_c` bracketed 52–55 with a near-onset fit of **51.31 against a
+published 51.2 ± 1.0**.
 
-**The whole difference between a vortex street and a steady solution was the linear solver
-tolerance: 1e-4 → 1e-6.** Everything else in this document is either a prerequisite for the run
-to work at all, or a wrong hypothesis worth recording so nobody repeats the detour.
+The drag oscillates at exactly twice the lift frequency, shown from the fields rather than from
+a spectrum: `C_L(t+T/2) = −C_L(t)` to 6e-06 of the lift rms and `C_D(t+T/2) = +C_D(t)` to 6e-05
+of the drag's own peak-to-peak.
 
----
+**Not yet validated:** grid convergence has never been run — every saved result shares one
+82,096-cell fingerprint — so all of the above is agreement, not convergence. Section 6.3.
 
 ## 1. What actually made it shed
 
@@ -333,17 +336,24 @@ modulates the separated shear layers, not the stagnation region.
 
 ### 6.7 The figures
 
-* `figures/sqcyl_v3_forces_nearfield.png` -- near-field vorticity over pressure. The shear layers
-  separate at the leading edges, roll up alternately, and each shed core appears in the pressure
-  panel as a suction minimum. The alternation of those minima across the centreline IS the lift
-  oscillation, and the front stagnation reads `C_p = +1.019` against the exact +1.
-* `figures/sqcyl_phases.png` -- one full shedding period at eight equally spaced phases, on the
-  production grid. The older `sqcyl_phase01-05` files are on the previous 63,280-cell grid and
-  are spaced 3 time units apart, which is not a fraction of T = 6.72; they cannot illustrate this
-  solution and are superseded.
-* `figures/sqcyl_v3_forces_farfield.png` -- whole domain, with the corrected vorticity pipeline.
+All under `figures/`, all regenerable from the scripts named beside them.
 
----
+| figure | what it shows | script |
+|---|---|---|
+| `sqcyl_vs_data.png` | surface `C_p` and the integral quantities against Sohankar et al. at matched 5% blockage, with their own grid spread drawn as the band | `plot_utility/plot_square_vs_data.py` |
+| `sqcyl_cp_spectra.png` | time-averaged `C_p` with cycle rms, the force records, and the `C_L`/`C_D` spectra with the FFT bin drawn honestly | `plot_utility/plot_square_cp_spectra.py` |
+| `sqcyl_half_period_symmetry.png` | `C_L(t+T/2) = -C_L(t)` and `C_D(t+T/2) = +C_D(t)` over 3200 samples, residuals 6e-06 and 6e-05 | `plot_utility/plot_square_half_period.py` |
+| `sqcyl_shedding_cycle.png` | one period at eight phases, with `C_L` and `C_D` integrated from each panel's own field | `plot_utility/plot_square_shedding_cycle.py` |
+| `sqcyl_v3_forces_nearfield.png` | near-field vorticity over pressure — the shear layers rolling up, and each shed core as a suction minimum | `plot_utility/plot_square_nearfield.py` |
+| `sqcyl_v3_forces_farfield.png` | the whole domain, corrected vorticity pipeline | `plot_utility/plot_farfield.py` |
+| `sqcyl_vorticity_pipeline.png` | the stripe artefact, both orders of operation on identical data | `plot_utility/plot_vorticity_pipeline.py` |
+
+Data behind them: `results/sq_surface_cp.npz`, `results/sq_force_spectra.npz`, and the nine
+phase checkpoints `results/fields/sqph_00..08.npz`. Reference values with provenance live in
+`reference_data.py`.
+
+The older `sqcyl_phase01-05` files are superseded — 63,280 cells, no grid fingerprint, spaced 3
+time units apart, which is not a fraction of `T = 6.72`.
 
 ## 7. Consequences for the rest of the repo
 

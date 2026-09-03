@@ -24,6 +24,30 @@ same window:
 The solver agreed with its own target to 0.04 and was called a failure by comparison against a
 different Reynolds number. **Compare like for like, at the same conditions and the same window.**
 
+**THE SAME TRAP CAUGHT US TWICE MORE ON 2026-09-03, INSIDE THIS REPO, AFTER THIS SECTION WAS
+WRITTEN.** Both were found only when a real reference at the matched configuration was finally
+pulled -- Sohankar, Norberg & Davidson, IJNMF 26:39-56 (1998) -- rather than a band remembered
+from somewhere.
+
+*The onset Reynolds number, again.* `sqcyl_onset.py` carried `RE_C_REF = (45, 47)`. That is the
+**zero-blockage experimental** estimate. Our grid is 5% blockage, where the same paper computes
+`Re_cr = 51.2 +/- 1.0` and states that the critical Reynolds number RISES with blockage. Our
+measured 51.31 was being read as 10% high when it is **0.2% off the right reference**.
+
+*The stagnation pressure.* Several notes in this repo, and several statements made while
+reading these results aloud, called `C_p = +1` at the front stagnation "the one number with an
+analytic answer independent of the solver". It is exact only at ZERO blockage. At finite
+blockage the flow accelerates past the body, so the stagnation coefficient exceeds one: the
+reference gives 1.052 at 5% and 1.083 at 2.5%. Our 1.0725 was being called a 7% error; against
+the right value at the right blockage it is **+1.9%**.
+
+The pattern in both is the same and it is worth stating flatly: **a reference value is a
+measurement of a CONFIGURATION, not of a quantity.** "The critical Reynolds number of a square
+cylinder" and "the stagnation pressure coefficient" are not numbers; they are functions of
+blockage, incidence and Reynolds number, and quoting one without its configuration is quoting
+nothing. The cost here was not a wrong result -- both of ours were right -- but weeks of
+apparent disagreement that would have driven a search for a bug that does not exist.
+
 **The onset Reynolds number.** `sigma = k(Re - Re_c)` is a NEAR-ONSET expansion. Fitted across
 Re = 55, 65, 80, 95 it gives `Re_c = 25.7` with `R^2 = 0.96`; the two lowest points alone give
 39.4, against a published 45-47. Each higher point drags the intercept down because a straight

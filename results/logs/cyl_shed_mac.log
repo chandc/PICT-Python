@@ -8,3 +8,5 @@
 
   kicked at 1% of U about v0 = +0.009160
 
+  shed       500    87.5    0.010964  3.221e-03    0.143    4.576
+           C_D +1.0628   C_L rms 0.0792   (reference C_D 1.33, spurious normal stress in C_D +0.0198)
