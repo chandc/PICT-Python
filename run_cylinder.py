@@ -79,6 +79,12 @@ def main():
     p.add_argument("--tol", type=float, default=DEFAULT_TOL,
                    help="linear solver tolerance; 1e-4 suppresses shedding entirely")
     p.add_argument("--settle", type=int, default=8000, help="steps to reach the base flow")
+    p.add_argument("--force-kick", action="store_true",
+                   help="kick even though the checkpoint's step count is past --settle. Needed "
+                        "when the base flow was settled by a DIFFERENT script, or at a different "
+                        "dt, so its nstep does not mean what the phase logic assumes. Kicking a "
+                        "flow that is already shedding would corrupt the amplitude, so this is "
+                        "opt-in rather than a default.")
     p.add_argument("--steps", type=int, default=30000, help="steps after the kick")
     p.add_argument("--dt", type=float, default=0.01)
     p.add_argument("--nz", type=int, default=4)
@@ -108,8 +114,8 @@ def main():
         h = f"results/{tag}_history.npy"
         if os.path.exists(h):
             hist = [tuple(row) for row in np.load(h)]
-        kicked = m.nstep >= a.settle
-        settle = 0 if kicked else a.settle - m.nstep
+        kicked = (m.nstep >= a.settle) and not a.force_kick
+        settle = 0 if m.nstep >= a.settle else a.settle - m.nstep
         print(f"  restarted from {a.restart}: t={m.time:.1f}, step {m.nstep}, "
               f"{len(hist)} history samples", flush=True)
         where = ("already kicked; continuing the shedding stage" if kicked

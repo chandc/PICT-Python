@@ -1,3 +1,10 @@
   restarted at t = 415.0; period 6.7199 = 672 steps, 8 phases
   phase 0 saved at t = 415.000
   phase 1 saved at t = 415.840  (84/672 steps, 2.75 s/step)
+  phase 2 saved at t = 416.680  (168/672 steps, 2.73 s/step)
+  phase 3 saved at t = 417.520  (252/672 steps, 2.74 s/step)
+  phase 4 saved at t = 418.360  (336/672 steps, 2.73 s/step)
+  phase 5 saved at t = 419.200  (420/672 steps, 2.73 s/step)
+  phase 6 saved at t = 420.040  (504/672 steps, 2.74 s/step)
+  phase 7 saved at t = 420.880  (588/672 steps, 2.74 s/step)
+  phase 8 saved at t = 421.720  (672/672 steps, 2.73 s/step)

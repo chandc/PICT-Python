@@ -186,7 +186,7 @@ field had all been measured.
 
 | quantity | value | reference | how |
 |---|---|---|---|
-| Strouhal number | **0.1488 ± 0.0005** | 0.145–0.150 (2D, low blockage) | C_L zero crossings |
+| Strouhal number | **0.1488** (repeatable to 2e-6) | 0.145–0.150 (2D, low blockage) | C_L zero crossings |
 | drag coefficient | **1.4529** | 1.4–1.5 | surface integral, `src/forces.py` |
 | lift rms | **0.1722** | 0.16–0.20 | same |
 | drag frequency | exactly **2×** the lift frequency | required by symmetry | force record |
@@ -211,10 +211,17 @@ uncertainty; it is an artefact of asking for the answer in the wrong form.
 The information is in the TIMING of the zero crossings, not in the spectral resolution. Eleven
 crossings over 35 time units give
 
-    T = 6.7199 ± 0.0218   ->   St = 0.1488 ± 0.0005
+    T = 6.719914 ± 0.000002   ->   St = 0.148811 ± 0.000002
 
-which is ±0.3%, sixty times sharper, from exactly the same data. **Fit the feature, do not bin
-the spectrum**, whenever the signal is a clean limit cycle.
+The ten half-periods in the record are 3.359956, 3.359962, 3.359955, ... -- a scatter of
+3.6e-06. **Fit the feature, do not bin the spectrum**, whenever the signal is a clean limit
+cycle.
+
+**But that is REPEATABILITY, not accuracy.** The limit cycle is converged to six figures, so the
+period is known to six figures; St as a PHYSICAL number is limited by the grid, the 5% blockage
+and the domain length, and none of those has been varied. The right quotation is St = 0.1488
+with the systematic uncertainty stated as unmeasured -- see 6.3. Reporting +/- 0.000002 as
+though it were an error bar on the physics would be the most misleading number in this file.
 
 ### 6.3 What is still not validated
 
@@ -281,7 +288,30 @@ gradients where the mesh is finest.
 `plot_vorticity_pipeline.py` is the side-by-side demonstration, kept because the failure is
 invisible unless both orders are drawn from the same data.
 
-### 6.6 The figures
+### 6.6 Time-averaged surface pressure
+
+From the mean field accumulated over 3500 samples (5.2 periods), with the rms taken from eight
+snapshots spaced uniformly over one period. The two are cross-checked: the eight-phase mean
+reproduces the 3500-sample mean to **0.0039**.
+
+| face | s | mean C_p | rms C_p over the cycle |
+|---|---|---|---|
+| front | 3.5–4.0, 0–0.5 | **+0.7965** | 0.0202 |
+| top | 0.5–1.5 | −1.1501 | 0.0813 |
+| base | 1.5–2.5 | **−0.7045** | 0.0473 |
+| bottom | 2.5–3.5 | −1.1460 | 0.0813 |
+
+Two checks come free with this table. The front stagnation reads **+1.0725 against the exact
++1**, so the pressure field and its reference are good to 7%. And the front-minus-base
+difference is **+1.5010** against a C_D of **1.4529** measured independently by surface
+integration -- they agree to 3.3%, which is the residue of friction drag and of the spurious
+viscous normal stress documented in `src/forces.py`. The top and bottom faces carry equal mean
+C_p to 0.4%, as a time-averaged symmetric configuration must.
+
+The rms is four times larger on the side faces (0.081) than on the front (0.020): the shedding
+modulates the separated shear layers, not the stagnation region.
+
+### 6.7 The figures
 
 * `figures/sqcyl_v3_forces_nearfield.png` -- near-field vorticity over pressure. The shear layers
   separate at the leading edges, roll up alternately, and each shed core appears in the pressure
