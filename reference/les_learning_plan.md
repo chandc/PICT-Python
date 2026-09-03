@@ -143,7 +143,13 @@ Dimensionally correct by construction, non-negative, with Smagorinsky as the spe
 *Tests:* scaling (double Δ → 4×), Galilean invariance, Smagorinsky recovery to round-off,
 positivity, seam invariance. All exact, all cheap — the same shape as `test_sgs_models.py`.
 
-### 2.4 The differentiable `ν` → matrix path — two to four days, and the real work
+### 2.4 The differentiable `ν` → matrix path — two to four days, and NOT on the critical path
+
+**Reordered 2026-09-03.** This was written as "the real work", and for an eddy-viscosity closure
+it is. But `les_learning_explained.md` sets out why it is not needed to start: PICT's channel
+model is a FORCE, which enters the right-hand side through a path this repo already has and
+already gates. The items below (2.1, 2.2) are sufficient for a trainable closure; this one buys
+the ability to compare closure FORMS, which is a refinement rather than a prerequisite.
 
 Currently impossible here: `build_momentum_matrix` is NumPy, and `mb_adjoint` takes only the
 assembled *values* into torch. Either assemble the diffusion operator in torch (as
