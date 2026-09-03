@@ -179,24 +179,119 @@ the wake only to 18.6 D.
 
 ## 6. What this does and does not validate
 
-Landing at 0.1467 with 5% blockage is real evidence the solver, grid and outflow all behave. But
-**one Strouhal number at one Reynolds number is weak validation** — it is a single scalar and
-several errors could cancel into it.
+Updated 2026-09-03, when the run reached t = 535 and the forces, the onset sweep and the far
+field had all been measured.
 
-Note the reference value is blockage-dependent, which makes "the expected St" ambiguous:
-~0.145–0.150 for 2D simulations at low blockage, 0.13–0.14 for experiments and higher blockage.
-Quoting 0.13 against a 5%-blockage grid — which this project did for a while — makes a good
-result look 13% wrong.
+### 6.1 What is measured
 
-Stronger checks, none of them run yet:
+| quantity | value | reference | how |
+|---|---|---|---|
+| Strouhal number | **0.1488 ± 0.0005** | 0.145–0.150 (2D, low blockage) | C_L zero crossings |
+| drag coefficient | **1.4529** | 1.4–1.5 | surface integral, `src/forces.py` |
+| lift rms | **0.1722** | 0.16–0.20 | same |
+| drag frequency | exactly **2×** the lift frequency | required by symmetry | force record |
+| front stagnation `C_p` | **+1.019** | **+1.0000 exactly** | 1.9% error |
+| onset | **52 < Re_c < 55** | 45–47 at low blockage | sign bracket, no model |
 
-* **St vs Re over 60–200** — the curve shape is a far harder target than one point
-* **grid convergence** — St at 1.5× and 2× resolution should move well under the 0.0067 FFT bin
-* **C_D ≈ 1.4–1.5** at Re = 100 — an independent number testing surface forces rather than a
-  wake probe
+The stagnation point is the most useful of these because it is the only number in the whole case
+with an analytic answer independent of the solver: the flow is brought to rest, so `C_p = 1`
+whatever the Reynolds number. 1.9% is a bound on the pressure field and on the normalisation
+together.
 
-The FFT bin width (0.0067) currently dominates the uncertainty, and that is only run length:
-2× longer halves it.
+The drag oscillating at exactly twice the lift frequency is the second such check. It is forced
+by symmetry -- each shed vortex, of either sign, pulls the body downstream once -- so it is not
+something a tuned run can fake.
+
+### 6.2 St is 60x sharper than the spectrum suggests, and this was quoted wrongly
+
+An FFT of the 35-time-unit force record gives St = 0.1429 with a **bin width of 0.0286**, i.e.
+±19%, and that bin was quoted for a while as the dominant uncertainty. It is not the dominant
+uncertainty; it is an artefact of asking for the answer in the wrong form.
+
+The information is in the TIMING of the zero crossings, not in the spectral resolution. Eleven
+crossings over 35 time units give
+
+    T = 6.7199 ± 0.0218   ->   St = 0.1488 ± 0.0005
+
+which is ±0.3%, sixty times sharper, from exactly the same data. **Fit the feature, do not bin
+the spectrum**, whenever the signal is a clean limit cycle.
+
+### 6.3 What is still not validated
+
+**Grid convergence has never been run.** Every saved square result shares one grid fingerprint,
+`95b3efa8...`, 82,096 cells. St at 1.5x and 2x resolution should move well under 0.0005, and
+until that is done a single well-placed number is agreement, not convergence.
+
+**The far wake past x ≈ 18 is not resolved and its decay cannot be apportioned.** The wake
+plateau holds dx = 0.15 to x = 14 and then stretches to 0.94. Peak vorticity decays smoothly and
+decelerating -- station-to-station ratios 0.79, 0.82, 0.86, 0.89, 0.92 over 3 D steps -- and
+then drops abruptly to 0.70 exactly where dx jumps, and reads 1.000 for the next interval, which
+is not physically possible and shows the measurement itself has failed. The reason is the same
+either way:
+
+    x     viscous core radius    cell dx    cells per core radius
+   15            0.797            0.154            5.2
+   18            0.881            0.328            2.7
+   21            0.958            0.524            1.8
+   24            1.029            0.701            1.5
+
+A core spreading as sqrt(4 nu t) reaches 1.0 D by x = 24 while the cell reaches 0.7 D. Physical
+diffusion is genuinely large at Re = 100 over that convection time, but at 1.5 cells per core
+radius a vortex cannot be represented at all, so physical and numerical diffusion cannot be
+separated from one run. Grid refinement is the only way to apportion them, which is a second
+reason to do the study in 6.3.
+
+**None of this touches the quoted numbers.** St comes from a probe at x = 2 and the forces from
+the body surface, both deep inside the plateau.
+
+### 6.4 The far field is clean, and that is a positive result
+
+Same metric applied to the square and to the circular cylinder -- max |u - U_inf| over cells away
+from the wake:
+
+| | t | away from wake | outflow face, \|y\|>4 | lateral boundary |
+|---|---|---|---|---|
+| square `v3` | 380 | 0.0795 | 0.0417 | 0.0000 |
+| square `v3_forces` | 415 | **0.0757** | 0.0429 | 0.0000 |
+| cylinder | 60 | 0.126 | | |
+| cylinder | 80 | **0.187**, still climbing | | |
+
+The square's deviation is FLAT -- slightly down over 35 time units, on a run that reached 535 --
+while the cylinder trebles in 50 and does not stop. Same solver, same Dong outflow, same
+tolerance. What differs is the boundary topology: the square's outlet is a whole face with the
+inlet and sides as separate boundaries, whereas the cylinder's perimeter is CLOSED with 94%
+pinned to the free stream and 6% carrying the entire mass balance. See `reference/` notes on the
+cylinder for that investigation.
+
+### 6.5 The pictures were wrong before they were right
+
+`plot_farfield.py` interpolated u and v onto a display grid and then took `np.gradient` of that.
+`LinearNDInterpolator` is piecewise linear, so its derivative is piecewise CONSTANT and jumps at
+every mesh cell edge: differentiating it paints one band per cell. The far wake therefore came
+out in vertical stripes past x ≈ 18, widening downstream exactly as the cells widen, and those
+stripes were briefly read as a flow feature.
+
+They were not. Native vorticity along y = 1 for x > 16, differentiated on the mesh with the real
+metrics, has a node-to-node alternating component of 1.7% of its own rms. Mean
+|d(omega)/d(pixel)| past x = 18 falls from 0.00813 to 0.00295 when the order is corrected, and
+peak |omega| rises from 26.19 to 31.00 -- the old order was also smoothing the near-body
+gradients where the mesh is finest.
+
+**Interpolating a scalar for a picture is fine; differentiating an interpolant is not.**
+`plot_vorticity_pipeline.py` is the side-by-side demonstration, kept because the failure is
+invisible unless both orders are drawn from the same data.
+
+### 6.6 The figures
+
+* `figures/sqcyl_v3_forces_nearfield.png` -- near-field vorticity over pressure. The shear layers
+  separate at the leading edges, roll up alternately, and each shed core appears in the pressure
+  panel as a suction minimum. The alternation of those minima across the centreline IS the lift
+  oscillation, and the front stagnation reads `C_p = +1.019` against the exact +1.
+* `figures/sqcyl_phases.png` -- one full shedding period at eight equally spaced phases, on the
+  production grid. The older `sqcyl_phase01-05` files are on the previous 63,280-cell grid and
+  are spaced 3 time units apart, which is not a fraction of T = 6.72; they cannot illustrate this
+  solution and are superseded.
+* `figures/sqcyl_v3_forces_farfield.png` -- whole domain, with the corrected vorticity pipeline.
 
 ---
 
