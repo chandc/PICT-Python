@@ -173,3 +173,7 @@ manufactured targets.
 
 * Paper: [PICT – A Differentiable, GPU-Accelerated Multi-Block PISO Solver for Simulation-Coupled Learning Tasks in Fluid Dynamics](https://arxiv.org/pdf/2505.16992), Franz, Wei, Guastoni & Thuerey (TUM), arXiv:2505.16992v2, and the [journal version](https://www.sciencedirect.com/science/article/pii/S0021999125007156).
 * Code: [github.com/tum-pbs/PICT](https://github.com/tum-pbs/PICT), with the channel-flow learning recipe in `TCF.md`.
+
+---
+
+Full citations for every source named here: `reference/bibliography.md`.

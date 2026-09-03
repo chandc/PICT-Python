@@ -22,9 +22,10 @@ solver's own operators use, and the same one a distributed version would send ov
 """
 import numpy as np
 
-CS_SMAGORINSKY = 0.17          # Lilly's value for isotropic turbulence
+# Constants and their sources; full citations in reference/bibliography.md.
+CS_SMAGORINSKY = 0.17          # Lilly (1967), for isotropic turbulence
 CW_WALE = 0.55                 # Nicoud & Ducros (1999)
-A_PLUS = 26.0                  # van Driest
+A_PLUS = 26.0                  # van Driest (1956)
 
 
 def velocity_gradient(d, u, v, w):
@@ -71,7 +72,7 @@ def filter_width(d, b):
 
 
 def smagorinsky(d, u, v, w, cs=CS_SMAGORINSKY, damping=None):
-    """nu_t = (C_s Delta)^2 |S|, optionally van Driest damped.
+    """nu_t = (C_s Delta)^2 |S| -- Smagorinsky (1963) -- optionally van Driest (1956) damped.
 
     `damping` is a dict {block: y_plus} if wall damping is wanted. WITHOUT damping this model
     does not vanish at a wall -- |S| is largest there -- which is why it needs one and why WALE
@@ -88,7 +89,7 @@ def smagorinsky(d, u, v, w, cs=CS_SMAGORINSKY, damping=None):
 
 
 def wale(d, u, v, w, cw=CW_WALE):
-    """The WALE model of Nicoud & Ducros (1999).
+    """The WALE model -- Nicoud & Ducros (1999), see reference/bibliography.md.
 
         S^d_ij = 1/2 (g2_ij + g2_ji) - 1/3 delta_ij g2_kk,     g2 = g g   (g_ij = du_i/dx_j)
         nu_t   = (C_w Delta)^2  (S^d:S^d)^{3/2} / ( (S:S)^{5/2} + (S^d:S^d)^{5/4} )

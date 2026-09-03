@@ -181,3 +181,7 @@ against turbulence data.
 not `nu_t`. An eddy-viscosity closure needs a non-negative `nu_t` entering the *matrix*, which is
 a different path — and the reason Stage 5c cared about differentiating through `A`. The
 machinery for it is now all present; the network head is not.
+
+---
+
+Full citations for every source named here: `reference/bibliography.md`.
