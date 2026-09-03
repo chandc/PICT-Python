@@ -1,0 +1,10 @@
+  restarted from results/fields/cyl_expt_dt005long.npz: t=85.0, step 11000, 0 history samples
+  -> 0 settle steps still to run before the kick
+  160,768 cells  Re=100  dt=0.005  tol=1e-06  backend=scipy  nz=4
+  probe at (1.999, 0.475)
+  reference: St = 0.164, C_D = 1.33
+
+  phase     step       t     v_probe    amp/500      far   s/step
+
+  kicked at 1% of U about v0 = +0.009160
+

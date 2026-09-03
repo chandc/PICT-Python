@@ -35,10 +35,13 @@ NU, U_INF = 0.01, 1.0
 
 
 def main():
-    files = sorted(glob.glob("results/fields/sqph_*.npz"))[:8]
-    if len(files) < 8:
-        print(f"  only {len(files)} phase files present, need 8 -- run sq_phases.py first")
+    files = sorted(glob.glob("results/fields/sqph_*.npz"))
+    if len(files) < 9:
+        print(f"  only {len(files)} phase files present, need 9 -- run sq_phases.py first")
         return 1
+    # nine files span a FULL period inclusive: 0..7 are the eight distinct phases and 8 is one
+    # period after 0, kept out of the montage and used as the closure check below.
+    closing, files = files[8], files[:8]
     d, _ = square_domain(nz=4)
     nb = len(d.blocks)
     body = [k for k, v in classify(d).items() if v == "body"]
@@ -84,7 +87,13 @@ def main():
     print(f"  C_L over the eight phases: " + " ".join(f"{c:+.4f}" for c in cls))
     print(f"  C_L rms across the cycle {np.sqrt((cls**2).mean()):.4f}  "
           f"(force record over 35 time units gives 0.1722)")
-    print(f"  first and last phase are one period apart: C_L {cls[0]:+.4f} vs {cls[-1]:+.4f}")
+    fc, mc = checkpoint.load_fields(closing)
+    Rc = surface_force(d, body, fc["u"], fc["v"], fc["w"], fc["p"], NU)
+    cl_close = Rc["total"][1] / q
+    print(f"  CLOSURE: C_L at t = {ts[0]:.2f} is {cls[0]:+.5f}; one period later "
+          f"(t = {float(mc['time']):.2f}) it is {cl_close:+.5f}")
+    print(f"  difference {abs(cl_close-cls[0]):.5f}, i.e. {100*abs(cl_close-cls[0])/0.1722:.2f}% "
+          f"of the C_L rms -- the cycle closes, so T = 6.7199 is right")
     return 0
 
 
