@@ -22,7 +22,8 @@ in the backward only -- must make it fail, or it is measuring nothing.
 import numpy as np
 import torch
 
-from src.mb_adjoint import MultiBlockChain, periodic_box
+from src.domains import periodic_box
+from src.mb_adjoint import MultiBlockChain
 from src.sgs_net import TinySGSNet
 
 torch.set_default_dtype(torch.float64)

@@ -23,7 +23,7 @@ has been validated against nothing.
 import numpy as np
 
 from src import sgs
-from src.mb_adjoint import periodic_box
+from src.domains import periodic_box
 
 TOL = 1e-10
 

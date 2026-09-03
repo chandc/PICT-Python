@@ -29,7 +29,7 @@ and which would make an SGS calibration meaningless.
 """
 import numpy as np
 
-from src.mb_adjoint import periodic_box
+from src.domains import periodic_box
 from src.piso_multiblock import MultiBlockPISO
 
 NU, DT = 1.0 / 800.0, 0.005

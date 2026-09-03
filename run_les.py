@@ -23,7 +23,7 @@ import time
 import numpy as np
 
 from src import sgs
-from src.mb_adjoint import periodic_box
+from src.domains import periodic_box
 from src.piso_multiblock import MultiBlockPISO
 
 

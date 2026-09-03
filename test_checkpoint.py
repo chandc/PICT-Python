@@ -183,7 +183,7 @@ if __name__ == "__main__":
     # with nothing wrong until the moment it was needed.
     print("\nField viscosity: an LES checkpoint must be restartable")
     from src import sgs as _sgs
-    from src.mb_adjoint import periodic_box as _pb
+    from src.domains import periodic_box as _pb
     from src.piso_multiblock import MultiBlockPISO as _P
 
     def _les(nu):
