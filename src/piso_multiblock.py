@@ -159,6 +159,16 @@ class MultiBlockPISO:
             out[b] = vec[o:o + n].reshape(bl.shape); o += n
         return out
 
+    @property
+    def t_solve(self):
+        """Seconds spent inside linear solves since construction (see SolveCache.t_solve)."""
+        return self._pcache.t_solve
+
+    @property
+    def n_solve(self):
+        """Number of linear solves since construction."""
+        return self._pcache.n_solve
+
     def step(self):
         """Advance one step and advance the clock (see _step_impl for the Picard loop)."""
         out = self._step_impl()

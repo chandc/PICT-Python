@@ -34,6 +34,8 @@ REDUCED system with Dirichlet outlet nodes eliminated: the Dirichlet set is geom
 faces), so it does not move -- 296 nodes, M_ff nnz 182,792, both identical across 8 steps. The
 cache is therefore keyed on the sparsity pattern and invalidated if it ever changes.
 """
+from time import perf_counter as _perf
+
 import numpy as np
 import scipy.sparse.linalg as spla
 
@@ -57,6 +59,14 @@ class SolveCache:
         self._amgx = None
         self.iterations = 0
         self.fell_back = False
+        # TIME SPENT INSIDE THE LINEAR SOLVES, accumulated across every call. This is not
+        # curiosity: Gate 6 of the PETSc plan has to decide whether to continue, and that
+        # decision turns on what fraction of the runtime is even ADDRESSABLE by distributing
+        # the solve. If assembly dominates, no amount of parallel solve delivers the projected
+        # speed-up. Before this counter existed the split was unmeasured and the plan's
+        # projections rested on an assumption.
+        self.t_solve = 0.0
+        self.n_solve = 0
 
     @staticmethod
     def key(A):
@@ -66,6 +76,15 @@ class SolveCache:
 
     def solve(self, A, b, x0=None, symmetric=True, rtol=1e-12, maxiter=20000,
               singular=False):
+        _t0 = _perf()
+        try:
+            return self._solve_timed(A, b, x0, symmetric, rtol, maxiter, singular)
+        finally:
+            self.t_solve += _perf() - _t0
+            self.n_solve += 1
+
+    def _solve_timed(self, A, b, x0=None, symmetric=True, rtol=1e-12, maxiter=20000,
+                     singular=False):
         A = A.tocsr()
         A.sort_indices()
         if self.backend == "amgx":

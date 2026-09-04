@@ -20,3 +20,8 @@ src/amgx/_generated_tol_*.json
 # Session handoff notes -- machine-specific and transient; the durable content
 # belongs in reference/.
 SESSION_STATE.md
+
+# Gate 0 reference fields: 36 MB, and BITWISE REPRODUCIBLE by re-running gate0_baseline.py
+# (verified: 640/640 arrays identical across independent captures). The digests are what the
+# comparison actually needs, and they are versioned; the fields are not.
+reference/gate0*/*.npz

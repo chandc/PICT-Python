@@ -1,0 +1,40 @@
+# Gate 0 regression baseline -- the existing suite, recorded before any DD change.
+# Gate 0 criterion: any test already failing is documented here, not silently
+# inherited by the port. Durations are single-threaded, 6 files at a time.
+# 2026-09-04T22:58:19Z  commit 81ae0fe
+
+test_chan_channel.py               PASS     rc=0     1044.4s  4/4
+test_channel_laminar.py            PASS     rc=0       48.8s  4/4
+test_channel_order.py              PASS     rc=0      223.4s    and opens a gap between them; each corrector shrinks i
+test_checkpoint.py                 PASS     rc=0       11.9s  25/25
+test_duct.py                       PASS     rc=0        2.6s    [PASS] square duct vs the analytic series: rates 2.06,
+test_duct_implicit.py              PASS     rc=0      534.8s  18/18
+test_energy_conservation.py        PASS     rc=0       32.9s  6/6
+test_forces.py                     PASS     rc=0        0.5s  6/6
+test_implicit_cross.py             PASS     rc=0       22.4s  10/10
+test_mb_adjoint_bc.py              PASS     rc=0        1.9s  10/10
+test_mb_adjoint_seam.py            PASS     rc=0        2.1s  16/16
+test_mb_adjoint_state.py           PASS     rc=0        1.6s  9/9
+test_mb_forces_torch.py            PASS     rc=0        2.0s  13/13
+test_multiblock.py                 PASS     rc=0       94.7s  55/55
+test_multiblock_gradient.py        PASS     rc=0        2.1s  4/4
+test_numerical_dissipation.py      PASS     rc=0       44.1s  4/4
+test_obstacle_topology.py          PASS     rc=0        2.0s            validate 0 problems | flux divergence 3.81e-11
+test_onset_estimator.py            PASS     rc=0        0.1s  9/9
+test_orr_sommerfeld.py             TIMEOUT  rc=-1    1800.0s  
+test_outflow.py                    TIMEOUT  rc=-1    1800.0s  
+test_phase3_rigorous.py            PASS     rc=0      511.8s  23/23
+test_phase5_order.py               PASS     rc=0      491.9s  5/5
+test_phase5_piso.py                PASS     rc=0       73.4s  10/10
+test_poiseuille.py                 PASS     rc=0        4.4s  Poiseuille validation passed
+test_reentrant_corner_stretched.py PASS     rc=0        1.0s           7.48e-15, against 3.99e-02 without.
+test_rhie_chow.py                  PASS     rc=0      106.0s  28/28
+test_sgs_models.py                 PASS     rc=0        0.5s  7/7
+test_sgs_net_seam.py               PASS     rc=0        1.6s  5/5
+test_spatial_order.py              PASS     rc=0      802.3s  ========================================================
+test_stokes_channel.py             PASS     rc=0      626.1s  5/5
+test_stokes_growth.py              PASS     rc=0      168.7s  6/6
+test_van_driest_channel.py         PASS     rc=0      667.1s  4/4
+test_variable_viscosity.py         PASS     rc=0        1.4s  6/6
+
+# 31/33 files pass
