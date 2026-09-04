@@ -21,8 +21,8 @@ test_multiblock_gradient.py        PASS     rc=0        2.1s  4/4
 test_numerical_dissipation.py      PASS     rc=0       44.1s  4/4
 test_obstacle_topology.py          PASS     rc=0        2.0s            validate 0 problems | flux divergence 3.81e-11
 test_onset_estimator.py            PASS     rc=0        0.1s  9/9
-test_orr_sommerfeld.py             TIMEOUT  rc=-1    1800.0s  
-test_outflow.py                    TIMEOUT  rc=-1    1800.0s  
+test_orr_sommerfeld.py             PASS     rc=0     2095.0s  2/2   [a]
+test_outflow.py                    PASS     rc=0     2242.0s  6/6   [a]
 test_phase3_rigorous.py            PASS     rc=0      511.8s  23/23
 test_phase5_order.py               PASS     rc=0      491.9s  5/5
 test_phase5_piso.py                PASS     rc=0       73.4s  10/10
@@ -37,4 +37,15 @@ test_stokes_growth.py              PASS     rc=0      168.7s  6/6
 test_van_driest_channel.py         PASS     rc=0      667.1s  4/4
 test_variable_viscosity.py         PASS     rc=0        1.4s  6/6
 
-# 31/33 files pass
+# 33/33 files pass
+
+# [a] These two exceeded the harness's 1800 s budget on the batch run and were re-run
+#     individually. They PASS. The cause was not CPU contention, which was the first guess:
+#     alone on an idle machine they still take 2095 s and 2242 s, so the timeout was simply
+#     set below their genuine runtime. Recorded here because Gate 0 requires that anything
+#     not passing be UNDERSTOOD rather than merely noted -- and "slow" and "broken" would
+#     have been inherited by the port as the same thing.
+#
+#     They are also, by a wide margin, the two most expensive files in the suite: together
+#     4337 s against 4884 s for the other 31 combined. Any per-commit gate during the port
+#     should exclude them and run them on a slower cadence.
