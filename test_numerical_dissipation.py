@@ -37,7 +37,8 @@ WARM, WINDOW = 20, 40
 
 
 def tgv(blk):
-    x, y, z = blk.x * 2 * np.pi, blk.y * 2 * np.pi, blk.z * 2 * np.pi
+    """On [0, 2 pi]^3, so E(0) = 1/8 and Z(0) = 3/8 exactly -- both checked below."""
+    x, y, z = blk.x, blk.y, blk.z
     return (np.sin(x) * np.cos(y) * np.cos(z),
             -np.cos(x) * np.sin(y) * np.cos(z),
             np.zeros_like(x))
@@ -61,7 +62,7 @@ def energy_enstrophy(d, m, nb):
 
 
 def run(n, ns):
-    d = periodic_box(n, ns)
+    d = periodic_box(n, ns, L=2 * np.pi)
     nb = len(d.blocks)
     m = MultiBlockPISO(d, NU, DT, 2, 1e-10, time_scheme="bdf2", scheme="rotational",
                        picard_iters=2, rhie_chow=True, persistent_flux=True, ddt_corr=False)
@@ -81,6 +82,39 @@ def run(n, ns):
     return dEdt, phys, dEdt - phys
 
 
+def check_initial_state():
+    """E(0) and Z(0) against their exact values -- the check that caught a two-part bug.
+
+    Writing TGV as sin(2 pi x) on a UNIT box gives the same velocities at wavenumber 2 pi
+    instead of 1. E(0) still reads 0.125, so an energy check alone passes; the ENSTROPHY is
+    (2 pi)^2 = 39.5 times too large, and with it the dissipation. Measured: Z(0) = 14.06.
+
+    Scaling the box exposed a second unit-box assumption inherited from Block, whose `period`
+    defaults to (1, 1, 1) and is what pad_coords adds when it wraps a periodic ghost. With the
+    coordinates scaled and the period left at 1, the wrapped ghost landed a whole box short: the
+    Jacobian came out at 1/(2 pi)^3 and E(0) read 0.147 -- an error that did NOT converge with
+    refinement, which is the signature of a geometry bug rather than a discretisation one.
+    """
+    print("  initial state against exact values, E(0) = 0.125 and Z(0) = 0.375")
+    ok = True
+    prev = None
+    for n in (32, 48, 64):
+        d = periodic_box(n, 2, L=2 * np.pi)
+        nb = len(d.blocks)
+        m = MultiBlockPISO(d, NU, DT, 2, 1e-10, time_scheme="bdf2", scheme="rotational",
+                           picard_iters=2, rhie_chow=True, persistent_flux=True, ddt_corr=False)
+        for b in range(nb):
+            m.u[b][:], m.v[b][:], m.w[b][:] = tgv(d.blocks[b])
+        E, Z = energy_enstrophy(d, m, nb)
+        eE, eZ = abs(E - 0.125) / 0.125, abs(Z - 0.375) / 0.375
+        good = eE < 1e-12 and eZ < 0.06
+        ok &= good
+        print(f"  [{'PASS' if good else 'FAIL'}] {n}^3: E(0) err {100*eE:.3e}%, "
+              f"Z(0) err {100*eZ:.3f}%" + (f", falls {prev/eZ:.2f}x" if prev else ""))
+        prev = eZ
+    return ok
+
+
 def main():
     print("=" * 78)
     print(f"  numerical dissipation of the multi-block solver, TGV at Re = {1/NU:.0f}")
@@ -93,7 +127,8 @@ def main():
         share.append(abs(num) / dEdt)
         print(f"  {str(n)+'^3':>8}{ns:>8}{dEdt:>12.3e}{phys:>12.3e}{num:>12.3e}"
               f"{100*num/dEdt:>9.1f}%")
-    r = []
+    r = [check_initial_state()]
+    print()
     # second order: halving the error needs (n2/n1)^2. Compare measured to expected.
     for i in range(len(grids) - 1):
         f = grids[i + 1][0] / grids[i][0]
