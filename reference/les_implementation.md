@@ -184,4 +184,8 @@ machinery for it is now all present; the network head is not.
 
 ---
 
+**Figures.** `figures/tgv400_vs_dns.png` (models and resolutions against DNS) and
+`figures/tgv400_dissipation_split.png` (the post-peak non-equilibrium deficit), both described in
+`reference/les_model_study.md`.
+
 Full citations for every source named here: `reference/bibliography.md`.

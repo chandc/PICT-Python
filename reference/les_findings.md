@@ -162,4 +162,7 @@ filtering across multiblock seams.
   implemented. It needs a test filter, which is the multiblock halo problem — already solved for
   convolutions in `src/sgs_net.py` and reusable.
 
+**Figures.** `figures/tgv400_vs_dns.png` and `figures/tgv400_dissipation_split.png`; the
+completed study and its four findings are written up in `reference/les_model_study.md`.
+
 Full citations: `reference/bibliography.md`.

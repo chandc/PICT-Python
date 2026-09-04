@@ -21,6 +21,10 @@ that does not exist.
 
 ---
 
+**Figures.** `figures/tgv400_vs_dns.png` — energy and dissipation, both grids, all
+configurations. `figures/tgv400_dissipation_split.png` — the post-peak deficit of §3.4 and its
+decomposition into resolved and modelled parts.
+
 ## 2. Results
 
 | grid | model | outcome | mean \|err\| | max |
@@ -42,6 +46,8 @@ that does not exist.
 
 ### 3.1 The model is mandatory, not an accuracy refinement
 
+*(`tgv400_vs_dns.png`, lower panels: the unmodelled curve dives through zero at the cross.)*
+
 **The unmodelled run diverges at BOTH resolutions** — t = 5 at 48³ and **t = 6 at 64³, exactly
 at the DNS dissipation peak.** It reaches +12.4% energy with negative dissipation: it cannot
 produce the dissipation the peak demands, grid-scale energy accumulates, and the run is lost.
@@ -56,6 +62,8 @@ gap between the best and worst working closure (0.94% vs 3.39%).
 | Smagorinsky | **only survivor** | mid-pack, 1.25% |
 | σ | diverged t = 8 | **best, 0.94%** |
 | Vreman | diverged t = 8 | 1.06% |
+
+*(`tgv400_vs_dns.png`, left column vs right: at 48³ only one line is drawn, at 64³ four are.)*
 
 **σ is the worst model at 48³ and the best at 64³.** A single-resolution study would have drawn
 the wrong conclusion whichever grid it used.
@@ -84,6 +92,9 @@ trades robustness**, and the price is paid only when the grid is too coarse.
 WALE is the outlier at both grids: **3.39% at 64³ against 0.94–1.25% for the others**, and the
 first to diverge at 48³. Its `ν_t/ν` is 0.53 at t = 3 where the others are 0.21.
 
+*(`tgv400_vs_dns.png`, lower right: WALE is the long-dashed curve overshooting the peak and
+then running below the DNS at t = 9–12. Also `tgv400_dissipation_split.png`, upper panel.)*
+
 **WALE does not vanish in solid-body rotation.** `S^d` is the traceless symmetric part of `g·g`,
 which for `u = ω × r` is `diag(−1,−1,2) ω²/3`, so `S^d:S^d = (2/3)ω⁴` while `S:S = 0`. Responding
 to the rotation rate is the entire reason it is built from `g·g` rather than from `S`. Transitional
@@ -96,6 +107,10 @@ written to check that claim failed, and the corrected test now asserts the exact
 
 ### 3.4 All algebraic models under-dissipate on the post-peak plateau
 
+*(`figures/tgv400_dissipation_split.png` — the whole finding. The upper panel shows the DNS
+plateau shaded and every model decaying through it; the lower panel splits σ's dissipation into
+the part the grid RESOLVES and the part the MODEL supplies.)*
+
 The DNS holds ε ≈ 0.0110 from t = 7 to t = 9 and then rolls off. Our runs decay monotonically
 from t = 7, opening a deficit of **−17% at t = 9** that closes again by t = 11.
 
@@ -106,6 +121,15 @@ from t = 7, opening a deficit of **−17% at t = 9** that closes again by t = 11
    11    0.00788     0.00765     0.00562   0.00203    -3.0%
 
   from t=7 to t=9:  resolved -19%,  model -32%,  DNS total -4%
+```
+
+Measured at t = 9 across all four:
+
+```
+  sigma        deficit -17.0%    resolved -19.4%    model -31.6%
+  smagorinsky  deficit -15.9%    resolved -19.3%    model -30.4%
+  vreman       deficit -17.1%    resolved -19.7%    model -32.8%
+  wale         deficit -28.1%    resolved -23.0%    model -53.3%
 ```
 
 **All three surviving models do this, within a few percent of each other** — so it is structural,
@@ -151,4 +175,24 @@ Kim–Moin–Moser DNS: it exercises walls, sustained turbulence and near-wall m
 once, and has a published reference. Second is an E(k) diagnostic on the existing TGV runs — an
 hour's work, and it would show whether the energy is in the right places.
 
-Figure: `figures/tgv400_vs_dns.png`. Full citations: `reference/bibliography.md`.
+---
+
+## 5. Figures and how to regenerate them
+
+| figure | shows | script |
+|---|---|---|
+| `tgv400_vs_dns.png` | energy and dissipation, 48³ and 64³, every configuration; diverged runs named rather than drawn | `plot_utility/plot_tgv_vs_dns.py` |
+| `tgv400_dissipation_split.png` | the post-peak deficit and its resolved/modelled decomposition | `plot_utility/plot_tgv_dissipation_split.py` |
+
+Both read the run logs from `results/logs/tgv400_n*_*.log` and the reference from
+`results/tgv_diag_re400.npz`, which is committed so the comparison does not depend on a path
+outside the repo.
+
+A run counts as DIVERGED if its dissipation goes negative OR its resolved enstrophy exceeds the
+DNS by more than 2x. The second criterion matters: 48³ Vreman still had ε > 0 at t = 9 and was
+reported as "running" for hours while holding 2.3x the DNS enstrophy. There is no physical way
+for a coarse grid to hold MORE enstrophy than a resolved one, and every failure here passed
+through that state before its dissipation turned. No surviving run approaches the bar — the
+worst is WALE at the 64³ peak, 1.16x.
+
+Full citations: `reference/bibliography.md`.
