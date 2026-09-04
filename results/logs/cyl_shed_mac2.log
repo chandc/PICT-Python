@@ -34,3 +34,54 @@
            C_D +1.2430   C_L rms 0.1089   (reference C_D 1.33, spurious normal stress in C_D +0.0190)
   shed      6500   140.0    0.113196  3.598e-01    0.104    0.620    4.763
            C_D +1.2508   C_L rms 0.1342   (reference C_D 1.33, spurious normal stress in C_D +0.0189)
+  shed      7000   142.5   -0.419946  5.318e-01    0.110    0.672    4.784
+           C_D +1.2563   C_L rms 0.1377   (reference C_D 1.33, spurious normal stress in C_D +0.0189)
+  shed      7500   145.0    0.182275  6.022e-01    0.105    0.734    4.787
+           C_D +1.2608   C_L rms 0.1228   (reference C_D 1.33, spurious normal stress in C_D +0.0189)
+  shed      8000   147.5   -0.300898  5.498e-01    0.102    0.747    4.796
+           C_D +1.2654   C_L rms 0.1193   (reference C_D 1.33, spurious normal stress in C_D +0.0189)
+  shed      8500   150.0   -0.244336  1.976e-01    0.097    0.716    4.816
+           C_D +1.2694   C_L rms 0.1386   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed      9000   152.5    0.167937  4.982e-01    0.106    0.771    4.857
+           C_D +1.2716   C_L rms 0.1553   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed      9500   155.0   -0.451285  6.178e-01    0.108    0.840    4.882
+           C_D +1.2724   C_L rms 0.1508   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     10000   157.5    0.167343  6.201e-01    0.104    0.862    4.907
+           C_D +1.2734   C_L rms 0.1324   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     10500   160.0   -0.301278  5.612e-01    0.101    0.845    4.935
+           C_D +1.2754   C_L rms 0.1284   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     11000   162.5   -0.267900  1.908e-01    0.096    0.835    4.955
+           C_D +1.2773   C_L rms 0.1470   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     11500   165.0    0.174754  5.283e-01    0.105    0.859    4.964
+           C_D +1.2778   C_L rms 0.1624   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     12000   167.5   -0.459735  6.330e-01    0.108    0.869    4.957
+           C_D +1.2772   C_L rms 0.1565   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     12500   170.0    0.170425  6.319e-01    0.104    0.885    4.953
+           C_D +1.2772   C_L rms 0.1371   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     13000   172.5   -0.310011  5.732e-01    0.101    0.903    4.961
+           C_D +1.2784   C_L rms 0.1319   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     13500   175.0   -0.263405  1.993e-01    0.097    0.921    4.971
+           C_D +1.2796   C_L rms 0.1500   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     14000   177.5    0.167041  5.250e-01    0.104    0.931    4.979
+           C_D +1.2796   C_L rms 0.1654   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     14500   180.0   -0.462105  6.276e-01    0.107    0.950    4.988
+           C_D +1.2786   C_L rms 0.1601   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     15000   182.5    0.177637  6.409e-01    0.104    0.979    4.997
+           C_D +1.2781   C_L rms 0.1401   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     15500   185.0   -0.319341  5.827e-01    0.102    1.009    5.005
+           C_D +1.2788   C_L rms 0.1329   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     16000   187.5   -0.253590  2.096e-01    0.097    1.037    4.995
+           C_D +1.2798   C_L rms 0.1506   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     16500   190.0    0.158345  5.154e-01    0.103    1.073    4.994
+           C_D +1.2796   C_L rms 0.1671   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     17000   192.5   -0.462469  6.192e-01    0.107    1.119    4.986
+           C_D +1.2783   C_L rms 0.1624   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     17500   195.0    0.182987  6.461e-01    0.103    1.184    4.979
+           C_D +1.2775   C_L rms 0.1417   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     18000   197.5   -0.324217  5.878e-01    0.101    1.325    4.967
+           C_D +1.2778   C_L rms 0.1338   (reference C_D 1.33, spurious normal stress in C_D +0.0188)
+  shed     18500   200.0   -0.242173  2.212e-01    0.097    2.308    4.953
+
+  ABORT at t = 200.0: near-body 0.097 (limit 0.3), far-field 2.308 (limit 1.5).
+  The near-body figure is the one that invalidates a force measurement; the
+  far-field one is a backstop. Field saved to results/fields/cyl_shed_mac_ABORT.npz.
