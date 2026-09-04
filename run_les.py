@@ -46,7 +46,8 @@ def kinetic_energy(m, nb):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--model", choices=("wale", "smagorinsky", "none"), default="wale")
+    p.add_argument("--model", choices=tuple(sorted(sgs.MODELS)) + ("none",),
+                   default="wale", help="subgrid closure; 'none' runs unmodelled")
     p.add_argument("--n", type=int, default=16, help="cells per side")
     p.add_argument("--blocks", type=int, default=2)
     p.add_argument("--re", type=float, default=400.0)

@@ -71,7 +71,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--n", type=int, default=48)
     p.add_argument("--blocks", type=int, default=2)
-    p.add_argument("--model", choices=("none", "wale", "smagorinsky"), default="wale")
+    p.add_argument("--model", choices=("none",) + tuple(sorted(sgs.MODELS)),
+                   default="wale", help="subgrid closure; 'none' runs unmodelled")
     p.add_argument("--re", type=float, default=1600.0)
     p.add_argument("--t-end", type=float, default=12.0)
     p.add_argument("--dt", type=float, default=0.01)

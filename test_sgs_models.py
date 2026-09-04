@@ -81,7 +81,7 @@ def check_positive():
               {0: g.standard_normal(d.blocks[0].shape)}, \
               {0: g.standard_normal(d.blocks[0].shape)}
     ok = True
-    for m in ("smagorinsky", "wale"):
+    for m in sorted(sgs.MODELS):
         _, nt = sgs.effective_viscosity(d, U, V, W, 1e-3, model=m)
         mn = float(nt[0].min())
         fin = bool(np.isfinite(nt[0]).all())
@@ -156,12 +156,61 @@ def check_seam_invariance():
     return ok
 
 
+def check_vanishing_models():
+    """Vreman and sigma against the flows they are BUILT to switch off in.
+
+    This is the property that distinguishes them from Smagorinsky and WALE, and the reason they
+    were added: in the transitional phase of Taylor-Green at Re = 800, WALE reached nu_t/nu = 1.1
+    while the flow had not yet broken down, over-dissipating by -3.0% where the unmodelled run
+    was +2.6%. A model that switches off when there is nothing to model is what is wanted.
+
+    Exact targets, all derived rather than tabulated:
+
+      pure shear u = (a y, 0, 0)
+        Vreman  every term of B_beta vanishes                       -> nu_t = 0
+        sigma   sigma = (a, 0, 0), so sigma_3 = 0                   -> nu_t = 0
+        (Smagorinsky gives (C_s Delta)^2 a here, and WALE is non-zero too)
+
+      solid rotation u = omega x r
+        sigma   sigma = (omega, omega, 0): sigma_1 = sigma_2 AND sigma_3 = 0 -> nu_t = 0
+        Vreman  does NOT vanish: B_beta = Delta^4 omega^4, alpha:alpha = 2 omega^2,
+                so nu_t = c Delta^2 omega / sqrt(2) -- asserted at that exact value
+    """
+    d = periodic_box(12, 1)
+    a, om = 2.5, 1.7
+    ok = True
+    Us, Vs, Ws = _fields(d, lambda x, y, z: (a * y, 0 * y, 0 * y))
+    for m in ("vreman", "sigma"):
+        _, nt = sgs.effective_viscosity(d, Us, Vs, Ws, 0.0, model=m)
+        val = float(np.abs(nt[0][2:-2, 2:-2, 2:-2]).max())
+        good = val < 1e-12
+        ok &= good
+        print(f"  [{'PASS' if good else 'FAIL'}] {m:<8} in PURE SHEAR a={a}: nu_t = {val:.2e} "
+              f"(must be 0; Smagorinsky gives {(sgs.CS_SMAGORINSKY*float(sgs.filter_width(d,0).mean()))**2*a:.3e})")
+    Ur, Vr, Wr = _fields(d, lambda x, y, z: (-om * y, om * x, 0 * z))
+    _, nt = sgs.effective_viscosity(d, Ur, Vr, Wr, 0.0, model="sigma")
+    val = float(np.abs(nt[0][2:-2, 2:-2, 2:-2]).max())
+    good = val < 1e-12
+    ok &= good
+    print(f"  [{'PASS' if good else 'FAIL'}] sigma    in SOLID ROTATION: nu_t = {val:.2e} "
+          f"(must be 0; WALE is non-zero here by design)")
+    _, nt = sgs.effective_viscosity(d, Ur, Vr, Wr, 0.0, model="vreman")
+    val = float(nt[0][2:-2, 2:-2, 2:-2].mean())
+    D = float(sgs.filter_width(d, 0).mean())
+    exact = sgs.CV_VREMAN * D ** 2 * om / np.sqrt(2.0)
+    good = abs(val - exact) / exact < 1e-6
+    ok &= good
+    print(f"  [{'PASS' if good else 'FAIL'}] vreman   in SOLID ROTATION: nu_t = {val:.6e} "
+          f"against the analytic c D^2 omega/sqrt(2) = {exact:.6e}")
+    return ok
+
+
 def main():
     print("=" * 78)
     print("  subgrid closures against analytic targets")
     print("=" * 78)
     r = [check_shear(), check_rotation(), check_positive(), check_filter_width(),
-         check_wale_wall_scaling(), check_seam_invariance()]
+         check_wale_wall_scaling(), check_seam_invariance(), check_vanishing_models()]
     print("=" * 78)
     print(f"  {sum(r)}/{len(r)} checks passed")
     print("=" * 78)

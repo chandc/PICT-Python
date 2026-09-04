@@ -26,6 +26,8 @@ import numpy as np
 CS_SMAGORINSKY = 0.17          # Lilly (1967), for isotropic turbulence
 CW_WALE = 0.55                 # Nicoud & Ducros (1999)
 A_PLUS = 26.0                  # van Driest (1956)
+CV_VREMAN = 0.07               # Vreman (2004), ~2.5 C_s^2
+CSIGMA = 1.35                  # Nicoud et al. (2011)
 
 
 def velocity_gradient(d, u, v, w):
@@ -127,7 +129,74 @@ def wale(d, u, v, w, cw=CW_WALE):
     return out
 
 
-MODELS = {"smagorinsky": smagorinsky, "wale": wale}
+def vreman(d, u, v, w, cv=CV_VREMAN):
+    """Vreman (2004). VANISHES IN PURE SHEAR, which Smagorinsky and WALE do not.
+
+        alpha_ij = du_j/dx_i                     (the TRANSPOSE of g used elsewhere here)
+        beta_ij  = Delta^2 alpha_mi alpha_mj     (summed over m)
+        B_beta   = b11 b22 - b12^2 + b11 b33 - b13^2 + b22 b33 - b23^2
+        nu_t     = c sqrt( B_beta / (alpha_ij alpha_ij) ),   c ~ 2.5 C_s^2
+
+    WHY IT IS WORTH HAVING HERE. In the transitional phase of Taylor-Green, measured against the
+    SEM reference at Re = 800, WALE reached nu_t/nu = 1.1 at t = 4 -- an eddy viscosity exceeding
+    the molecular one while the flow had not yet broken down, over-dissipating by -3.0% where the
+    unmodelled run was +2.6%. A model that switches off when there is nothing to model is the
+    property being bought.
+
+    For pure shear u = (a y, 0, 0) every term of B_beta vanishes and nu_t = 0 EXACTLY. It does
+    NOT vanish in solid-body rotation: there B_beta = Delta^4 omega^4 and alpha:alpha = 2 omega^2,
+    so nu_t = c Delta^2 omega / sqrt(2). Both are asserted in test_sgs_models.py.
+    """
+    G = velocity_gradient(d, u, v, w)
+    out = {}
+    for b in range(len(d.blocks)):
+        g = G[b]
+        D2 = filter_width(d, b) ** 2
+        al = [[g[j][i] for j in range(3)] for i in range(3)]      # alpha_ij = du_j/dx_i
+        be = [[D2 * sum(al[m][i] * al[m][j] for m in range(3)) for j in range(3)]
+              for i in range(3)]
+        Bb = (be[0][0]*be[1][1] - be[0][1]**2 + be[0][0]*be[2][2] - be[0][2]**2
+              + be[1][1]*be[2][2] - be[1][2]**2)
+        aa = sum(al[i][j] ** 2 for i in range(3) for j in range(3))
+        # B_beta can go slightly negative on round-off where it is analytically zero
+        Bb = np.maximum(Bb, 0.0)
+        out[b] = np.where(aa > 1e-300, cv * np.sqrt(Bb / np.maximum(aa, 1e-300)), 0.0)
+    return out
+
+
+def sigma_model(d, u, v, w, cs=CSIGMA):
+    """The sigma model, Nicoud et al. (2011) -- built from the SINGULAR VALUES of grad u.
+
+        sigma_1 >= sigma_2 >= sigma_3 >= 0   singular values of g_ij = du_i/dx_j
+        D_sigma = sigma_3 (sigma_1 - sigma_2)(sigma_2 - sigma_3) / sigma_1^2
+        nu_t    = (C_sigma Delta)^2 D_sigma,   C_sigma ~ 1.35
+
+    THE CLEANEST LAMINAR BEHAVIOUR OF ANY STATIC MODEL. D_sigma vanishes identically for every
+    two-dimensional flow, for pure shear, for solid-body rotation, and for axisymmetric
+    expansion -- in each case two singular values coincide or the smallest is zero, and the
+    product collapses. It is also cubic in the wall distance without damping.
+
+    Singular values come from the eigenvalues of g^T g, which is symmetric positive
+    semi-definite, so `eigvalsh` is both cheaper and better conditioned than a full SVD.
+    """
+    G = velocity_gradient(d, u, v, w)
+    out = {}
+    for b in range(len(d.blocks)):
+        g = G[b]
+        shp = g[0][0].shape
+        M = np.empty(shp + (3, 3))
+        for i in range(3):
+            for j in range(3):
+                M[..., i, j] = sum(g[m][i] * g[m][j] for m in range(3))   # (g^T g)_ij
+        lam = np.linalg.eigvalsh(M)                     # ascending, >= 0 up to round-off
+        sig = np.sqrt(np.maximum(lam, 0.0))
+        s3, s2, s1 = sig[..., 0], sig[..., 1], sig[..., 2]
+        D = np.where(s1 > 1e-300, s3 * (s1 - s2) * (s2 - s3) / np.maximum(s1 ** 2, 1e-300), 0.0)
+        out[b] = (cs * filter_width(d, b)) ** 2 * np.maximum(D, 0.0)
+    return out
+
+
+MODELS = {"smagorinsky": smagorinsky, "wale": wale, "vreman": vreman, "sigma": sigma_model}
 
 
 def effective_viscosity(d, u, v, w, nu_mol, model="wale", **kw):

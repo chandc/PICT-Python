@@ -86,6 +86,16 @@ Sciences. The damping function `1 − exp(−y⁺/A⁺)` with `A⁺ = 26`. **Not
 in this repo:** applied to the mixing length it gives `ν_t ~ y⁴`, not `y³` — measured at 3.993 —
 so "van Driest fixes the near-wall scaling" is false as usually stated.
 
+**[U] Vreman, A.W. (2004).** *An eddy-viscosity subgrid-scale model for turbulent shear flow in
+general geometries.* Physics of Fluids. The model in `src/sgs.py` that vanishes in pure shear,
+with `c ≈ 2.5 C_s²`. Measured here: exactly 0 in pure shear, and `c Δ² ω/√2` in solid rotation.
+
+**[U] Nicoud, F., Toda, H.B., Cabrit, O., Bose, S. & Lee, J. (2011).** *Using singular values to
+build a subgrid-scale model for large eddy simulations.* Physics of Fluids. The σ-model,
+`C_σ ≈ 1.35`, built from the singular values of ∇u. It vanishes for every two-dimensional flow,
+pure shear, solid rotation and axisymmetric expansion — measured here as exactly 0 in the first
+three.
+
 **[U] Germano, M., Piomelli, U., Moin, P. & Cabot, W.H. (1991).** *A dynamic subgrid-scale eddy
 viscosity model.* Physics of Fluids A. The dynamic procedure named as future work in
 `les_implementation.md` §6; needs a test filter, i.e. the multi-block halo.
