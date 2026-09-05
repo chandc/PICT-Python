@@ -84,6 +84,18 @@ class MultiBlockPISO:
         # It also keeps their iteration counts separately attributable, which Gate 4 needs.
         self._mcache = SolveCache(backend=linear_backend,
                                   precond=preconditioner)
+        # THE MOMENTUM SOLVE IS SOLVED MUCH TIGHTER THAN THE PRESSURE ONE, and it is nearly
+        # free to do so: the time-derivative diagonal makes it converge in ~11 iterations a
+        # step against the pressure system's ~1573, so tightening it by five orders costs a
+        # handful of iterations.
+        #
+        # It is necessary because distributing it made its iteration PATH partition-dependent.
+        # Serial and distributed reach different -- both valid -- solutions within tolerance,
+        # and that difference is injected every step and amplified: at rtol 1e-9 the ten-step
+        # trajectories separated by 1.8e-7. Solving to near machine precision removes the
+        # momentum system as a source of serial/distributed divergence, leaving the pressure
+        # solve, which already reaches 7.8e-14.
+        self.momentum_tol = 1e-14
         self.persistent_flux = persistent_flux
         self.ddt_corr = ddt_corr
         self.F_prev = None          # previous step's face flux, for ddt_corr
@@ -350,11 +362,11 @@ class MultiBlockPISO:
                     # bicgstab with the same preconditioner.
                     xi = self._mcache.solve(A_ii, rhs[self.interior] - A_ib @ phi_b,
                                             x0=x[self.interior], symmetric=False,
-                                            rtol=self.tol, maxiter=20000)
+                                            rtol=self.momentum_tol, maxiter=20000)
                     x = np.zeros(A.shape[0]); x[self.interior] = xi; x[self.bnd] = phi_b
                 else:
                     x = self._mcache.solve(A, rhs, x0=x, symmetric=False,
-                                           rtol=self.tol, maxiter=20000)
+                                           rtol=self.momentum_tol, maxiter=20000)
                 cur = self._unflat(x)
             star.append(self._unflat(x))
         us, vs, ws = star

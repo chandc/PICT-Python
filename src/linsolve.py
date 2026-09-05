@@ -200,7 +200,15 @@ class SolveCache:
         # why the iteration count is returned rather than discarded.
         ksp.getPC().setType("bjacobi")
         ksp.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
-        ksp.setTolerances(rtol=rtol if rtol else 1e-12, max_it=maxiter_default())
+        # SAME CRITERION AS THE SERIAL PATH -- relative to ||b||, not to the initial residual.
+        # This block is a second copy of the solver configuration, and the copies had drifted:
+        # fixing the convergence test in `_petsc_solve` alone changed nothing distributed,
+        # because the distributed run never executes that function. Duplicated configuration is
+        # how a serial and a parallel path come to mean different things by "converged" while
+        # every test that compares them keeps passing for the wrong reason.
+        bnorm = float(np.linalg.norm(b))
+        ksp.setTolerances(rtol=0.0, atol=(rtol if rtol else 1e-12) * max(bnorm, 1e-300),
+                          max_it=maxiter_default())
         xv = M.createVecRight()
         bv = M.createVecLeft()
         bv.setArray(b[r0:r1])
@@ -328,7 +336,24 @@ class SolveCache:
             # by 1180% of |u|max while every diagnostic reported success. A backend swap that
             # silently redefines the convergence criterion is worse than one that fails.
             ksp.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
-            ksp.setTolerances(rtol=rtol if rtol else 1e-12, max_it=maxiter_default())
+            # CONVERGE RELATIVE TO ||b||, AS SCIPY DOES -- not to the initial residual.
+            #
+            # PETSc stops when ||r_k|| < max(rtol*||r_0||, atol), and with a nonzero initial
+            # guess r_0 = b - A x_0. SciPy stops when ||r_k|| < rtol*||b||. Those agree only
+            # when x_0 = 0. The pressure solve passes no guess, so it never noticed; the
+            # MOMENTUM solve passes the previous Picard iterate, which is a very good guess, so
+            # ||r_0|| << ||b|| and PETSc silently demanded a far tighter solve -- 36 iterations
+            # where 13 sufficed -- while making the achieved accuracy depend on HOW GOOD that
+            # guess happened to be. Since the guess differs between a serial and a distributed
+            # run, so did the accuracy, and the trajectories diverged at 1.8e-7 instead of the
+            # 7.8e-14 the pressure system reached at the same nominal tolerance.
+            #
+            # Setting atol = rtol*||b|| and disabling the relative test makes the criterion
+            # mean the same thing in both backends AND independent of the initial guess. It is
+            # a no-op for the pressure solve, where r_0 = b already.
+            bnorm = float(np.linalg.norm(b))
+            ksp.setTolerances(rtol=0.0, atol=(rtol if rtol else 1e-12) * max(bnorm, 1e-300),
+                              max_it=maxiter_default())
             ksp.setFromOptions()
             xv = self._petsc_mat.createVecRight()
             bv = self._petsc_mat.createVecLeft()
