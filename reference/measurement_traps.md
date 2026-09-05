@@ -239,3 +239,126 @@ an abort when it is not. That check crosses its threshold at `t = 20` on the old
 This differs from every other entry above. Those are instruments that returned the wrong number.
 This is a set of instruments that all returned the right number, for the quantity each was
 measuring, while the run was already lost.
+
+
+## 10. A guard that measures a constant instead of the quantity
+
+The Re_tau=180 channel driver printed a CFL number at launch and never again. The line was
+
+    f"CFL_y {3.0*a.dt/np.diff(y).min():.2f}"
+
+with `v_max = 3.0` written in rather than measured. It printed a comfortable 0.54, which
+happened to be right for the initial field, and then went stale. v_max grew 2.80 -> 3.49 -> 3.81
+-> 4.60 as the constant-pressure-gradient forcing spun the flow up, CFL_y crossed 1 just after
+t = 4.95, and the solution went from v_max 4.65 to 158 in fifty steps. Two and a half hours of
+compute, and 79 minutes of a Krylov solver grinding on an already-destroyed field afterwards,
+because the failure presented as a hang rather than a divergence.
+
+**A start-up estimate cannot police a limit that moves.** The wall-normal CFL TIGHTENS as a
+channel develops, so it is exactly the wrong quantity to check once. It is now measured from the
+field in all three directions and re-checked every 25 steps, and on breach the run saves the
+field and exits naming the dt that would have worked.
+
+## 11. Divergence reports perfect health on a meaningless field
+
+The same channel run then completed 48,000 steps reporting u_tau 0.95-0.98, U+_c ~19, nu_t/nu
+~0.19 and interior divergence 3e-14 -- all steady, all plausible -- while the resolved field
+became **99.3% grid-scale checkerboard**, peak streamwise wavelength 47.1 wall units against a
+mesh spacing of 23.6, i.e. exactly 2*dx.
+
+Divergence is the worst offender because it gives POSITIVE reassurance: a 2*dx velocity mode can
+be exactly divergence-free, so the projection is doing its job perfectly on a field that is
+physically nonsense. u_tau and U+_c are nearly as bad -- a mode alternating sign cell to cell is
+largely invisible to a plane average -- so the mean profile stayed credible and the Reynolds
+stresses, 99% artefact, looked like a recognisable under-resolution signature. They were
+published as such before the field was ever plotted.
+
+**It was caught only by looking at a FIELD rather than an integral.** A wall-parallel contour
+plot showed regular cells where streaks should be, and a spanwise spectrum settled it in one
+measurement. The Nyquist mode is now monitored directly and aborts above 25%.
+
+## 12. Two paths that must agree, and a diff that proves they do
+
+The distributed solver failed its equivalence criterion by 2.8x in iteration count, which
+matched a failure mode the plan had explicitly predicted -- block-Jacobi being
+partition-dependent by construction. That explanation was recorded in two commits before anyone
+checked it.
+
+The data contradicted it the whole time. Partition dependence should hurt the ELLIPTIC, globally
+coupled PRESSURE solve most; instead pressure was flat at 1.08x while the diagonally dominant
+MOMENTUM system inflated 2.8x. Backwards for a preconditioner effect, and exactly what a dropped
+initial guess looks like: `_petsc_solve_mpi` did not take `x0` as an argument at all, so every
+distributed solve restarted from zero. The pressure solve passes no guess, so it never noticed;
+the momentum solve passes the previous Picard iterate, so it paid the entire cost.
+
+**A correct prior made a wrong explanation feel like a confirmed prediction.** The plan's warning
+was good and the mechanism was real -- it just was not what was happening. Two lessons:
+
+  * When an explanation is available before the measurement, it is worth asking what the data
+    would look like if the explanation were FALSE. Here it would have looked exactly as it did.
+  * Duplicated configuration is how two paths come to disagree. Fixing the convergence criterion
+    in the serial path changed nothing distributed, because `_petsc_solve_mpi` is a second copy
+    and the copies had drifted. A programmatic diff of every PETSc configuration call in the two
+    functions is now the check; it is cheap and it is exhaustive.
+
+## 13. A test whose own instrument is confounded
+
+To decide whether the remaining discrepancy came from the preconditioner, the distributed run
+was switched to `PCREDUNDANT`, which applies the full factorisation on every rank and is
+therefore partition-independent. The gap did not close (1.8e-12), which looked like evidence
+that the preconditioner was innocent.
+
+It was not evidence of anything. **PCREDUNDANT defaults to a direct LU**, so the test compared a
+DIRECT distributed solve against an ITERATIVE serial one, and measured the solver difference
+rather than the partitioning. The tell was in the same output: momentum iterations dropped to 6,
+about one per solve, which no iterative method does.
+
+The clean experiment was to stop distributing the momentum system at all -- making it
+bit-identical by construction -- and it closed the gap immediately, 1.0e-12 -> 8.2e-14.
+
+## 14. Mangles that silently stop mangling
+
+`test_halo_content.py` and `test_mpi_equivalence.py` between them carry five deliberate defects
+that must be detected. When slab extraction moved behind the `Comm` abstraction, all of them
+kept hooking the OLD routing point and stopped intercepting anything. The halo test dropped to
+4/5 with its corruption undetected; the others reported PASS while testing nothing.
+
+This is the failure mode mangles exist to prevent, landing on the mangles themselves. A mangle
+is only alive while it is hooked to the code path actually in use, and moving an abstraction
+silently unhooks it.
+
+**Two mangles were also wrong on their own terms.** One routed `fetch_padded_coords` through
+`fetch_padded_field` and could never fail, because at that gate the two methods had identical
+bodies -- the distinction they guard lives in the callers. Another reversed layer order in every
+exchanged slab and produced a perfectly PASSING run, because the field halo and the coordinate
+halo were corrupted identically and the errors cancelled: the test compared a padded field
+against f evaluated at equally-corrupted coordinates. That blind spot is closed by checking the
+coordinates independently against closed form.
+
+## 15. `mpirun -n 1` pins to one core
+
+A single-threaded scaling run showed 1 rank at 10.6 s/step against 2 ranks at 5.4 -- an apparent
+halving of SOLVE time, which is impossible when the solve is replicated. It reproduced across
+runs, so it was not noise. It was `mpirun -n 1` binding to a single core on a machine with 12
+performance and 4 efficiency cores; `--bind-to none` brought 1 rank to 6.9 s/step and the
+speed-up vanished.
+
+The figure was self-consistent, reproducible and flattering, and was contradicted only by knowing
+what the code actually distributes. **Any scaling number must state its binding and thread
+settings, or it means nothing.** Absolute timings also vary by 40% with machine load, so
+configurations must be measured back to back rather than against a stored table.
+
+## 16. A probe sampling the wrong window
+
+The 2*dx mode had to grow from 0.1% to 99% of fluctuation energy over 24 time units, which is an
+amplitude growth rate of about 0.14 per unit. The first probe seeded the mode and ran 0.3 time
+units -- over which the predicted growth is a factor of **1.04**, swamped by the seed's own
+projection transient. It measured decay in all four configurations and concluded the mode was
+damped, the opposite of the truth.
+
+Worse, the mode DECAYS for its first ~2 time units and only then turns around, so a short probe
+does not merely lack resolution: it reads the sign backwards. The corrected probe runs 8 time
+units and reproduces growth to 5.35x.
+
+**Before running a probe, compute what the effect size will be over the window sampled.** If it
+is comparable to the transient, the probe cannot answer the question however clean its output.
