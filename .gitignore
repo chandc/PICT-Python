@@ -25,3 +25,4 @@ SESSION_STATE.md
 # (verified: 640/640 arrays identical across independent captures). The digests are what the
 # comparison actually needs, and they are versioned; the fields are not.
 reference/gate0*/*.npz
+reference/gate3_serial_petsc*.npz
