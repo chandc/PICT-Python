@@ -79,6 +79,9 @@ def main():
                    help="save a restartable field this often (0 disables)")
     p.add_argument("--restart", default=None,
                    help="resume from this checkpoint instead of interpolating the DNS field")
+    p.add_argument("--cfl-limit", type=float, default=0.8,
+                   help="abort if the wall-normal CFL exceeds this (it tightens as the flow "
+                        "spins up; a start-up estimate cannot police it)")
     p.add_argument("--no-damping", action="store_true",
                    help="disable van Driest damping (Smagorinsky only); for the comparison run")
     a = p.parse_args()
@@ -116,7 +119,10 @@ def main():
         # irrelevant: the model overwrites it on the first step.
         if a.model != "none":
             m.set_nu({b: np.full_like(m.u[b], nu) for b in range(nb)})
-        checkpoint.load(m, a.restart)
+        # dt may legitimately differ: the wall-normal CFL tightens as the flow spins up, so a
+        # continuation at a smaller step is the normal case, not an anomaly. Naming it in
+        # `allow` keeps the grid-fingerprint check in force, which strict=False would not.
+        checkpoint.load(m, a.restart, allow=("dt",))
         print(f"  restarted from {a.restart}: t = {m.time:.3f}, step {m.nstep}", flush=True)
     else:
         uvw = interpolate_to(d)
@@ -134,9 +140,29 @@ def main():
     print(f"  dx+ {np.pi/a.nx*RE_TAU:.1f}   dz+ {0.34*np.pi/a.nz*RE_TAU:.1f}   "
           f"dy+ wall {dyp[0]:.2f} max {dyp.max():.2f}   {int((y*RE_TAU<10).sum())} points "
           f"under y+ = 10", flush=True)
-    umax = max(float(np.abs(m.u[b]).max()) for b in range(nb))
-    print(f"  dt = {a.dt}:  CFL_x {umax*a.dt/(np.pi/a.nx):.2f}, "
-          f"CFL_y {3.0*a.dt/np.diff(y).min():.2f}", flush=True)
+    # CFL FROM THE ACTUAL FIELD, and re-checked every step. A hardcoded v_max = 3.0 sat here
+    # and destroyed a 2.5-hour run: it matched the initial field, printed a comfortable
+    # CFL_y = 0.54, and then went stale. v_max grew 2.8 -> 4.6 as the constant-pressure-gradient
+    # forcing spun the flow up, CFL_y crossed 1 just after t = 4.95, and the solution exploded
+    # from v_max 4.65 to 158 in fifty steps. The wall cell is dy+ = 1, i.e. 0.0056, so the
+    # wall-normal CFL is the binding constraint here and it TIGHTENS as the run develops --
+    # exactly the kind of limit a start-up estimate cannot police.
+    dymin = float(np.diff(y).min())
+
+    def cfl(m):
+        u = max(float(np.abs(m.u[b]).max()) for b in range(nb))
+        v = max(float(np.abs(m.v[b]).max()) for b in range(nb))
+        w = max(float(np.abs(m.w[b]).max()) for b in range(nb))
+        return (u * a.dt / (np.pi / a.nx), v * a.dt / dymin,
+                w * a.dt / (0.34 * np.pi / a.nz))
+
+    cx, cy, cz = cfl(m)
+    print(f"  dt = {a.dt}:  CFL_x {cx:.2f}, CFL_y {cy:.2f}, CFL_z {cz:.2f}  "
+          f"(dy_wall {dymin:.5f})", flush=True)
+    if cy > a.cfl_limit:
+        raise SystemExit(f"  ABORT before starting: CFL_y {cy:.2f} already exceeds "
+                         f"{a.cfl_limit}. Reduce --dt to about "
+                         f"{a.dt * a.cfl_limit / cy:.2e}.")
     print(f"  {'step':>8}{'t':>8}{'u_tau':>9}{'U+_c':>8}{'u_b+':>8}{'nu_t/nu':>9}"
           f"{'div':>10}{'s/step':>9}", flush=True)
 
@@ -157,6 +183,15 @@ def main():
             m.set_nu(nu_eff)
             ratio = float(np.mean([float(nu_t[b].mean()) for b in range(nb)])) / nu
         m.step()
+        if i % 25 == 0:
+            cx, cy, cz = cfl(m)
+            if not (cy < a.cfl_limit and cx < 1.0 and cz < 1.0):
+                checkpoint.save(m, f"results/fields/{tag}_CFL_ABORT.npz")
+                raise SystemExit(
+                    f"  ABORT at step {i}, t = {m.time:.3f}: CFL_x {cx:.2f} CFL_y {cy:.2f} "
+                    f"CFL_z {cz:.2f} against limit {a.cfl_limit}. Field saved to "
+                    f"results/fields/{tag}_CFL_ABORT.npz. Restart with a smaller --dt: "
+                    f"about {a.dt * a.cfl_limit / max(cy, 1e-30):.2e}.")
         if m.time >= a.t_stats:
             stats.add(m)
         if i % 500 == 0:
