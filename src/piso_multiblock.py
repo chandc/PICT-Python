@@ -33,7 +33,8 @@ class MultiBlockPISO:
     def __init__(self, domain, nu, dt, corrector_steps=2, tol=1e-4, time_scheme='bdf2',
                  scheme='rotational', picard_iters=2, implicit_cross=False,
                  rhie_chow=False, persistent_flux=False, ddt_corr=False,
-                 preconditioner='jacobi', linear_backend='scipy'):
+                 preconditioner='jacobi', linear_backend='scipy',
+                 distribute_momentum=True):
         self.d = domain
         # nu MAY BE A FIELD: a scalar for molecular viscosity, or a per-block array of
         # nu_eff = nu + nu_t(x) for an eddy-viscosity closure. `nu_at(b)` and `nu_flat` are what
@@ -83,7 +84,8 @@ class MultiBlockPISO:
         # rebuild a preconditioner every call, which is exactly what the cache exists to avoid.
         # It also keeps their iteration counts separately attributable, which Gate 4 needs.
         self._mcache = SolveCache(backend=linear_backend,
-                                  precond=preconditioner)
+                                  precond=preconditioner,
+                                  distribute=distribute_momentum)
         # THE MOMENTUM SOLVE IS SOLVED MUCH TIGHTER THAN THE PRESSURE ONE, and it is nearly
         # free to do so: the time-derivative diagonal makes it converge in ~11 iterations a
         # step against the pressure system's ~1573, so tightening it by five orders costs a

@@ -81,7 +81,15 @@ class SolveCache:
     silently reused on a matrix it was not built for.
     """
 
-    def __init__(self, backend="scipy", precond="jacobi", drift_tol=0.05, config=None):
+    def __init__(self, backend="scipy", precond="jacobi", drift_tol=0.05, config=None,
+                 distribute=True):
+        # `distribute=False` keeps this system on the REPLICATED path even under MPI: every
+        # rank solves the whole thing on COMM_SELF, exactly as the serial run does, so its
+        # answer is bit-identical across rank counts. Worth having as a choice rather than a
+        # law, because whether a given system is worth distributing is a measurement, not a
+        # principle -- the momentum system is 7% of runtime and its distribution is what makes
+        # the trajectory partition-dependent at all.
+        self.distribute = distribute
         self.backend = backend
         self.precond = precond
         self.drift_tol = drift_tol
@@ -198,7 +206,14 @@ class SolveCache:
         # construction: each rank factorises its own diagonal block, so more ranks means a
         # weaker preconditioner and more iterations. Gate 3 aborts if that exceeds 2x, which is
         # why the iteration count is returned rather than discarded.
-        ksp.getPC().setType("bjacobi")
+        # PC CHOICE IS THE LAST PARTITION-DEPENDENT THING LEFT. bjacobi factorises one
+        # diagonal block PER RANK, so the preconditioner -- and therefore the iteration path,
+        # and therefore which of many valid within-tolerance solutions is reached -- depends on
+        # the decomposition. `redundant` applies the FULL factorisation on every rank instead,
+        # making it partition-independent at the cost of doing that work everywhere.
+        # PICT_MPI_PC selects it, so the contribution can be measured rather than argued.
+        import os as _os
+        ksp.getPC().setType(_os.environ.get("PICT_MPI_PC", "bjacobi"))
         ksp.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
         # SAME CRITERION AS THE SERIAL PATH -- relative to ||b||, not to the initial residual.
         # This block is a second copy of the solver configuration, and the copies had drifted:
@@ -270,7 +285,7 @@ class SolveCache:
             if os.environ.get("PICT_PETSC_STRICT"):
                 raise
             return None
-        if PETSc.COMM_WORLD.getSize() > 1:
+        if PETSc.COMM_WORLD.getSize() > 1 and self.distribute:
             try:
                 return self._petsc_solve_mpi(A, b, rtol, symmetric, singular, x0)
             except Exception:

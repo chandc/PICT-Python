@@ -38,7 +38,8 @@ def build(distributed):
     d.prepare_geometry()
     m = MultiBlockPISO(d, 1.0 / 100.0, 0.005, 2, RTOL, time_scheme="bdf2",
                        scheme="rotational", picard_iters=2, rhie_chow=True,
-                       persistent_flux=True, ddt_corr=False, linear_backend="petsc")
+                       persistent_flux=True, ddt_corr=False, linear_backend="petsc",
+                       distribute_momentum=os.environ.get("GATE4_DIST_MOM", "1") == "1")
     checkpoint.load(m, "results/fields/cyl_shed_mac.npz")
     return d, m
 
