@@ -149,6 +149,71 @@ class SolveCache:
         x, info = solver(A, b, x0=x0, M=M, rtol=rtol, maxiter=maxiter)
         return x
 
+    def _petsc_solve_mpi(self, A, b, rtol, symmetric, singular):
+        """Gate 3: the same system in a DISTRIBUTED Mat, solved by KSP on COMM_WORLD.
+
+        WHAT IS AND IS NOT DISTRIBUTED HERE. The SOLVE is: rows are split across ranks and KSP
+        works on the distributed operator. The ASSEMBLY SOURCE is not -- every rank already
+        holds the full CSR because Gate 2 gathers before the global assembly, so each rank
+        simply inserts its own row range. That is honest about what this gate buys (a parallel
+        solve, the 73% of runtime the Gate 0 profile identified) and what it does not (memory,
+        which is Gate 3's follow-on and the reason the allgather has to go).
+
+        ROW OWNERSHIP IS PETSC_DECIDE for now, not the block offsets the plan names. An even
+        split is correct and lets equivalence be established first; aligning the partition to
+        block offsets is a locality optimisation on top of a working solve, and doing it first
+        would mean debugging two things at once -- which is precisely what the serial-first
+        split just saved us from.
+
+        Every rank returns the FULL solution, because the surrounding solver still assembles
+        globally.
+        """
+        from petsc4py import PETSc
+        comm = PETSc.COMM_WORLD
+        n = A.shape[0]
+        M = PETSc.Mat().createAIJ(size=((PETSc.DECIDE, n), (PETSc.DECIDE, n)), comm=comm)
+        M.setUp()
+        r0, r1 = M.getOwnershipRange()
+        # insert only this rank's rows, taken from the replicated CSR
+        sub = A[r0:r1]
+        M.setValuesCSR(sub.indptr, sub.indices, sub.data)
+        M.assemble()
+
+        really_singular = singular and _is_singular(A)
+        ns = None
+        if really_singular:
+            ns = PETSc.NullSpace().create(constant=True, comm=comm)
+            M.setNullSpace(ns)
+
+        ksp = PETSc.KSP().create(comm=comm)
+        ksp.setOperators(M)
+        ksp.setType("cg" if symmetric else "bcgs")
+        # bjacobi is the DEFAULT parallel preconditioner and is PARTITION-DEPENDENT by
+        # construction: each rank factorises its own diagonal block, so more ranks means a
+        # weaker preconditioner and more iterations. Gate 3 aborts if that exceeds 2x, which is
+        # why the iteration count is returned rather than discarded.
+        ksp.getPC().setType("bjacobi")
+        ksp.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
+        ksp.setTolerances(rtol=rtol if rtol else 1e-12, max_it=maxiter_default())
+        xv = M.createVecRight()
+        bv = M.createVecLeft()
+        bv.setArray(b[r0:r1])
+        if ns is not None:
+            ns.remove(bv)
+        ksp.solve(bv, xv)
+        self.iterations = ksp.getIterationNumber()
+        reason = ksp.getConvergedReason()
+        if reason < 0:
+            self.petsc_fail = (int(reason), int(self.iterations), bool(really_singular),
+                               bool(symmetric))
+            return None
+        # every rank needs the whole vector: the surrounding assembly is still global
+        parts = comm.tompi4py().allgather(xv.getArray().copy())
+        x = np.concatenate(parts)
+        if really_singular:
+            x = x - x.mean()
+        return x
+
     def _petsc_solve(self, A, b, x0=None, rtol=None, symmetric=True, singular=False):
         """Gate 3: the pressure system through a PETSc KSP.
 
@@ -176,6 +241,14 @@ class SolveCache:
             if os.environ.get("PICT_PETSC_STRICT"):
                 raise
             return None
+        if PETSc.COMM_WORLD.getSize() > 1:
+            try:
+                return self._petsc_solve_mpi(A, b, rtol, symmetric, singular)
+            except Exception:
+                import os
+                if os.environ.get("PICT_PETSC_STRICT"):
+                    raise
+                return None
         try:
             n = A.shape[0]
             comm = PETSc.COMM_SELF
@@ -205,7 +278,13 @@ class SolveCache:
                 if really_singular and symmetric:
                     ksp.getPC().setType("gamg" if _has_pc("gamg") else "jacobi")
                 else:
-                    ksp.getPC().setType("hypre" if _has_pc("hypre") else "ilu")
+                    # BJACOBI, TO MATCH THE DISTRIBUTED PATH. At one rank block-Jacobi with a
+                    # single block IS ILU on the whole matrix, so nothing changes serially --
+                    # but it makes the serial reference and the distributed run use the SAME
+                    # preconditioner family. Comparing ILU against bjacobi was measuring the
+                    # preconditioner and the partitioning at once, and Gate 3's <1e-12
+                    # criterion is about the partitioning alone.
+                    ksp.getPC().setType("bjacobi")
                 self._petsc_ksp = ksp
                 self._petsc_key = key
             else:
