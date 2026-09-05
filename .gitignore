@@ -26,3 +26,4 @@ SESSION_STATE.md
 # comparison actually needs, and they are versioned; the fields are not.
 reference/gate0*/*.npz
 reference/gate3_serial_petsc*.npz
+results/gate5/
