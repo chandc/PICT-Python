@@ -39,12 +39,16 @@ from src.comm import Comm
 REF = "reference/gate0/cylinder_re100.digests.json"
 
 
-def _build(comm=None):
+def _build(comm=None, distributed=False):
     from cylinder_grid import cylinder_domain
     from src.piso_multiblock import MultiBlockPISO
     d, _, _ = cylinder_domain(nz=4)
+    if distributed:
+        from src.comm_mpi import MPIComm
+        d.comm = MPIComm(d)
     if comm is not None:
         d.comm = comm
+    d.prepare_geometry()
     m = MultiBlockPISO(d, 1.0 / 100.0, 0.005, 2, 1e-6, time_scheme="bdf2",
                        scheme="rotational", picard_iters=2, rhie_chow=True,
                        persistent_flux=True, ddt_corr=False)
@@ -152,7 +156,35 @@ def check_routing():
     return ok
 
 
+def check_distributed():
+    """GATE 2's CENTRAL CRITERION: ten real solver steps, distributed, against the Gate 0
+    digests.
+
+    Everything distributed so far has been the analytic halo test -- correct, and not the same
+    thing. This runs the actual PISO trajectory with blocks owned by different ranks, which is
+    the first time the exchange, the gather and the collective ordering are all exercised
+    together by the code that will use them. A collective-ordering error shows up here as a
+    HANG, not a wrong number, which is why it has to be run under a timeout.
+    """
+    from mpi4py import MPI
+    ref = json.load(open(REF))
+    d, m = _build(distributed=True)
+    got = _trajectory(m, d)
+    bad = [k for k, v in got.items() if ref.get(k) != v]
+    nbad = MPI.COMM_WORLD.allreduce(len(bad), op=MPI.MAX)
+    ok = nbad == 0
+    if MPI.COMM_WORLD.rank == 0:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {MPI.COMM_WORLD.size} ranks, 10 solver steps "
+              f"bitwise identical to the Gate 0 reference: {len(got)-nbad}/{len(got)} digests "
+              f"match  (owners {d.comm.owners[:4]}..., {d.comm.messages} messages)")
+    return ok
+
+
 def main():
+    from mpi4py import MPI
+    if MPI.COMM_WORLD.size > 1:
+        ok = check_distributed()
+        return 0 if ok else 1
     print("=" * 78)
     print("  Gate 1 — the Comm abstraction is behaviourally inert")
     print("=" * 78)

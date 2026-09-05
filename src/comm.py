@@ -131,19 +131,25 @@ class Comm:
         simply that recursion; the indirection exists so Gate 2 can substitute an exchange for
         a non-local b without the padding logic knowing the difference.
         """
-        if self.is_local(b):
+        if b in getattr(local, "covers", ()) or self.is_local(b):
             return local(b, k)
         raise NotImplementedError(                       # Gate 2
-            f"block {b} is owned by rank {self.owner(b)}, not {self.rank}; distributed "
-            f"field exchange arrives in Gate 2")
+            f"block {b} is owned by rank {self.owner(b)}, not {self.rank}, and the field dict "
+            f"being padded does not carry it; distributed field exchange arrives in Gate 2")
 
     def _padded_coords(self, b, k, local):
-        """Block b's coordinates padded along its first k axes, wherever b lives."""
-        if self.is_local(b):
-            return local(b, k)
-        raise NotImplementedError(                       # Gate 2
-            f"block {b} is owned by rank {self.owner(b)}, not {self.rank}; distributed "
-            f"coordinate exchange arrives in Gate 2")
+        """Block b's coordinates padded along its first k axes. ALWAYS LOCAL.
+
+        No ownership check, deliberately, and the asymmetry with `_padded_field` is the point:
+        FIELDS are distributed -- u, v, w and p exist only where the solver computed them -- but
+        COORDINATES are not. Every rank constructs the same `Domain` and so already holds every
+        block's x, y and z.
+
+        Gating this on ownership was a real bug, not a harmless extra check: the solver's
+        constructor assembles metrics over ALL blocks, so a rank hit a block it did not own and
+        refused, before a single step had run.
+        """
+        return local(b, k)
 
     # ------------------------------------------------------------------ gather for assembly
     def gather_blocks(self, local):

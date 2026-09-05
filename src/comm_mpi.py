@@ -135,19 +135,39 @@ class MPIComm(Comm):
         self._run(upto, width, ncomp=1, kind="field")
 
     def exchange_coords(self, upto, width):
-        """COLLECTIVE. Prime every remote coordinate slab this rank will need this pass."""
-        self._run(upto, width, ncomp=3, kind="coords")
+        """No-op: coordinates are replicated on every rank. See `fetch_coords_slab`."""
+        return
 
     # ------------------------------------------------------------------ the fetches
     def fetch_field_slab(self, b, k, oaxis, oside, width, local):
-        if self.is_local(b):
-            return super().fetch_field_slab(b, k, oaxis, oside, width, local)
+        """Local when this rank HAS block b's field, exchanged when it does not.
+
+        Ownership is the wrong test here, and using it was a bug. What matters is whether the
+        FIELD DICT BEING PADDED carries block b -- which the global assembly path guarantees,
+        because `map_blocks` gathered before calling it. Keying on ownership instead made a rank
+        demand an exchanged slab for a block whose data was sitting in the dict it was padding.
+        """
+        if b in getattr(local, "covers", ()) or self.is_local(b):
+            return Comm.fetch_field_slab(self, b, k, oaxis, oside, width, local)
         return self._cached(b, k, oaxis, oside, width, "field")
 
     def fetch_coords_slab(self, b, k, oaxis, oside, width, local):
-        if self.is_local(b):
-            return super().fetch_coords_slab(b, k, oaxis, oside, width, local)
-        return self._cached(b, k, oaxis, oside, width, "coords")
+        """ALWAYS LOCAL. Coordinates are replicated, so nothing has to move.
+
+        THE MESH IS NOT DISTRIBUTED AT THIS GATE, and once that is said plainly the coordinate
+        exchange disappears: every rank constructs the same `Domain` and therefore already holds
+        every block's x, y and z. What is distributed is the FIELD data -- u, v, w, p -- which
+        exists only where the solver computed it. Exchanging coordinates was moving data every
+        rank already had.
+
+        It also removes a real failure rather than just waste. The solver's constructor builds
+        metrics for EVERY block, not only local ones, so a coordinate path that served only
+        local blocks failed during construction with a cache miss -- before a single step ran.
+        Serving them locally is both correct and unconditional.
+
+        Distributing the mesh itself is a separate question, and not one Gate 2 poses.
+        """
+        return Comm.fetch_coords_slab(self, b, k, oaxis, oside, width, local)
 
     def _cached(self, b, k, oaxis, oside, width, kind):
         cache = self._slabs[kind]

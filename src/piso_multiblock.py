@@ -294,7 +294,7 @@ class MultiBlockPISO:
         Jg = self._flat({b: self.Js[b] for b in range(nb)})
 
         if self.scheme in ('incremental', 'rotational'):
-            g = {b: d.gradient(b, self.p) for b in range(nb)}
+            g = d.map_blocks(lambda b: d.gradient(b, self.p), self.p)
             gp = [self._flat({b: g[b][c] for b in range(nb)}) for c in range(3)]
         else:
             gp = None
@@ -329,7 +329,7 @@ class MultiBlockPISO:
             x = phi_n
             for _dc in range(self.momentum_dc_iters):
                 if self.momentum_dc_iters > 1 or self._nu_nonzero():
-                    cd = {b: d.cross_diffusion(b, cur) for b in range(nb)}
+                    cd = d.map_blocks(lambda b: d.cross_diffusion(b, cur), cur)
                     rhs = base + Jg * (self.nu_flat() * self._flat(cd))
                 if has_wall:
                     # Dirichlet elimination, as the single-block solver does: solve only for
@@ -378,21 +378,27 @@ class MultiBlockPISO:
         built = False
         for _ in range(self.corrector_steps):
             divF = {}
-            for b in range(nb):
+            # pcur has no b dependence; it was rebuilt identically on every iteration of the
+            # block loop. Hoisting it is required for the distributed form -- it is one of the
+            # field sets whose halos must be exchanged BEFORE the loop, not inside it.
+            pcur = None
+            if self.rhie_chow and not (built and self.persistent_flux):
+                pcur = ({bb: self.p_flux[bb] for bb in range(nb)}
+                        if self.persistent_flux
+                        else {bb: self.p_flux[bb] + phi_tot[bb] for bb in range(nb)})
+
+            def _flux_of(b):
                 # PERSISTENT FLUX: the corrector already writes a compact pressure correction
                 # into Fb below; rebuilding it here from the cell velocity throws that away,
                 # and the cell velocity was corrected with the WIDE gradient which annihilates
                 # the node-to-node mode. See reference/pressure_checkerboard.md.
-                if not (built and self.persistent_flux):
+                if True:
                     Fb[b] = d.face_fluxes(b, us, vs, ws)
                     if self.rhie_chow:
                         # p_flux, NOT p: under 'rotational' p also carries -nu*div(u*), which
                         # the flux never had. Feeding that back made the term remove flux that
                         # was never added, and the loop diverged (|RC|/|F| 0.02 -> 1.36 -> 58,
                         # NaN by step 83) while divF stayed at 1e-12 throughout.
-                        pcur = ({bb: self.p_flux[bb] for bb in range(nb)}
-                                if self.persistent_flux
-                                else {bb: self.p_flux[bb] + phi_tot[bb] for bb in range(nb)})
                         rc = d.pressure_face_fluxes(b, pcur, coef[b], coef,
                                                     include_cross=False, rhie_chow=True)
                         Fb[b] = [Fb[b][a] - rc[a] for a in range(3)]
@@ -434,7 +440,21 @@ class MultiBlockPISO:
                                 sl[ax] = 0 if side == 0 else blk.shape[ax]
                                 corr[ax][tuple(sl)] = 0.0
                             Fb[b] = [Fb[b][a] + corr[a] for a in range(3)]
-                divF[b] = d.divergence(b, Fb[b], self.Js[b])
+                return Fb[b]
+
+            if not (built and self.persistent_flux):
+                # COLLECTIVE, hoisted out of the block loop. face_fluxes, face_interp and
+                # pressure_face_fluxes all pad, so every field they read must be exchanged
+                # before any rank evaluates a block.
+                need = [us, vs, ws]
+                if pcur is not None:
+                    need += [pcur, coef]
+                if self.ddt_corr and self.F_prev is not None:
+                    need += [self.u, self.v, self.w]
+                Fb.update(d.map_blocks(_flux_of, need))
+            # divergence reads no neighbour data -- it is the one operator in this loop that
+            # does not pad -- so it needs no exchange, only the gather.
+            divF = d.map_blocks(lambda b: d.divergence(b, Fb[b], self.Js[b]))
             built = True
             if div_star is None:
                 div_star = {b: divF[b].copy() for b in range(nb)}   # predictor divergence
@@ -458,8 +478,12 @@ class MultiBlockPISO:
             if M_fD is not None:
                 pv[pD] = pD_val
             pp = self._unflat(pv)
+            # COMPUTE distributed, then APPLY locally. The correction mutates us/vs/ws, which
+            # the global assembly reads in full, so the gradient is gathered first and the
+            # arithmetic below then runs on data every rank holds.
+            gpp = d.map_blocks(lambda b: d.gradient(b, pp), pp)
             for b in range(nb):
-                gx, gy, gz = d.gradient(b, pp)
+                gx, gy, gz = gpp[b]
                 us[b] = us[b] - coef[b] * gx
                 vs[b] = vs[b] - coef[b] * gy
                 ws[b] = ws[b] - coef[b] * gz
@@ -469,14 +493,16 @@ class MultiBlockPISO:
                     upd = self._unflat(fl)
                     for b in range(nb):
                         arr[b] = upd[b]
+            Phis = d.map_blocks(
+                lambda b: d.pressure_face_fluxes(b, pp, coef[b], coef,
+                                                 include_cross=self.implicit_cross),
+                [pp, coef])
             for b in range(nb):
                 # The flux correction must use the SAME operator the pressure was solved
                 # with. Correcting with the orthogonal part only, while solving the full
                 # operator, leaves the corrected flux non-solenoidal -- measured divergence
                 # 3.2e-02 against 1.5e-13 for the single-block solver.
-                Phi = d.pressure_face_fluxes(b, pp, coef[b], coef,
-                                             include_cross=self.implicit_cross)
-                Fb[b] = [Fb[b][a] - Phi[a] for a in range(3)]
+                Fb[b] = [Fb[b][a] - Phis[b][a] for a in range(3)]
                 phi_tot[b] = phi_tot[b] + pp[b]
 
         # the projection pressure -- what the face flux actually carries. Equal to self.p

@@ -188,6 +188,30 @@ class Domain:
             self.blocks[c.ba].faces[c.fa] = "connected"
             self.blocks[c.bb].faces[c.fb] = "connected"
 
+    def map_blocks(self, fn, fields=None, width=2):
+        """COLLECTIVE. Exchange halos, apply `fn(b)` on this rank's blocks, gather the results.
+
+        THE ONE SHAPE EVERY DISTRIBUTED OPERATOR LOOP TAKES. The solver's explicit work is
+        uniformly `{b: d.OP(b, F) for b in range(nb)}`, and distributing it means three things
+        that must happen in this order and the same number of times on every rank: exchange the
+        halos F needs, evaluate only the blocks this rank owns, and gather so the global
+        assembly that follows sees every block. Writing that out at nine call sites invites the
+        one mistake that does not fail loudly -- a rank skipping or repeating a collective, which
+        hangs rather than errs. Routing them through one helper makes the ordering structural.
+
+        Serially this is EXACTLY the original expression: `exchange_halos` returns immediately,
+        `local_blocks()` is every block, and `gather_blocks` is the identity. That is what keeps
+        the serial path bitwise unchanged, which is Gate 1's criterion and still binding here.
+
+        `fields` may be one dict or several; each is exchanged. Passing None means the operator
+        reads no neighbour data.
+        """
+        if fields is not None:
+            for f in (fields if isinstance(fields, (list, tuple)) else (fields,)):
+                self.exchange_halos(f, width)
+        part = {b: fn(b) for b in self.comm.local_blocks()}
+        return self.comm.gather_blocks(part)
+
     def prepare_geometry(self, width=2):
         """COLLECTIVE, ONCE. Exchange coordinate halos and warm the metric cache.
 
@@ -209,7 +233,11 @@ class Domain:
         ex = getattr(self.comm, "exchange_coords", None)
         if ex is not None:
             ex(self._coords_upto(width), width)
-        for b in self.comm.local_blocks():
+        # EVERY block, not just the local ones. The solver's constructor assembles global
+        # metric arrays over all blocks, so warming only this rank's left it to fault during
+        # construction, before a step ran. Coordinates are replicated, so this costs memory
+        # for a static quantity and no communication at all.
+        for b in range(len(self.blocks)):
             self.block_metrics_cached(b)
 
     def exchange_halos(self, fields, width=2):
@@ -1167,6 +1195,17 @@ class Domain:
             memo[key] = res
             return res
 
+        # WHICH BLOCKS THIS DICT ACTUALLY CARRIES. The halo exchange exists to supply data a
+        # rank does NOT have; when the caller already holds a block's field there is nothing to
+        # fetch and no reason to communicate. The global assembly path is exactly that case --
+        # `map_blocks` has already gathered, so every rank holds every block -- and without this
+        # the distributed run demanded exchanged slabs for blocks whose data was sitting in the
+        # very dict being padded.
+        try:
+            upto.covers = frozenset(b for b in range(len(self.blocks))
+                                    if fields[b] is not None)
+        except (KeyError, IndexError, TypeError):
+            upto.covers = frozenset(range(len(self.blocks)))
         return upto
 
     def _ghost_field(self, b, fid, width, src, upto, k, my_lo, my_hi):
