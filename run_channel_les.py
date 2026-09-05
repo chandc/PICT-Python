@@ -119,7 +119,10 @@ def main():
         # irrelevant: the model overwrites it on the first step.
         if a.model != "none":
             m.set_nu({b: np.full_like(m.u[b], nu) for b in range(nb)})
-        checkpoint.load(m, a.restart)
+        # dt may legitimately differ: the wall-normal CFL tightens as the flow spins up, so a
+        # continuation at a smaller step is the normal case, not an anomaly. Naming it in
+        # `allow` keeps the grid-fingerprint check in force, which strict=False would not.
+        checkpoint.load(m, a.restart, allow=("dt",))
         print(f"  restarted from {a.restart}: t = {m.time:.3f}, step {m.nstep}", flush=True)
     else:
         uvw = interpolate_to(d)
