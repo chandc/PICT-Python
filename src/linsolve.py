@@ -155,7 +155,7 @@ class SolveCache:
         x, info = solver(A, b, x0=x0, M=M, rtol=rtol, maxiter=maxiter)
         return x
 
-    def _petsc_solve_mpi(self, A, b, rtol, symmetric, singular):
+    def _petsc_solve_mpi(self, A, b, rtol, symmetric, singular, x0=None):
         """Gate 3: the same system in a DISTRIBUTED Mat, solved by KSP on COMM_WORLD.
 
         WHAT IS AND IS NOT DISTRIBUTED HERE. The SOLVE is: rows are split across ranks and KSP
@@ -212,6 +212,21 @@ class SolveCache:
         xv = M.createVecRight()
         bv = M.createVecLeft()
         bv.setArray(b[r0:r1])
+        if x0 is not None:
+            # THE INITIAL GUESS WAS BEING SILENTLY DROPPED. This function did not even take x0
+            # as an argument, so every distributed solve restarted from zero while the serial
+            # path started from the caller's guess. The cost fell entirely on the MOMENTUM
+            # system, which passes the previous Picard iterate: 26 iterations serial against 72
+            # distributed. The PRESSURE system passes no guess, so both paths started from zero
+            # and its count stayed flat at 1200 -> 1302.
+            #
+            # That asymmetry was the tell, and it was visible in the data before it was
+            # understood: block-Jacobi partition dependence should hurt the ELLIPTIC, globally
+            # coupled pressure solve MORE than the diagonally dominant momentum one, and here
+            # it was the other way round. "Partition-dependent preconditioner" was recorded as
+            # the explanation twice before the numbers were read that way.
+            xv.setArray(x0[r0:r1])
+            ksp.setInitialGuessNonzero(True)
         if ns is not None:
             ns.remove(bv)
         ksp.solve(bv, xv)
@@ -257,7 +272,7 @@ class SolveCache:
             return None
         if PETSc.COMM_WORLD.getSize() > 1:
             try:
-                return self._petsc_solve_mpi(A, b, rtol, symmetric, singular)
+                return self._petsc_solve_mpi(A, b, rtol, symmetric, singular, x0)
             except Exception:
                 import os
                 if os.environ.get("PICT_PETSC_STRICT"):
