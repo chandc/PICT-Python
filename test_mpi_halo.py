@@ -167,6 +167,28 @@ def check_metrics(n_split=4):
     return wJ, wm
 
 
+def check_width_subset(n_split=4):
+    """A width-1 halo served by slicing a width-2 exchange must equal a width-1 exchange.
+
+    The optimisation is only safe because layers are stored nearest-first; if that ordering
+    were ever wrong the subset would be silently taken from the far side, which is exactly the
+    bug the reversed-layer mangle models. So it is checked rather than assumed.
+    """
+    d, comm = build(n_split=n_split)
+    d.prepare_geometry(width=2)
+    fields = {b: f(d.blocks[b].x, d.blocks[b].y, d.blocks[b].z, (L, L, L))
+              for b in comm.local_blocks()}
+    for b in range(len(d.blocks)):
+        fields.setdefault(b, None)
+    d.exchange_halos(fields, width=2)            # only width 2 is exchanged
+    wide = {b: d.pad_field(b, fields, width=1)[0] for b in comm.local_blocks()}
+    comm._slabs["field"].clear()
+    d.exchange_halos(fields, width=1)            # now exchange width 1 directly
+    narrow = {b: d.pad_field(b, fields, width=1)[0] for b in comm.local_blocks()}
+    worst = max([float(np.abs(wide[b] - narrow[b]).max()) for b in wide] or [0.0])
+    return comm.mpi.allreduce(worst, op=__import__("mpi4py").MPI.MAX)
+
+
 def main():
     from mpi4py import MPI
     rank = MPI.COMM_WORLD.rank
@@ -193,6 +215,13 @@ def main():
     if rank == 0:
         print(f"  [{'PASS' if mgood else 'FAIL'}] distributed metrics == serial metrics: "
               f"max |dJ| {wJ:.2e}, max |d(basis)| {wm:.2e}")
+
+    werr = check_width_subset(4)
+    wgood = werr == 0.0
+    ok.append(wgood)
+    if rank == 0:
+        print(f"  [{'PASS' if wgood else 'FAIL'}] width-1 halo sliced from a width-2 exchange "
+              f"== a direct width-1 exchange: max diff {werr:.2e}")
 
     cerr = check_coords(4)
     cgood = cerr < 1e-12

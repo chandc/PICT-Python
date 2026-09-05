@@ -150,9 +150,23 @@ class MPIComm(Comm):
         return self._cached(b, k, oaxis, oside, width, "coords")
 
     def _cached(self, b, k, oaxis, oside, width, kind):
+        cache = self._slabs[kind]
         key = (b, k, oaxis, oside, width)
+        if key not in cache:
+            # A WIDER SLAB CONTAINS A NARROWER ONE. Layers are stored nearest-first, so the
+            # first `width` of them ARE the width-`width` slab; olo/ohi describe the sender's
+            # tangential padding and do not depend on width at all. The audit of one solver
+            # step found only widths 1 and 2 in use, so serving 1 from 2 halves the number of
+            # exchanges rather than merely avoiding a miss -- one message per field per pass
+            # instead of two.
+            for w in sorted(w for (bb, kk, ax, sd, w) in cache
+                            if (bb, kk, ax, sd) == (b, k, oaxis, oside) and w > width):
+                lay, olo, ohi = cache[(b, k, oaxis, oside, w)]
+                sub = [l[:width] for l in lay] if isinstance(lay, list) else lay[:width]
+                cache[key] = (sub, olo, ohi)
+                break
         try:
-            lay, olo, ohi = self._slabs[kind][key]
+            lay, olo, ohi = cache[key]
         except KeyError:
             raise RuntimeError(
                 f"rank {self.rank}: no exchanged {kind} slab for block {b} level {k} "
