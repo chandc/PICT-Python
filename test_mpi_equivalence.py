@@ -90,20 +90,20 @@ def check_bitwise(mangle=None):
     comm = None
     if mangle == "ulp":
         class M(Comm):
-            def fetch_padded_field(self, b, k, local):
-                r = super().fetch_padded_field(b, k, local)
-                a = r[0].copy()
-                a.flat[0] = np.nextafter(a.flat[0], np.inf)   # ONE ULP, ONE CELL
-                return (a,) + tuple(r[1:])
+            def fetch_field_slab(self, b, k, oaxis, oside, width, local):
+                lay, olo, ohi = super().fetch_field_slab(b, k, oaxis, oside, width, local)
+                lay = lay.copy()
+                lay.flat[0] = np.nextafter(lay.flat[0], np.inf)   # ONE ULP, ONE CELL
+                return lay, olo, ohi
         comm = M(16)
     elif mangle == "period":
         class M(Comm):
-            def fetch_padded_field(self, b, k, local):
-                r = super().fetch_padded_field(b, k, local)
+            def fetch_field_slab(self, b, k, oaxis, oside, width, local):
+                lay, olo, ohi = super().fetch_field_slab(b, k, oaxis, oside, width, local)
                 # a period-sized displacement: what applying the COORDINATE shift to a field
                 # would do. Smooth, large, and plausible -- the failure mode that motivated
                 # keeping the two paths apart in the first place.
-                return (r[0] + 1.0,) + tuple(r[1:])
+                return lay + 1.0, olo, ohi
         comm = M(16)
     d, m = _build(comm)
     # A mangle that survives three steps will not be revealed by ten; the clean comparison is
@@ -136,18 +136,16 @@ def check_routing():
         i = src.index(f"def {name}(")
         j = src.find("\n    def ", i + 1)
         body[name] = src[i:j if j > 0 else len(src)]
-    ok = ("fetch_padded_coords" in body["_ghost_coords"]
-          and "fetch_padded_field" not in body["_ghost_coords"]
-          and "fetch_padded_field" in body["_ghost_field"]
-          and "fetch_padded_coords" not in body["_ghost_field"])
+    ok = ("fetch_coords_slab" in body["_ghost_coords"]
+          and "fetch_field_slab" not in body["_ghost_coords"]
+          and "fetch_field_slab" in body["_ghost_field"]
+          and "fetch_coords_slab" not in body["_ghost_field"])
     # and no cross-block read has escaped the abstraction
     strays = [ln.strip() for ln in src.splitlines()
               if "upto(ob" in ln or "upto(nb" in ln]
     ok = ok and not strays
-    n_coords = src.count("fetch_padded_coords") - 0
-    n_field = src.count("fetch_padded_field")
-    print(f"  [{'PASS' if ok else 'FAIL'}] routing: _ghost_coords -> fetch_padded_coords, "
-          f"_ghost_field -> fetch_padded_field, {len(strays)} unrouted cross-block reads")
+    print(f"  [{'PASS' if ok else 'FAIL'}] routing: _ghost_coords -> fetch_coords_slab, "
+          f"_ghost_field -> fetch_field_slab, {len(strays)} unrouted cross-block reads")
     if strays:
         for t in strays:
             print(f"          stray: {t}")

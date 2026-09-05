@@ -28,6 +28,35 @@ WHAT SERIAL MEANS HERE. Rank 0 owns every block, `fetch_*` simply calls the loca
 Gate 1 criterion "no message is sent" is something a test can check rather than something a
 reader has to believe.
 """
+import numpy as _np
+
+
+def _extract_slab(arrays, olo, ohi, oaxis, oside, width):
+    """The `width` layers of `arrays` adjacent to face (oaxis, oside), nearest-first.
+
+    THIS IS THE UNIT THAT TRAVELS. Before this existed, `_ghost_field` fetched the neighbour's
+    ENTIRE padded block and sliced `width` layers off it -- fine in shared memory, absurd over
+    MPI, where it would ship a whole block to use two cells of it. Extracting on the owner's
+    side turns a block-sized message into a face-sized one: for a 157x16x4 block with width 2,
+    2 x 16 x 4 values instead of 157 x 16 x 4, about 1.3%.
+
+    `olo`/`ohi` are the sender's own padding extents. They must accompany the slab because the
+    receiver reconciles a tangential MISMATCH against its own extents -- the two blocks either
+    side of a connection can differ at a reentrant corner -- and cannot reconstruct them.
+
+    The arithmetic is deliberately identical to the code this replaced, including the
+    nearest-first reversal for side 1: Gate 1's criterion is bitwise, and a relocated operation
+    that is merely equivalent is not good enough.
+    """
+    out = []
+    for f in arrays:
+        sl = [slice(None)] * 3
+        sl[oaxis] = (slice(olo[oaxis], olo[oaxis] + width) if oside == 0
+                     else slice(f.shape[oaxis] - ohi[oaxis] - width,
+                                f.shape[oaxis] - ohi[oaxis]))
+        lay = _np.moveaxis(f[tuple(sl)], oaxis, 0)
+        out.append(lay[::-1] if oside == 1 else lay)
+    return out
 
 
 class Comm:
@@ -69,8 +98,34 @@ class Comm:
         return self.size == 1
 
     # ----------------------------------------------- the two cross-block data reads
-    def fetch_padded_field(self, b, k, local):
-        """Block b's field, padded along the first k axes, wherever b lives.
+    def fetch_field_slab(self, b, k, oaxis, oside, width, local):
+        """The face slab of block b's field, padded along its first k axes. THE ROUTING POINT.
+
+        Serially this is the local recursion followed by the extraction that used to live in
+        `_ghost_field`; the arithmetic is unchanged, only relocated. Under MPI the owner of b
+        runs exactly this and sends the slab, so the receiver's subsequent handling --
+        orientation via `to_mine`, extent reconciliation via `_match_extent` -- is identical
+        whether b was local or remote. That symmetry is the property that makes the serial and
+        distributed paths comparable bitwise.
+        """
+        arr, olo, ohi = self._padded_field(b, k, local)
+        return _extract_slab([arr], olo, ohi, oaxis, oside, width)[0], olo, ohi
+
+    def fetch_coords_slab(self, b, k, oaxis, oside, width, local):
+        """The face slab of block b's three coordinate arrays. THE ROUTING POINT.
+
+        Separate from the field path on purpose, and not merely for symmetry: coordinates ramp
+        and jump back, so a wrapped ghost must be displaced by one period, while velocity and
+        pressure are genuinely periodic and must not be. The displacement itself is applied by
+        the caller, which knows the connection's shift; keeping the two fetches distinct stops
+        a future exchange implementation from applying it to both, or neither.
+        """
+        arrs, olo, ohi = self._padded_coords(b, k, local)
+        return _extract_slab(arrs, olo, ohi, oaxis, oside, width), olo, ohi
+
+    # ------------------------------------------------------ local access (Gate 2 overrides)
+    def _padded_field(self, b, k, local):
+        """Block b's field padded along its first k axes, wherever b lives.
 
         `local` is the caller's memoised recursion, `upto(bb, k)`. Serially the answer is
         simply that recursion; the indirection exists so Gate 2 can substitute an exchange for
@@ -82,15 +137,8 @@ class Comm:
             f"block {b} is owned by rank {self.owner(b)}, not {self.rank}; distributed "
             f"field exchange arrives in Gate 2")
 
-    def fetch_padded_coords(self, b, k, local):
-        """Block b's coordinates, padded along the first k axes, wherever b lives.
-
-        Separate from the field path on purpose. The two differ in a way that has already
-        caused one bug: coordinates ramp and jump back, so a wrapped ghost must be displaced
-        by one period, while velocity and pressure are genuinely periodic and must not be.
-        Sharing one method would invite a future exchange implementation to apply, or omit,
-        that shift for both.
-        """
+    def _padded_coords(self, b, k, local):
+        """Block b's coordinates padded along its first k axes, wherever b lives."""
         if self.is_local(b):
             return local(b, k)
         raise NotImplementedError(                       # Gate 2

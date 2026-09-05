@@ -501,7 +501,7 @@ class Domain:
         Coordinate ghost layers beyond face `fid`, nearest-first, in b's ordering.
 
         `src` is b's own partially padded field; a connected face instead reads the NEIGHBOUR
-        padded along the same axes so far, via comm.fetch_padded_coords(nb, k) -- that is what
+        padded along the same axes so far, via comm.fetch_coords_slab(nb, k, ...) -- that is what
         makes the corner ghosts right when a block is connected on more than one axis, and it
         is one of the only two places in the codebase where one block reads another's data.
         """
@@ -524,16 +524,10 @@ class Domain:
         if nb is None:
             return None
         ob, ofid, to_mine, sh = nb
-        other_fields, olo, ohi = self.comm.fetch_padded_coords(ob, k, upto)
         oaxis, oside = face_axis_side(ofid)
+        slabs, olo, ohi = self.comm.fetch_coords_slab(ob, k, oaxis, oside, width, upto)
         out = []
-        for comp, f in enumerate(other_fields):
-            sl = [slice(None)] * 3
-            sl[oaxis] = slice(olo[oaxis], olo[oaxis] + width) if oside == 0 \
-                else slice(f.shape[oaxis] - ohi[oaxis] - width, f.shape[oaxis] - ohi[oaxis])
-            lay = np.moveaxis(f[tuple(sl)], oaxis, 0)
-            if oside == 1:
-                lay = lay[::-1]
+        for comp, lay in enumerate(slabs):
             lay = np.stack([to_mine(l) for l in lay])
             lay = _match_extent(lay, olo, ohi, my_lo, my_hi, axis)
             out.append(lay + sh[comp])
@@ -1136,15 +1130,8 @@ class Domain:
         if nb is None:
             return None
         ob, ofid, to_mine, _ = nb
-        other, olo, ohi = self.comm.fetch_padded_field(ob, k, upto)
         oaxis, oside = face_axis_side(ofid)
-        sl = [slice(None)] * 3
-        sl[oaxis] = slice(olo[oaxis], olo[oaxis] + width) if oside == 0 \
-            else slice(other.shape[oaxis] - ohi[oaxis] - width,
-                       other.shape[oaxis] - ohi[oaxis])
-        lay = np.moveaxis(other[tuple(sl)], oaxis, 0)
-        if oside == 1:
-            lay = lay[::-1]
+        lay, olo, ohi = self.comm.fetch_field_slab(ob, k, oaxis, oside, width, upto)
         # reconcile only the MISMATCH in tangential padding -- the two blocks either side of a
         # connection can differ at a reentrant corner of an obstacle
         lay = np.stack([to_mine(l) for l in lay])
