@@ -145,6 +145,20 @@ class Comm:
             f"block {b} is owned by rank {self.owner(b)}, not {self.rank}; distributed "
             f"coordinate exchange arrives in Gate 2")
 
+    # ------------------------------------------------------------------ gather for assembly
+    def gather_blocks(self, local):
+        """Every block's array, from a dict holding only this rank's. COLLECTIVE.
+
+        WHY THIS EXISTS AT GATE 2. Distributing the explicit operators is not by itself enough
+        to run a step: `build_momentum_matrix` and `_flat` assemble GLOBAL vectors and matrices
+        over every block, so the implicit path needs the whole field however the explicit path
+        was computed. Gate 2's stated scope is that those solves still gather; Gate 3 replaces
+        the gather with a distributed Mat.
+
+        Serially this is the identity, which is what keeps the serial path bitwise unchanged.
+        """
+        return dict(local)
+
     def __repr__(self):
         return (f"Comm(nblocks={self.nblocks}, rank={self.rank}, size={self.size}, "
                 f"messages={self.messages})")

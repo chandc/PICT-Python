@@ -176,6 +176,26 @@ class MPIComm(Comm):
                 f"different number of times.") from None
         return lay, olo, ohi
 
+    def gather_blocks(self, local):
+        """ALLGATHER rather than gather-to-0, deliberately.
+
+        The plan says the implicit solves "gather to rank 0". Gathering to one rank then
+        broadcasting the solution is the same traffic in two phases, and adds a scatter step
+        whose indexing is a fresh chance to be wrong. Giving every rank the full field instead
+        lets the existing global assembly run unchanged and IDENTICALLY everywhere -- same data,
+        same order, so the matrix is bit-for-bit the same on every rank and the solves cannot
+        disagree. That is worth more at this gate than the memory it costs, because it makes
+        "distributed equals serial" a statement about the halo exchange alone.
+
+        It is emphatically not the end state: holding every block on every rank is exactly what
+        Gate 3 exists to remove.
+        """
+        out = {}
+        for part in self.mpi.allgather({b: local[b] for b in self.local_blocks()
+                                        if b in local}):
+            out.update(part)
+        return out
+
     def __repr__(self):
         return (f"MPIComm(nblocks={self.nblocks}, rank={self.rank}/{self.size}, "
                 f"local={self.local_blocks()}, messages={self.messages})")

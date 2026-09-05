@@ -189,6 +189,23 @@ def check_width_subset(n_split=4):
     return comm.mpi.allreduce(worst, op=__import__("mpi4py").MPI.MAX)
 
 
+def check_gather(n_split=4):
+    """A gathered field must equal the serial field, block for block, bit for bit.
+
+    The assembly path consumes this directly, so anything less than exact here becomes a
+    different matrix -- and a different matrix at N > 1 would be indistinguishable from a halo
+    bug, which is the confusion Gate 2 exists to avoid.
+    """
+    d, comm = build(n_split=n_split)
+    ref = {b: f(d.blocks[b].x, d.blocks[b].y, d.blocks[b].z, (L, L, L))
+           for b in range(len(d.blocks))}
+    local = {b: ref[b] for b in comm.local_blocks()}
+    got = comm.gather_blocks(local)
+    missing = sorted(set(range(len(d.blocks))) - set(got))
+    worst = max([float(np.abs(got[b] - ref[b]).max()) for b in got] or [0.0])
+    return worst, missing
+
+
 def main():
     from mpi4py import MPI
     rank = MPI.COMM_WORLD.rank
@@ -215,6 +232,13 @@ def main():
     if rank == 0:
         print(f"  [{'PASS' if mgood else 'FAIL'}] distributed metrics == serial metrics: "
               f"max |dJ| {wJ:.2e}, max |d(basis)| {wm:.2e}")
+
+    gerr, gmiss = check_gather(4)
+    ggood = gerr == 0.0 and not gmiss
+    ok.append(ggood)
+    if rank == 0:
+        print(f"  [{'PASS' if ggood else 'FAIL'}] gathered field == serial field: "
+              f"max diff {gerr:.2e}, {len(gmiss)} blocks missing")
 
     werr = check_width_subset(4)
     wgood = werr == 0.0
