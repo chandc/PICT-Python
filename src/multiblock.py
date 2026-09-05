@@ -188,6 +188,20 @@ class Domain:
             self.blocks[c.ba].faces[c.fa] = "connected"
             self.blocks[c.bb].faces[c.fb] = "connected"
 
+    def exchange_halos(self, fields, width=2):
+        """COLLECTIVE. Prime every remote halo slab needed this pass. No-op when serial.
+
+        MUST be called by every rank, exactly once, BEFORE any pad_field/pad_coords call in the
+        pass. A lazy exchange inside pad_field would hang: ranks own different numbers of
+        blocks and would enter it a different number of times, and MPI would deadlock in a way
+        that looks like a solver stall rather than a protocol error.
+        """
+        ex = getattr(self.comm, "exchange_fields", None)
+        if ex is None:
+            return
+        ex(self._field_upto(fields, width), width)
+        self.comm.exchange_coords(self._coords_upto(width), width)
+
     @property
     def is_single_block(self):
         return len(self.blocks) == 1 and not self.connections
@@ -455,6 +469,11 @@ class Domain:
         if bg is not None:
             return self._pad_coords_background(b, width, bg)
 
+        fields, lo, hi = self._coords_upto(width)(b, 3)
+        return fields[0], fields[1], fields[2], lo, hi
+
+    def _coords_upto(self, width):
+        """The coordinate padding recursion, as a closure. See `_field_upto`."""
         order = (0, 1, 2)
         memo = {}
 
@@ -493,8 +512,7 @@ class Domain:
             memo[key] = res
             return res
 
-        fields, lo, hi = upto(b, 3)
-        return fields[0], fields[1], fields[2], lo, hi
+        return upto
 
     def _ghost_coords(self, b, fid, width, src, upto, k, my_lo, my_hi):
         """
@@ -1074,6 +1092,17 @@ class Domain:
             raise TypeError(
                 "pad_field needs the field for EVERY block, as a dict or list keyed by block "
                 "index -- a connected face reads across the seam.")
+        cur, lo, hi = self._field_upto(fields, width)(b, 3)
+        return cur, lo, hi
+
+    def _field_upto(self, fields, width):
+        """The memoised padding recursion, as a closure.
+
+        Extracted so the COLLECTIVE halo exchange can drive exactly the same recursion the
+        local padding will drive -- see src/comm_mpi.py. Nothing about the arithmetic changed
+        when it moved; Gate 1's criterion is bitwise and a merely-equivalent recursion would
+        not do.
+        """
         order = (0, 1, 2)
         memo = {}
 
@@ -1113,8 +1142,7 @@ class Domain:
             memo[key] = res
             return res
 
-        cur, lo, hi = upto(b, 3)
-        return cur, lo, hi
+        return upto
 
     def _ghost_field(self, b, fid, width, src, upto, k, my_lo, my_hi):
         """Field ghost layers beyond face `fid`, nearest-first, in b's ordering. NO shift."""
