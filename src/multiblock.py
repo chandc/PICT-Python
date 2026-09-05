@@ -25,6 +25,8 @@ for node placement: block A stores up to but not including the interface, and bl
 node IS the next node. `Domain.validate()` enforces this rather than leaving it to the caller.
 """
 import numpy as np
+
+from src.comm import Comm
 import scipy.sparse as sparse
 
 FACE_NAMES = ("-x", "+x", "-y", "+y", "-z", "+z")
@@ -174,9 +176,12 @@ class Block:
 class Domain:
     """Blocks plus connections, with the global index space laid over them."""
 
-    def __init__(self, blocks, connections=()):
+    def __init__(self, blocks, connections=(), comm=None):
         self.blocks = list(blocks)
         self.connections = list(connections)
+        # Gate 1: every cross-block data read routes through this. Serial by default, so a
+        # Domain built the way every existing caller builds one behaves exactly as before.
+        self.comm = comm if comm is not None else Comm(len(self.blocks))
         self.offsets = np.cumsum([0] + [b.size for b in self.blocks])[:-1]
         self.n_cells = int(sum(b.size for b in self.blocks))
         for c in self.connections:
@@ -496,8 +501,9 @@ class Domain:
         Coordinate ghost layers beyond face `fid`, nearest-first, in b's ordering.
 
         `src` is b's own partially padded field; a connected face instead reads the NEIGHBOUR
-        padded along the same axes so far, via upto(nb, k) -- that is what makes the corner
-        ghosts right when a block is connected on more than one axis.
+        padded along the same axes so far, via comm.fetch_padded_coords(nb, k) -- that is what
+        makes the corner ghosts right when a block is connected on more than one axis, and it
+        is one of the only two places in the codebase where one block reads another's data.
         """
         blk = self.blocks[b]
         axis, side = face_axis_side(fid)
@@ -518,7 +524,7 @@ class Domain:
         if nb is None:
             return None
         ob, ofid, to_mine, sh = nb
-        other_fields, olo, ohi = upto(ob, k)
+        other_fields, olo, ohi = self.comm.fetch_padded_coords(ob, k, upto)
         oaxis, oside = face_axis_side(ofid)
         out = []
         for comp, f in enumerate(other_fields):
@@ -1130,7 +1136,7 @@ class Domain:
         if nb is None:
             return None
         ob, ofid, to_mine, _ = nb
-        other, olo, ohi = upto(ob, k)
+        other, olo, ohi = self.comm.fetch_padded_field(ob, k, upto)
         oaxis, oside = face_axis_side(ofid)
         sl = [slice(None)] * 3
         sl[oaxis] = slice(olo[oaxis], olo[oaxis] + width) if oside == 0 \
