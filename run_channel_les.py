@@ -52,6 +52,7 @@ import time
 import numpy as np
 
 from channel_ic import interpolate_to
+from src import checkpoint
 from src import sgs
 from src.channel_stats import ChannelStats
 from src.domains import channel_box, clustered_y
@@ -74,6 +75,10 @@ def main():
                    help="start accumulating statistics after this much time")
     p.add_argument("--tol", type=float, default=1e-8)
     p.add_argument("--tag", default=None)
+    p.add_argument("--checkpoint-every", type=int, default=2000,
+                   help="save a restartable field this often (0 disables)")
+    p.add_argument("--restart", default=None,
+                   help="resume from this checkpoint instead of interpolating the DNS field")
     p.add_argument("--no-damping", action="store_true",
                    help="disable van Driest damping (Smagorinsky only); for the comparison run")
     a = p.parse_args()
@@ -99,9 +104,24 @@ def main():
         damp = {b: np.minimum(blk.y, Ly - blk.y) * 1.0 / nu
                 for b, blk in enumerate(d.blocks)}
 
-    uvw = interpolate_to(d)
-    for b in range(nb):
-        m.u[b][:], m.v[b][:], m.w[b][:] = uvw[b]
+    # RESTART BEFORE INTERPOLATION. A 5.5-hour run that cannot resume is one power cut from
+    # being repeated, and the DNS interpolation is the expensive part of startup (8.5 s) as
+    # well as the part whose result must not silently change between segments.
+    if a.restart:
+        # THE CHECKPOINT RECORDS nu AS A FIELD, because the SGS model sets one every step; a
+        # freshly built solver has a scalar, and the config check rightly refuses the mismatch.
+        # Seeding a uniform field first makes the two agree WITHOUT resorting to strict=False,
+        # which would also drop the grid-fingerprint guard -- the one check that stops a restart
+        # onto the wrong mesh from producing a plausible wrong answer. The value seeded here is
+        # irrelevant: the model overwrites it on the first step.
+        if a.model != "none":
+            m.set_nu({b: np.full_like(m.u[b], nu) for b in range(nb)})
+        checkpoint.load(m, a.restart)
+        print(f"  restarted from {a.restart}: t = {m.time:.3f}, step {m.nstep}", flush=True)
+    else:
+        uvw = interpolate_to(d)
+        for b in range(nb):
+            m.u[b][:], m.v[b][:], m.w[b][:] = uvw[b]
     for b in range(nb):                       # no-slip, enforced on the wall planes
         for arr, bc in ((m.u, m.u_bc), (m.v, m.v_bc), (m.w, m.w_bc)):
             arr[b][:, 0, :] = arr[b][:, -1, :] = 0.0
@@ -147,9 +167,12 @@ def main():
             ub = float(np.trapz(U, yv) / (yv[-1] - yv[0])) if U is not None else float("nan")
             print(f"  {i:>8}{m.time:>8.2f}{ut:>9.4f}{uc:>8.2f}{ub:>8.2f}{ratio:>9.3f}"
                   f"{m.interior_divergence():>10.1e}{(time.time()-t0)/i:>9.3f}", flush=True)
-            os.makedirs("results", exist_ok=True)
+            os.makedirs("results/fields", exist_ok=True)
             if stats.nsamp:
                 stats.save(f"results/{tag}_stats.npz", nu)
+        if a.checkpoint_every and i % a.checkpoint_every == 0:
+            os.makedirs("results/fields", exist_ok=True)
+            checkpoint.save(m, f"results/fields/{tag}.npz")
     if stats.nsamp:
         stats.save(f"results/{tag}_stats.npz", nu)
         print(f"\n  {stats.nsamp} samples over t = {stats.t0:.2f}-{stats.t1:.2f}", flush=True)
