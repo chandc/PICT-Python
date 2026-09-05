@@ -98,6 +98,11 @@ class SolveCache:
         # projections rested on an assumption.
         self.t_solve = 0.0
         self.n_solve = 0
+        # CUMULATIVE iterations. `self.iterations` holds only the MOST RECENT solve, which is
+        # misleading wherever a step performs several: the momentum system is solved once per
+        # velocity component per Picard pass -- six times a step here -- and reporting the last
+        # of those showed 0 iterations while real work was being done in the earlier five.
+        self.total_iterations = 0
 
     @staticmethod
     def key(A):
@@ -113,6 +118,7 @@ class SolveCache:
         finally:
             self.t_solve += _perf() - _t0
             self.n_solve += 1
+            self.total_iterations += int(self.iterations or 0)
 
     def _solve_timed(self, A, b, x0=None, symmetric=True, rtol=1e-12, maxiter=20000,
                      singular=False):

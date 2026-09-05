@@ -77,6 +77,13 @@ class MultiBlockPISO:
         self.linear_backend = linear_backend
         self._pcache = SolveCache(backend=linear_backend,
                                   precond=preconditioner)
+        # GATE 4: a SEPARATE cache for the momentum systems. Separate rather than shared
+        # because SolveCache keys its factorisation on the SPARSITY PATTERN, and the momentum
+        # and pressure operators have different ones -- sharing would thrash the cache and
+        # rebuild a preconditioner every call, which is exactly what the cache exists to avoid.
+        # It also keeps their iteration counts separately attributable, which Gate 4 needs.
+        self._mcache = SolveCache(backend=linear_backend,
+                                  precond=preconditioner)
         self.persistent_flux = persistent_flux
         self.ddt_corr = ddt_corr
         self.F_prev = None          # previous step's face flux, for ddt_corr
@@ -335,13 +342,19 @@ class MultiBlockPISO:
                     # Dirichlet elimination, as the single-block solver does: solve only for
                     # the interior and move the known wall values across to the RHS.
                     phi_b = self._flat(bcs)[self.bnd]
-                    Pm = make_precond(A_ii, self.preconditioner)
-                    xi, info = spla.bicgstab(A_ii, rhs[self.interior] - A_ib @ phi_b, M=Pm,
-                                             x0=x[self.interior], rtol=self.tol, maxiter=20000)
+                    # THROUGH THE CACHE, not spla directly. Gate 3 distributed the pressure
+                    # solve, but the momentum solves called scipy straight and so never reached
+                    # the PETSc path at all -- the "distributed solver" was distributing one of
+                    # the two systems. Routing them through the same dispatch is what Gate 4
+                    # is. Serially this is the identical call: SolveCache's scipy branch is
+                    # bicgstab with the same preconditioner.
+                    xi = self._mcache.solve(A_ii, rhs[self.interior] - A_ib @ phi_b,
+                                            x0=x[self.interior], symmetric=False,
+                                            rtol=self.tol, maxiter=20000)
                     x = np.zeros(A.shape[0]); x[self.interior] = xi; x[self.bnd] = phi_b
                 else:
-                    x, info = spla.bicgstab(A, rhs, x0=x, M=make_precond(A, self.preconditioner),
-                                            rtol=self.tol, maxiter=20000)
+                    x = self._mcache.solve(A, rhs, x0=x, symmetric=False,
+                                           rtol=self.tol, maxiter=20000)
                 cur = self._unflat(x)
             star.append(self._unflat(x))
         us, vs, ws = star
