@@ -188,19 +188,44 @@ class Domain:
             self.blocks[c.ba].faces[c.fa] = "connected"
             self.blocks[c.bb].faces[c.fb] = "connected"
 
-    def exchange_halos(self, fields, width=2):
-        """COLLECTIVE. Prime every remote halo slab needed this pass. No-op when serial.
+    def prepare_geometry(self, width=2):
+        """COLLECTIVE, ONCE. Exchange coordinate halos and warm the metric cache.
 
-        MUST be called by every rank, exactly once, BEFORE any pad_field/pad_coords call in the
-        pass. A lazy exchange inside pad_field would hang: ranks own different numbers of
-        blocks and would enter it a different number of times, and MPI would deadlock in a way
-        that looks like a solver stall rather than a protocol error.
+        SEPARATED FROM THE FIELD PATH ON MEASURED GROUNDS, not tidiness. Instrumenting one
+        solver step found 112 padding calls, every one of them a FIELD: coordinates are padded
+        only when `block_metrics` first runs and are memoised thereafter, because geometry is
+        static. So the coordinate exchange belongs at construction, once, and never appears in
+        the hot path -- where it would otherwise have contributed a collective per step for
+        data that cannot have changed.
+
+        It must still be collective, and for the usual reason: `block_metrics_cached` is called
+        per block, so a lazy exchange underneath it would be entered as many times as a rank
+        happens to own blocks. Warming the cache for every local block here means no coordinate
+        data crosses a rank boundary again for the life of the run.
+
+        Width 2 covers every caller: `block_metrics` asks for 2 and `padded_geometry` for
+        max(width, 2).
+        """
+        ex = getattr(self.comm, "exchange_coords", None)
+        if ex is not None:
+            ex(self._coords_upto(width), width)
+        for b in self.comm.local_blocks():
+            self.block_metrics_cached(b)
+
+    def exchange_halos(self, fields, width=2):
+        """COLLECTIVE. Prime every remote FIELD slab needed this pass. No-op when serial.
+
+        MUST be called by every rank, exactly once, BEFORE any pad_field call in the pass. A
+        lazy exchange inside pad_field would hang: ranks own different numbers of blocks and
+        would enter it a different number of times, and MPI would deadlock in a way that looks
+        like a solver stall rather than a protocol error.
+
+        Coordinates are NOT handled here -- see `prepare_geometry`.
         """
         ex = getattr(self.comm, "exchange_fields", None)
         if ex is None:
             return
         ex(self._field_upto(fields, width), width)
-        self.comm.exchange_coords(self._coords_upto(width), width)
 
     @property
     def is_single_block(self):

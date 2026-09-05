@@ -80,6 +80,7 @@ def run(n_split, mangle=False):
     for b in range(nb):
         fields.setdefault(b, None)
 
+    d.prepare_geometry(width=WIDTH)
     d.exchange_halos(fields, width=WIDTH)
 
     worst = 0.0
@@ -112,6 +113,7 @@ def check_coords(n_split):
     dummy = {b: np.zeros(d.blocks[b].shape) for b in comm.local_blocks()}
     for b in range(len(d.blocks)):
         dummy.setdefault(b, None)
+    d.prepare_geometry(width=WIDTH)
     d.exchange_halos(dummy, width=WIDTH)
     worst = 0.0
     for b in comm.local_blocks():
@@ -130,6 +132,39 @@ def check_coords(n_split):
             worst = max(worst, float(np.abs(got - want).max()))
     tot = comm.mpi.allreduce(worst, op=__import__("mpi4py").MPI.MAX)
     return tot
+
+
+def check_metrics(n_split=4):
+    """Distributed metrics must equal serial metrics, block for block.
+
+    THE SHARPEST TEST OF THE GEOMETRY EXCHANGE, because metrics are DERIVED from padded
+    coordinates: the Jacobian and the covariant basis are differences of neighbouring ghost
+    coordinates, so a halo that is off by one cell, mis-oriented, or missing its period shift
+    produces a wrong Jacobian rather than a wrong-looking coordinate. And a wrong Jacobian does
+    not announce itself -- it rescales the volume of cells near a seam, which looks like a
+    slightly different mesh rather than like a bug.
+
+    The serial reference is built on each rank from the same domain with an ordinary serial
+    Comm, so the comparison needs no communication and no stored baseline.
+    """
+    d, comm = build(n_split=n_split)
+    d.prepare_geometry(width=WIDTH)
+
+    ref = periodic_box(12, n_split, L=L)          # serial Comm by default
+    worst_J, worst_m = 0.0, 0.0
+    for b in comm.local_blocks():
+        Jd, md = d.block_metrics_cached(b)
+        Jr, mr = ref.block_metrics_cached(b)
+        worst_J = max(worst_J, float(np.abs(Jd - Jr).max()))
+        # block_metrics returns (J, dict); zipping the dicts iterates their KEYS, which
+        # silently compares strings. Compare by key.
+        assert set(md) == set(mr), "metric dictionaries disagree on their keys"
+        worst_m = max(worst_m,
+                      max(float(np.abs(np.asarray(md[k]) - np.asarray(mr[k])).max())
+                          for k in md))
+    wJ = comm.mpi.allreduce(worst_J, op=__import__("mpi4py").MPI.MAX)
+    wm = comm.mpi.allreduce(worst_m, op=__import__("mpi4py").MPI.MAX)
+    return wJ, wm
 
 
 def main():
@@ -152,6 +187,13 @@ def main():
                   f"{nbytes/1024:.1f} KiB")
             print(f"           halo volume {100*cells/(n_split*block_cells):.1f}% of "
                   f"interior ({n_split*block_cells:,} cells)")
+    wJ, wm = check_metrics(4)
+    mgood = wJ < 1e-13 and wm < 1e-13
+    ok.append(mgood)
+    if rank == 0:
+        print(f"  [{'PASS' if mgood else 'FAIL'}] distributed metrics == serial metrics: "
+              f"max |dJ| {wJ:.2e}, max |d(basis)| {wm:.2e}")
+
     cerr = check_coords(4)
     cgood = cerr < 1e-12
     ok.append(cgood)
