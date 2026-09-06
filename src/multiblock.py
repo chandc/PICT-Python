@@ -1306,24 +1306,25 @@ class Domain:
         while the flux divergence looked perfect at 6.7e-14.
         """
         blk = self.blocks[b]
-        if self.is_orthogonal():
-            # NOTHING TO CORRECT ON AN ORTHOGONAL MESH. This term is the deferred cross-derivative
-            # correction, and it is built entirely from the OFF-DIAGONAL metric products g12, g13,
-            # g23 -- which are identically zero when the grid directions are mutually
-            # perpendicular. Measured on the Re=100 cylinder: |g12,g13,g23| <= 5.2e-13 and the
-            # resulting correction 9.7e-12, i.e. 5.2e-12 of |u|. It computes round-off, and it
-            # costs ~9% of the step to do so, every step, because momentum_dc_iters defaults to 2.
-            #
-            # Every mesh this repo currently runs is orthogonal to machine precision -- channel,
-            # cylinder O-grid and square alike -- so this is not a special case, it is the normal
-            # one. The check is measured once from the metrics and cached, so a genuinely skewed
-            # mesh still gets the correction.
-            return np.zeros(blk.shape)
         pf, lo, hi = self.pad_field(b, fields, width)
         Jp, mp, plo, phi_ = self.padded_geometry(b, width)
-        g12 = sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz")
-        g13 = sum(mp[f"xi_{c}"] * mp[f"zeta_{c}"] for c in "xyz")
-        g23 = sum(mp[f"eta_{c}"] * mp[f"zeta_{c}"] for c in "xyz")
+        # THE OFF-DIAGONAL METRIC PRODUCTS ARE STATIC. They come from the mesh alone, and were
+        # being rebuilt on all 192 calls a step. Cached per (block, width).
+        #
+        # This term is NOT skipped on orthogonal meshes, even though it evaluates to round-off
+        # there (measured 5.2e-12 of |u|max on the cylinder, whose worst |cos| between grid
+        # directions is 2.3e-12). Skipping it would save more -- most of the cost is the six
+        # np.gradient calls below, which are field-dependent and cannot be cached -- but the
+        # correction is the whole reason this function exists, and non-orthogonal meshes are
+        # coming. Deleting physics to speed up a case that does not need it is how a solver
+        # silently loses the ability to run the case that does.
+        gk = self._g_off_cache = getattr(self, "_g_off_cache", {})
+        key = (b, width)
+        if key not in gk:
+            gk[key] = (sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz"),
+                       sum(mp[f"xi_{c}"] * mp[f"zeta_{c}"] for c in "xyz"),
+                       sum(mp[f"eta_{c}"] * mp[f"zeta_{c}"] for c in "xyz"))
+        g12, g13, g23 = gk[key]
         d = [np.gradient(pf, blk.h[a], axis=a, edge_order=2) for a in range(3)]
         fx = Jp * (g12 * d[1] + g13 * d[2])
         fe = Jp * (g12 * d[0] + g23 * d[2])
