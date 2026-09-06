@@ -62,6 +62,60 @@ single-grid. And the Taylor-Green results, though validated against DNS on dissi
 have never been checked for grid-mode content -- that check should be run before repeating any
 general claim that the code does LES.
 
+## MECHANISM FOUND: the pressure scheme accumulates the mode
+
+Same field, same mesh, same everything except the pressure scheme, run from t=4 to t=12:
+
+| t | rotational (amp) | chorin (amp) |
+|---|-----------------:|-------------:|
+| 5.0  |  0.273x | 0.002x |
+| 8.0  |  1.120x | 0.000x |
+| 10.0 |  5.348x | 0.000x |
+| 12.0 | **15.292x** | **0.001x** |
+
+**A factor of 15,000 between the two schemes.** Rotational grows; chorin decays to nothing. The
+growth shape also matches the production run -- flat-to-decaying until t ~ 6, then accelerating
+(0.69, 1.12, 2.24, 5.35, 15.29), which extrapolates to dominance around t = 20-28, exactly where
+the production run reached 99.3%.
+
+This confirms the prediction in `diag_checkerboard.py` and `pressure_checkerboard.md`, written
+before this investigation began:
+
+> chorin sets p = phi each step, straight from the compact solve -> CLEAN.
+> incremental/rotational ACCUMULATE p += phi -> the projection must absorb, every step, the
+> discrepancy between the pressure the predictor actually felt and the p it is credited with.
+> The mode is regenerated in phi and accumulates in p.
+
+## Why the periodic box is clean and the channel is not
+
+The scheme alone is not sufficient -- the Taylor-Green box runs `rotational` and stays at 0.03%.
+What the channel has and the box does not is BOUNDARIES, and the Rhie-Chow damping is switched
+OFF at them:
+
+    faces with EXACTLY ZERO Rhie-Chow damping, Re=100 cylinder:  4,096 of 533,568 (0.8%)
+      wall / body surface   2,048  (50%)
+      interior                  0  ( 0%)
+      outer boundary        2,048  (50%)
+
+The wide half of compact-minus-wide needs a central `np.gradient` at every cell a face touches;
+at a boundary the stencil is one-sided and the code sets the whole correction to zero.
+
+So the mechanism is a COMBINATION, and it explains every observation:
+
+  1. the rotational scheme regenerates a checkerboard in phi and accumulates it in p;
+  2. Rhie-Chow damps it in the interior, so a periodic box stays clean indefinitely;
+  3. at walls and outflows there is NO damping, so the mode grows there;
+  4. once seeded at the boundary it spreads inward and eventually dominates.
+
+That also predicts the cylinder's unexplained far-field failure -- an odd-even pressure
+oscillation on the Dong arc, concentrated at the mixed Dirichlet-Neumann junctions -- which is
+the same mechanism at the same kind of face.
+
+**Status: (1) and (2) are demonstrated. (3) and (4) are inference from the measured
+zero-damping faces, not yet a demonstration.** The decisive test is to give the boundary faces a
+one-sided-but-valid wide stencil, or fall back to the compact term rather than zeroing the whole
+correction, and re-run the rotational case.
+
 ## Hypotheses tested and eliminated
 
 **The block seam: REFUTED.** One block and four blocks produced bit-identical output at every
