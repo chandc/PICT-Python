@@ -85,7 +85,8 @@ class MultiBlockPISO:
         # It also keeps their iteration counts separately attributable, which Gate 4 needs.
         self._mcache = SolveCache(backend=linear_backend,
                                   precond=preconditioner,
-                                  distribute=distribute_momentum)
+                                  distribute=distribute_momentum,
+                                  petsc_pc=__import__("os").environ.get("PICT_MOM_PC"))
         # THE MOMENTUM SOLVE IS SOLVED MUCH TIGHTER THAN THE PRESSURE ONE, and it is nearly
         # free to do so: the time-derivative diagonal makes it converge in ~11 iterations a
         # step against the pressure system's ~1573, so tightening it by five orders costs a
@@ -97,7 +98,13 @@ class MultiBlockPISO:
         # trajectories separated by 1.8e-7. Solving to near machine precision removes the
         # momentum system as a source of serial/distributed divergence, leaving the pressure
         # solve, which already reaches 7.8e-14.
-        self.momentum_tol = 1e-14
+        # 1e-14 WAS ONLY NEEDED WHILE MOMENTUM WAS DISTRIBUTED. Distributing it made its
+        # iteration path partition-dependent, so serial and parallel reached different
+        # within-tolerance solutions and the trajectory difference grew to 1.8e-7; solving to
+        # near machine precision removed it as a source of divergence. REPLICATED, every rank
+        # does bit-identical arithmetic whatever the tolerance, so the tight setting buys
+        # nothing and costs iterations -- 11-16 per step at 1e-9 became 20-27 at 1e-14.
+        self.momentum_tol = 1e-14 if distribute_momentum else 1e-9
         self.persistent_flux = persistent_flux
         self.ddt_corr = ddt_corr
         self.F_prev = None          # previous step's face flux, for ddt_corr

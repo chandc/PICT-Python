@@ -21,8 +21,23 @@ PETSc/petsc4py 3.25.5). Cylinder, five timed steps after a warm-up, one BLAS thr
 
 ## Verdict: ABORT by the plan's own criterion
 
-Gate 6 aborts under 3x on 8 ranks. Measured **2.61x**, on idle hardware with controlled binding.
-The success bar of 4x is not close.
+**2.23x on 8 ranks**, against an abort threshold of 3x and a success bar of 4x.
+
+That figure is the mean of five repeats, and the repeats matter: the single-shot sweep above
+recorded 2.61x, which turned out to be near the top of the range.
+
+    1 rank    2.361 s  +/- 0.064   (5.5% spread)   stable
+    8 ranks   1.058 s  +/- 0.107  (24.6% spread)   noisy
+    speed-up  2.11x  2.19x  2.09x  2.71x  2.16x    mean 2.23x, median 2.16x
+
+Four of five repeats sit at 2.09-2.19x; one outlier reaches 2.71x. **No repeat reaches 3x.**
+Re-measuring was worth doing and moved the number DOWN by 15%, which is a reminder that a
+single sample under a threshold decision is not evidence -- the first value happened to flatter
+the port.
+
+Note the asymmetry: the 1-rank measurement is stable at 5.5% spread while the 8-rank one varies
+24.6%. Contention among eight replicated momentum solves for memory bandwidth is the likely
+source, and it means multi-rank timings on this machine need repeats as a matter of course.
 
 ## Three findings that matter more than the verdict
 

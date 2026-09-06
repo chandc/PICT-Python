@@ -82,7 +82,7 @@ class SolveCache:
     """
 
     def __init__(self, backend="scipy", precond="jacobi", drift_tol=0.05, config=None,
-                 distribute=True):
+                 distribute=True, petsc_pc=None):
         # `distribute=False` keeps this system on the REPLICATED path even under MPI: every
         # rank solves the whole thing on COMM_SELF, exactly as the serial run does, so its
         # answer is bit-identical across rank counts. Worth having as a choice rather than a
@@ -90,6 +90,12 @@ class SolveCache:
         # principle -- the momentum system is 7% of runtime and its distribution is what makes
         # the trajectory partition-dependent at all.
         self.distribute = distribute
+        # PETSc preconditioner override. None keeps the default choice (bjacobi, which at one
+        # rank is ILU on the whole matrix). The MOMENTUM system is a candidate for something
+        # cheaper: the time-derivative diagonal makes it strongly diagonally dominant, so it
+        # converges in ~4 iterations per solve, and an incomplete factorisation may be paying
+        # setup cost for iterations it was never going to need.
+        self.petsc_pc = petsc_pc
         self.backend = backend
         self.precond = precond
         self.drift_tol = drift_tol
@@ -213,7 +219,7 @@ class SolveCache:
         # making it partition-independent at the cost of doing that work everywhere.
         # PICT_MPI_PC selects it, so the contribution can be measured rather than argued.
         import os as _os
-        ksp.getPC().setType(_os.environ.get("PICT_MPI_PC", "bjacobi"))
+        ksp.getPC().setType(self.petsc_pc or _os.environ.get("PICT_MPI_PC", "bjacobi"))
         ksp.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
         # SAME CRITERION AS THE SERIAL PATH -- relative to ||b||, not to the initial residual.
         # This block is a second copy of the solver configuration, and the copies had drifted:
@@ -328,7 +334,7 @@ class SolveCache:
                     # preconditioner family. Comparing ILU against bjacobi was measuring the
                     # preconditioner and the partitioning at once, and Gate 3's <1e-12
                     # criterion is about the partitioning alone.
-                    ksp.getPC().setType("bjacobi")
+                    ksp.getPC().setType(self.petsc_pc or "bjacobi")
                 self._petsc_ksp = ksp
                 self._petsc_key = key
             else:
