@@ -52,6 +52,17 @@ def _build(comm=None, distributed=False):
     m = MultiBlockPISO(d, 1.0 / 100.0, 0.005, 2, 1e-6, time_scheme="bdf2",
                        scheme="rotational", picard_iters=2, rhie_chow=True,
                        persistent_flux=True, ddt_corr=False)
+    # PIN THE MOMENTUM TOLERANCE TO THE REFERENCE'S VALUE. The Gate 0 digests were captured
+    # when the momentum solve used `self.tol`; Gate 4 later tightened it to 1e-14 to stop
+    # partition-dependent iteration paths diverging. That is a DELIBERATE change to the answer,
+    # so leaving it in place made this test report 0/640 -- a real difference, wrongly presented
+    # as a regression.
+    #
+    # This test's job is to prove the Comm abstraction and the halo exchange are INERT, and it
+    # can only do that against a reference produced by the same solver settings. Pinning the one
+    # setting that changed keeps the Gate 0 comparison meaningful; the momentum tolerance's own
+    # effect is verified separately, by test_gate4.py.
+    m.momentum_tol = m.tol
     checkpoint.load(m, "results/fields/cyl_shed_mac.npz")
     return d, m
 

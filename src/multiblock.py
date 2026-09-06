@@ -962,11 +962,25 @@ class Domain:
                 ("zeta_x", "zeta_y", "zeta_z"))
 
         def jg_field(axis):
+            # J*g IS STATIC GEOMETRY and was being rebuilt on every call. Profiling one step
+            # found this function entered 288 times, and the `sum(m**2)` generator inside it
+            # 18,432 times, for a quantity that cannot change: J and the metrics come from the
+            # mesh. Only `coefs` varies between calls. Caching the geometric factor turns each
+            # call into one multiply per block.
+            # CACHE g ALONE, NOT J*g. Caching the product and writing coefs*(J*g) changed the
+            # ASSOCIATION -- the original evaluates (coefs*J)*g left to right -- and
+            # floating-point multiplication is not associative, so it broke bitwise identity
+            # against the Gate 0 reference on all 640 arrays while being mathematically
+            # identical. Caching only the geometric sum keeps the arithmetic order intact.
+            cache = self._jg_cache = getattr(self, "_jg_cache", {})
             out = {}
             for bb in range(len(self.blocks)):
-                Jb, mb = self.block_metrics_cached(bb)
-                g = sum(mb[KEYS[axis][c]] ** 2 for c in range(3))
-                out[bb] = coefs[bb] * Jb * g
+                key = (bb, axis)
+                if key not in cache:
+                    _, mb = self.block_metrics_cached(bb)
+                    cache[key] = sum(mb[KEYS[axis][c]] ** 2 for c in range(3))
+                Jb, _ = self.block_metrics_cached(bb)
+                out[bb] = coefs[bb] * Jb * cache[key]
             return out
 
         if include_cross:
