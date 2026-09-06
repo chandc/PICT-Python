@@ -22,19 +22,31 @@ import time
 import numpy as np
 
 
-def build_cylinder():
+def build_cylinder(nz=4):
     from cylinder_grid import cylinder_domain
     from src import checkpoint
     from src.comm_mpi import MPIComm
     from src.piso_multiblock import MultiBlockPISO
-    d, _, _ = cylinder_domain(nz=4)
+    d, _, _ = cylinder_domain(nz=nz)
     d.comm = MPIComm(d)
     d.prepare_geometry()
     m = MultiBlockPISO(d, 1.0 / 100.0, 0.005, 2, 1e-6, time_scheme="bdf2",
                        scheme="rotational", picard_iters=2, rhie_chow=True,
                        persistent_flux=True, ddt_corr=False, linear_backend="petsc",
                        distribute_momentum=False)
-    checkpoint.load(m, "results/fields/cyl_shed_mac.npz")
+    if nz == 4:
+        checkpoint.load(m, "results/fields/cyl_shed_mac.npz")
+    else:
+        # A LARGER SPAN HAS NO SAVED FIELD, and does not need one: a scaling measurement needs a
+        # representative WORKLOAD, not a converged solution. The saved nz=4 state is replicated
+        # along the span, which gives the solver the same per-cell work it would have on a real
+        # field of this size.
+        f, _ = checkpoint.load_fields("results/fields/cyl_shed_mac.npz")
+        for fld, arr in (("u", m.u), ("v", m.v), ("w", m.w), ("p", m.p)):
+            for b in range(len(d.blocks)):
+                src = f[fld][b]
+                reps = int(np.ceil(arr[b].shape[2] / src.shape[2]))
+                arr[b][:] = np.tile(src, (1, 1, reps))[:, :, :arr[b].shape[2]]
     return d, m
 
 
@@ -43,10 +55,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--case", default="cylinder")
     p.add_argument("--steps", type=int, default=5)
+    p.add_argument("--nz", type=int, default=4,
+                   help="span resolution: the free parameter that changes work per rank "
+                        "without changing the block topology or halo pattern")
     a = p.parse_args()
     rank, size = MPI.COMM_WORLD.rank, MPI.COMM_WORLD.size
 
-    d, m = build_cylinder()
+    d, m = build_cylinder(a.nz)
     c = d.comm
     m.step()                                   # warm caches and the PETSc setup
     p0, mm0 = m._pcache.t_solve, m._mcache.t_solve
@@ -69,7 +84,8 @@ def main():
     walls = MPI.COMM_WORLD.allgather(wall)
 
     if rank == 0:
-        print(f"  {size:>2} | {wall:7.3f} | {tp:7.3f} {tm:6.3f} | {te:6.3f} {tg:6.3f} | "
+        print(f"  nz{a.nz} n{size:>2} | {d.n_cells//size:>7,} c/rank | {wall:7.3f} | "
+              f"{tp:7.3f} {tm:6.3f} | {te:6.3f} {tg:6.3f} | "
               f"{asm:7.3f} | comm {100*(te+tg)/wall:5.1f}% | imbal {100*spread:5.1f}% | "
               f"blk/rank {len(c.local_blocks())}", flush=True)
     return 0
