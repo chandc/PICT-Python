@@ -240,6 +240,36 @@ class Domain:
         for b in range(len(self.blocks)):
             self.block_metrics_cached(b)
 
+    def is_orthogonal(self, tol=1e-10):
+        """Are the grid directions mutually perpendicular, to `tol`? Measured once, cached.
+
+        Tested on the CONTRAVARIANT METRIC TENSOR g^ij = grad(xi^i).grad(xi^j) being diagonal,
+        not on individual metric components vanishing. The component test is wrong for any
+        rotated system: in polar coordinates xi_x = cos(theta) and xi_y = sin(theta) are both
+        O(1) while the grid is perfectly orthogonal, and using it once led to the cylinder being
+        wrongly recorded as non-orthogonal.
+
+        The quantity returned is the worst |cos| between any two grid directions over all
+        blocks, so the threshold has a geometric meaning: 1e-10 is about 6e-9 degrees off
+        perpendicular.
+        """
+        if getattr(self, "_orth", None) is None:
+            C = ("xi", "eta", "zeta")
+            P = ("x", "y", "z")
+            worst = 0.0
+            for b in range(len(self.blocks)):
+                _, mt = self.block_metrics_cached(b)
+                G = {(i, j): sum(np.asarray(mt[f"{C[i]}_{P[k]}"])
+                                 * np.asarray(mt[f"{C[j]}_{P[k]}"]) for k in range(3))
+                     for i in range(3) for j in range(3)}
+                for i in range(3):
+                    for j in range(i + 1, 3):
+                        den = np.sqrt(np.abs(G[(i, i)]) * np.abs(G[(j, j)])) + 1e-300
+                        worst = max(worst, float((np.abs(G[(i, j)]) / den).max()))
+            self._orth_measure = worst
+            self._orth = worst <= tol
+        return self._orth
+
     def exchange_halos(self, fields, width=2):
         """COLLECTIVE. Prime every remote FIELD slab needed this pass. No-op when serial.
 
@@ -1276,6 +1306,19 @@ class Domain:
         while the flux divergence looked perfect at 6.7e-14.
         """
         blk = self.blocks[b]
+        if self.is_orthogonal():
+            # NOTHING TO CORRECT ON AN ORTHOGONAL MESH. This term is the deferred cross-derivative
+            # correction, and it is built entirely from the OFF-DIAGONAL metric products g12, g13,
+            # g23 -- which are identically zero when the grid directions are mutually
+            # perpendicular. Measured on the Re=100 cylinder: |g12,g13,g23| <= 5.2e-13 and the
+            # resulting correction 9.7e-12, i.e. 5.2e-12 of |u|. It computes round-off, and it
+            # costs ~9% of the step to do so, every step, because momentum_dc_iters defaults to 2.
+            #
+            # Every mesh this repo currently runs is orthogonal to machine precision -- channel,
+            # cylinder O-grid and square alike -- so this is not a special case, it is the normal
+            # one. The check is measured once from the metrics and cached, so a genuinely skewed
+            # mesh still gets the correction.
+            return np.zeros(blk.shape)
         pf, lo, hi = self.pad_field(b, fields, width)
         Jp, mp, plo, phi_ = self.padded_geometry(b, width)
         g12 = sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz")
