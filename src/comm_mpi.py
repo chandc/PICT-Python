@@ -76,6 +76,14 @@ class MPIComm(Comm):
         self._slabs = {"field": {}, "coords": {}}
         self.bytes_moved = 0
         self.halo_cells = 0
+        # COMMUNICATION TIME, split from the gather. Gate 6 requires the communication fraction
+        # to be KNOWN -- it sets no target for it, only that it be measured -- and until now it
+        # was buried in an "other" bucket alongside assembly. The two are separated because they
+        # scale oppositely: assembly work per rank FALLS with rank count while exchange volume
+        # RISES, so a single bucket hides which one is responsible when "other" stops improving.
+        self.t_exchange = 0.0
+        self.t_gather = 0.0
+        self.n_gather = 0
 
     # ------------------------------------------------------------------ schedule
     def _pairs(self, axis):
@@ -102,6 +110,8 @@ class MPIComm(Comm):
     # ------------------------------------------------------------------ the epoch
     def _run(self, upto, width, ncomp, kind):
         """Three rounds of level-synchronous slab exchange. Collective; call once per pass."""
+        import time as _t
+        _t0 = _t.perf_counter()
         cache = self._slabs[kind]
         cache.clear()
         for r in (1, 2, 3):
@@ -129,6 +139,7 @@ class MPIComm(Comm):
             if reqs:
                 from mpi4py import MPI
                 MPI.Request.waitall(reqs)
+        self.t_exchange += _t.perf_counter() - _t0
 
     def exchange_fields(self, upto, width):
         """COLLECTIVE. Prime every remote field slab this rank will need this pass."""
@@ -210,10 +221,14 @@ class MPIComm(Comm):
         It is emphatically not the end state: holding every block on every rank is exactly what
         Gate 3 exists to remove.
         """
+        import time as _t
+        _t0 = _t.perf_counter()
         out = {}
         for part in self.mpi.allgather({b: local[b] for b in self.local_blocks()
                                         if b in local}):
             out.update(part)
+        self.t_gather += _t.perf_counter() - _t0
+        self.n_gather += 1
         return out
 
     def __repr__(self):
