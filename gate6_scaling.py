@@ -67,10 +67,10 @@ def main():
     # LOAD IMBALANCE: the spread of per-rank wall time is what a block topology mismatch shows
     # up as, and it is invisible in a rank-0-only measurement.
     walls = MPI.COMM_WORLD.allgather(wall)
-    imbal = (max(walls) - min(walls)) / max(np.mean(walls), 1e-30)
+
     if rank == 0:
         print(f"  {size:>2} | {wall:7.3f} | {tp:7.3f} {tm:6.3f} | {te:6.3f} {tg:6.3f} | "
-              f"{asm:7.3f} | comm {100*(te+tg)/wall:5.1f}% | imbal {100*imbal:5.1f}% | "
+              f"{asm:7.3f} | comm {100*(te+tg)/wall:5.1f}% | imbal {100*spread:5.1f}% | "
               f"blk/rank {len(c.local_blocks())}", flush=True)
     return 0
 
