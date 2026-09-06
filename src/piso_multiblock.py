@@ -104,7 +104,12 @@ class MultiBlockPISO:
         # near machine precision removed it as a source of divergence. REPLICATED, every rank
         # does bit-identical arithmetic whatever the tolerance, so the tight setting buys
         # nothing and costs iterations -- 11-16 per step at 1e-9 became 20-27 at 1e-14.
-        self.momentum_tol = 1e-14 if distribute_momentum else 1e-9
+        # ONE TOLERANCE FOR BOTH CONFIGURATIONS. Making it conditional -- 1e-14 distributed,
+        # 1e-9 replicated -- meant every subsequent comparison ran the distributed path five
+        # orders tighter than the replicated one and then concluded distribution was slower.
+        # That is not a comparison. The tolerance is a separate question from the decomposition
+        # and is set by the caller.
+        self.momentum_tol = float(__import__("os").environ.get("PICT_MOM_TOL", 1e-9))
         self.persistent_flux = persistent_flux
         self.ddt_corr = ddt_corr
         self.F_prev = None          # previous step's face flux, for ddt_corr
