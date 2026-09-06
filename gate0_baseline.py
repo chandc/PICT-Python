@@ -105,6 +105,14 @@ def _cylinder():
     m = MultiBlockPISO(d, 1.0 / 100.0, 0.005, 2, 1e-6, time_scheme="bdf2",
                        scheme="rotational", picard_iters=2, rhie_chow=True,
                        persistent_flux=True, ddt_corr=False)
+    # PIN THE MOMENTUM TOLERANCE, matching test_mpi_equivalence. The reference and the test
+    # that consumes it must build the SAME solver, and they had drifted: Gate 4 tightened
+    # momentum_tol to 1e-14 to stop partition-dependent iteration paths diverging, the test was
+    # pinned back to `tol` so it could still compare against the original Gate 0 digests, and
+    # this generator was left on the default. A reference captured with different settings from
+    # the run being checked reports a configuration difference as a regression -- which is
+    # exactly what "0/640 digests" meant here, twice, on two machines.
+    m.momentum_tol = m.tol
     checkpoint.load(m, "results/fields/cyl_shed_mac.npz")
     return d, m
 

@@ -93,6 +93,44 @@ than having it projected away. Production runs with Dong outflow need a tighter 
 tolerance than the periodic case for the same trajectory accuracy -- which applies to the
 cylinder and square cases, not only to the gates.
 
+## The bitwise reference is MACHINE-SPECIFIC
+
+Verified by running the same code, same configuration, on two machines:
+
+    Spark run vs SPARK-captured reference   640/640   PASS
+    Spark run vs MAC-captured reference       0/640   FAIL
+
+Both are ARM64, but the toolchains differ -- numpy 2.0.2 / scipy 1.13.1 on the Mac against
+2.4.6 / 1.16.3 in the Spark container -- and with them the BLAS paths and reduction orders. The
+last bits move, and a digest comparison is all-or-nothing.
+
+**This does not weaken the gates.** What Gates 1-5 verify is that DISTRIBUTION does not change
+the answer on a given machine, which is the property that matters for a domain-decomposition
+port and is exactly what the per-machine test shows. Cross-machine bit-reproducibility is a
+different and much harder property, and was never claimed.
+
+But it does mean **each machine needs its own Gate 0 baseline**, captured with
+`gate0_baseline.py` before the gate tests are run there. Anyone reproducing this port on a third
+machine will otherwise see 0/640 and reasonably conclude the port is broken.
+
+## Reference and test must build the SAME solver
+
+Three separate "0/640" alarms in this port were configuration drift rather than regressions:
+
+  1. `momentum_tol` was tightened from `tol` to 1e-14 in Gate 4 to stop partition-dependent
+     iteration paths diverging, and `test_mpi_equivalence.py` was not re-run afterwards. It
+     reported a deliberate change as a regression on every run for hours.
+  2. The same mismatch again on Spark, once the test had been pinned back to `tol` but
+     `gate0_baseline.py` -- the reference GENERATOR -- had not.
+  3. A missing reference file, which the test reported as a failed check rather than as a
+     missing input.
+
+The pattern is a check reporting something other than what it claims to measure, and it is the
+same shape as the mangles that silently stopped intercepting (`measurement_traps.md` §14). The
+structural fix is for the reference generator and its consumer to construct the solver through
+one shared path instead of each building their own; both are currently pinned by hand, which
+works and will drift again.
+
 ## What the criteria turned out to mean
 
 **"Bitwise identical" is achievable and was verified first.** Gate 1's criterion only means
