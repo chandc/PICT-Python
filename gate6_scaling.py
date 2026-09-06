@@ -79,12 +79,19 @@ def main():
     tg = (c.t_gather - g0) / N
     asm = wall - tp - tm - te - tg
 
-    # LOAD IMBALANCE: the spread of per-rank wall time is what a block topology mismatch shows
-    # up as, and it is invisible in a rank-0-only measurement.
+    # IMBALANCE MUST BE MEASURED ON LOCAL WORK, NOT WALL TIME. Every step ends in collectives,
+    # so all ranks block until the slowest arrives and then report IDENTICAL wall time however
+    # uneven the blocks are. Imbalance appears as idle time AT the barrier. Subtracting the
+    # collectives -- solve, exchange, gather -- leaves per-rank LOCAL work, whose spread is the
+    # quantity wanted.
+    local = wall - tp - tm - te - tg
+    locals_ = MPI.COMM_WORLD.allgather(local)
+    spread = (max(locals_) - min(locals_)) / max(np.mean(locals_), 1e-30)
     walls = MPI.COMM_WORLD.allgather(wall)
 
     if rank == 0:
-        print(f"  nz{a.nz} n{size:>2} | {d.n_cells//size:>7,} c/rank | {wall:7.3f} | "
+        import os as _os
+        print(f"  nz{a.nz} DM{_os.environ.get('DM','0')} n{size:>2} | {d.n_cells//size:>7,} c/rank | {wall:7.3f} | "
               f"{tp:7.3f} {tm:6.3f} | {te:6.3f} {tg:6.3f} | "
               f"{asm:7.3f} | comm {100*(te+tg)/wall:5.1f}% | imbal {100*spread:5.1f}% | "
               f"blk/rank {len(c.local_blocks())}", flush=True)

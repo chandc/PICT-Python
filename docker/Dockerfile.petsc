@@ -34,8 +34,16 @@ FROM ${BASE}
 # so MPICC/MPICXX point at the base image's wrappers instead. Fortran is disabled -- petsc4py
 # does not need it and it is the slowest part of a PETSc build -- and debugging is off, since
 # this image exists to produce timing numbers.
-ENV MPICC=mpicc \
-    MPICXX=mpicxx \
+# THE IMAGE HAS TWO MPIs AND THE BROKEN ONE COMES FIRST ON PATH. /opt/cpn/bin/mpicc resolves
+# fine and `which mpicc` finds it, but it cannot compile: its wrapper does not supply its own
+# include path, so a trivial program fails with "mpi.h: No such file or directory".
+# /usr/local/mpi (Open MPI 4.1.9a1) works. Three builds failed with three different-looking
+# errors before this was checked, because `which` answers "is it on PATH", not "does it work" --
+# the compiler was tested by COMPILING with it, which is the only question that mattered.
+ENV MPI_HOME=/usr/local/mpi \
+    PATH=/usr/local/mpi/bin:$PATH \
+    MPICC=/usr/local/mpi/bin/mpicc \
+    MPICXX=/usr/local/mpi/bin/mpicxx \
     PETSC_CONFIGURE_OPTIONS="--with-fc=0 --with-debugging=0 COPTFLAGS=-O2 CXXOPTFLAGS=-O2"
 RUN pip install --no-cache-dir sympy==1.14.0 mpi4py==4.1.2 \
     && pip install --no-cache-dir petsc==3.25.5 petsc4py==3.25.5
