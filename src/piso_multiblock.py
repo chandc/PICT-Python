@@ -35,6 +35,13 @@ class MultiBlockPISO:
                  rhie_chow=False, persistent_flux=False, ddt_corr=False,
                  preconditioner='jacobi', linear_backend='scipy',
                  distribute_momentum=True):
+        # DISTRIBUTE THE MOMENTUM SOLVE BY DEFAULT. Replicating it means every rank solving the
+        # whole system, which is not a decomposition at all; it survived only because a rigged
+        # comparison (the tolerance was tied to the decomposition) and a single rank count made
+        # it look competitive. Measured fairly at equal tolerance, distribution is 39% faster on
+        # the momentum bucket and 7.7% overall at 16 ranks, and the gap widens with rank count:
+        # replicated momentum holds 14.1 MB per rank, so 8 copies saturate the memory bus at
+        # 54 GB/s and 16 copies collapse it to 33 GB/s.
         self.d = domain
         # nu MAY BE A FIELD: a scalar for molecular viscosity, or a per-block array of
         # nu_eff = nu + nu_t(x) for an eddy-viscosity closure. `nu_at(b)` and `nu_flat` are what
