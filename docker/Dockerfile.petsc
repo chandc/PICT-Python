@@ -26,11 +26,17 @@ FROM ${BASE}
 # Pinned, for the reason Dockerfile.amgx gives: an unpinned install makes the image a moving
 # target, which is the problem it exists to solve.
 #
-# PETSc is pointed at the compiler WRAPPERS rather than a --with-mpi-dir, which is what works
-# when the MPI lives outside the prefixes configure searches. Fortran is disabled: petsc4py does
-# not need it and it is the slowest part of a PETSc build.
-ENV PETSC_CONFIGURE_OPTIONS="--with-cc=mpicc --with-cxx=mpicxx --with-fc=0 \
-    --with-debugging=0 COPTFLAGS=-O2 CXXOPTFLAGS=-O2"
+# THE COMPILER GOES IN THE ENVIRONMENT, NOT THE CONFIGURE OPTIONS. Passing --with-cc is what
+# a bare PETSc configure wants, but the pip package refuses it outright:
+#
+#     RuntimeError: Do not use --with-cc, use the environmental variable MPICC
+#
+# so MPICC/MPICXX point at the base image's wrappers instead. Fortran is disabled -- petsc4py
+# does not need it and it is the slowest part of a PETSc build -- and debugging is off, since
+# this image exists to produce timing numbers.
+ENV MPICC=mpicc \
+    MPICXX=mpicxx \
+    PETSC_CONFIGURE_OPTIONS="--with-fc=0 --with-debugging=0 COPTFLAGS=-O2 CXXOPTFLAGS=-O2"
 RUN pip install --no-cache-dir sympy==1.14.0 mpi4py==4.1.2 \
     && pip install --no-cache-dir petsc==3.25.5 petsc4py==3.25.5
 
