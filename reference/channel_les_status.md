@@ -188,3 +188,28 @@ structure and size in both, 8% hot on rms, no grid-scale content in either. The 
 what its grid can carry and degrades exactly where it must, preserving the arrangement -- the
 signature of a healthy LES. The withdrawn-run comparison that motivated this file showed 99.3%
 of streamwise energy at 2dx; the same view now shows none.
+
+## R5 VERDICT (2026-09-07, run complete): the channel LES stands, with honest deficits
+
+`chan_re180_v3_mac` reached t = 30 with 40,001 samples over t = 10-30, the 2dx share at
+0.000-0.001% for the entire run (one 0.14% burst transient at t = 15.4, gone in a quarter
+time unit), u_tau converged to 0.988, div at 3e-14. The withdrawn run's disease is cured:
+same grid, same model, same protocol, and the mode that carried 99.3% of the streamwise
+energy never rises above noise. `figures/chan_re180_v3_mac_profiles.png`:
+
+| vs SEM DNS (own u_tau scaling) | DNS | R5 | delta |
+|---|---|---|---|
+| U+ centreline | 18.41 | 19.20 | +4.3% |
+| u'+ peak | 2.845 | 2.759 | -3.0% |
+| y+ of u'+ peak | 13.8 | 16.8 | outward |
+| v'+ max | 0.867 | 0.772 | -11.0% |
+| w'+ max | 1.043 | 0.919 | -11.9% |
+| -<u'v'>+ max | 0.737 | 0.664 | -9.9% |
+
+Read against the withdrawn run's profile comparison (u' 9% STRONG, cross-stream 14% weak,
+all of it sitting on a growing checkerboard): u' is now 3% low and clean, the cross-stream
+deficit narrows to 11-12% and is the ordinary signature of 24x80x24 + Smagorinsky at this
+resolution, and the wake excess (+4.3% at the centreline) is the minimal-box wake. These are
+the deficits of an honest coarse LES, not artefacts. **"There is no validated wall-bounded
+LES in this repo" is no longer true.** Sharpening the cross-stream components (finer span,
+or WALE/sigma per the TGV study) is quality work, not remediation.

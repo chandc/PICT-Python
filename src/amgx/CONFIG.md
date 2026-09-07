@@ -46,3 +46,30 @@ is luck, not configuration.
 Printing is off (`print_solve_stats`, `print_grid_stats`) because a 30,000-step run otherwise
 emits tens of thousands of lines; the binding also registers a no-op print callback, and
 `AMGX_solver_get_iterations_number` still reports what we need.
+
+## 2026-09-07: the rebuilt library does not work; R7 ran on scipy
+
+The Sep 6 Spark reboot erased /tmp/AMGX (as SESSION_STATE.md warned). Four rebuild attempts of
+the same v2.5.0 tag failed four ways, and the differences from the working Aug 30 build are
+recorded here so the next attempt starts from evidence:
+
+| build | env | outcome |
+|---|---|---|
+| arch=native, no --gpus at build | pytorch:25.12 | wrong-arch SASS; abort at resources_create when run without --gpus |
+| arch=121 (two racing makes) | pytorch:25.12 | linked; hangs at 100% CPU, 0% GPU before first solve |
+| arch=121, clean | pytorch:25.12 | same hang |
+| arch=native with --gpus, clean | pict-amgx:1.0 itself (25.11 base) | clean RuntimeError: solver_setup rc 6, even on a 1e4 1-D Poisson |
+
+Facts that constrain the cause: the GPU is healthy post-reboot (31 h of torch DNS on it);
+the run container sees the device (nvidia-smi -L inside); pict-amgx:1.0 is based on the
+25.11 NGC image while the first three builds used 25.12 (runtime mismatch explains at most
+the first three, not the matched fourth); the Aug 30 banner shows the SAME runtime/driver
+pair (13.1 on 13.0) that now fails. Remaining suspects: whatever container actually built
+the Aug 30 library (unrecorded -- exactly the reproducibility hole the Dockerfile header
+complains about), and an AmgX-vs-driver interaction specific to solver setup. Next probe:
+build in a CUDA 13.0 devel image (matching the DRIVER), and bisect the JSON config on rc 6.
+
+Silent-fallback trap, worth its own line: `_amgx_solve` returns None on any init failure and
+the caller falls back to scipy without a visible line at default verbosity -- a "hung" AmgX
+run and a healthy scipy run look identical for the first ~50 minutes at 1e-6 on 82k cells.
+Two R7 attempts were killed on that ambiguity. `fell_back` exists; it should PRINT.
