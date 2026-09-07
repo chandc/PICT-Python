@@ -459,10 +459,18 @@ boundary observations without needing the channel), the channel's streamwise che
 DIFFERENT phenomenon from the one fixed here.
 
 `channel_les_status.md` items (3) and (4) should now read: (3) demonstrated and FIXED, and it
-explains the CYLINDERS' far-field oscillation; (4) refuted for the channel. The next
-investigation is the rotational pressure scheme -- amplification 15.292x against chorin's 0.001x
--- running at Re_cell 363 in the streamwise direction where nothing damps it and van Driest
-drives nu_t -> 0.
+explains the CYLINDERS' far-field oscillation; (4) refuted for the channel.
+
+**RESOLVED ELSEWHERE (commit 822c468).** The channel's cause was a missing state restore: the
+Picard loop restored `u`, `p` and `u_prev` between sweeps but not `p_flux` or `F_prev`, so
+`p_flux` accumulated once per SWEEP against `p` once per STEP. The "rotational vs chorin"
+amplification that this section pointed at as the next lead was measuring chorin's immunity to
+that bug -- it replaces `p_flux` each sweep -- and not a property of the schemes. Both are
+exonerated. See `channel_checkerboard_remediation.md` and `les_parking_lot.md`.
+
+**Nothing in the boundary analysis above depends on that.** It stands on its own measurements and
+on the cylinders, and this section's own conclusion -- that the boundary defect does NOT explain
+the channel -- is what the other session's root cause confirms.
 
 An 18x slowdown of the pressure solve at t ~ 4.75 is worth its own look: it is a measurable
 symptom, on a case that reaches it in about an hour, and nobody has instrumented the iteration

@@ -1,65 +1,55 @@
-# LES checkerboard -- PARKED
+# LES checkerboard -- CLOSED
 
-Parked deliberately, not abandoned. Everything needed to resume is here.
+**Superseded by commit 822c468.** The root cause was found in a parallel session and is not what
+this investigation proposed. Full record in `channel_checkerboard_remediation.md`; this file is
+kept only for what it got right, what it got wrong, and one trap worth carrying forward.
 
-## Where it stands
+## The actual cause
 
-The Rhie-Chow boundary defect was real, is fixed, and is verified (T1-T6, see
-`rhie_chow_boundary.md`). It explains the CYLINDERS' far-field odd-even oscillation. It does
-**not** explain the channel, and that is established from three independent directions:
+`_step_impl` restored `u`, `p` and `u_prev` before each Picard repeat but **not `p_flux` or
+`F_prev`**. So `p_flux += phi_tot` ran once per SWEEP while `p += phi_tot` ran once per STEP, and
+the projection pressure the Rhie-Chow term reads drifted without bound from the pressure the
+predictor feels: |p - p_flux| reached 7.5 in ten steps against a legitimate 6.6e-3.
 
-1. the zero-damping faces were entirely WALL-NORMAL (576 per wall = nx*nz), while the channel's
-   mode is STREAMWISE (99.3% of energy at lambda_x+ = 2 dx+), where x is periodic and damping was
-   never missing;
-2. the cell-Reynolds table explains all five boundary observations without the channel needing
-   the gap at all -- a wall is refined until Re_cell is O(1) and viscosity covers for the missing
-   damping, which is why both cylinders' body surfaces were clean and only their far fields
-   (Re_cell 28.5 and 89-99) were not;
-3. T7 ran 4750 steps with both arms **identical to three digits** in the streamwise mode.
+Fixed probes give a mode share at or below 0.001% on live turbulence, against 99.3% at the
+production death. **Both pressure schemes are exonerated.**
 
-## The live hypothesis, and the experiment that decides it
+## What this investigation got right
 
-This repo is a FRACTIONAL-STEP PROJECTION method that solves for an increment and reconstructs
-the pressure. Upstream PICT and OpenFOAM are segregated PISO solvers that solve for p DIRECTLY
-and replace it -- PICT has zero occurrences of "rotational"/"incremental" and **no `p += ...`
-anywhere in its C++, CUDA or Python**; `CopyPressureResultToBlocks` copies rather than
-accumulates. Neither reference can exhibit this failure mode.
+* **The Rhie-Chow boundary defect was real, and is fixed on its own merits.** Two implementations
+  of the same operator disagreed by 5.7e+01 relative on a wall-bounded mesh while agreeing to
+  2e-16 on a periodic one; every physical boundary had a cell layer with exactly zero damping.
+  Verified six ways (`rhie_chow_boundary.md`). It explains the CYLINDERS' far-field oscillation.
+* **Ruling the boundary defect OUT for the channel.** Three independent lines -- the zero-damping
+  faces were wall-normal only while the mode is streamwise; the cell-Reynolds table explains all
+  five boundary observations without the channel; T7 ran 4750 steps with both arms identical to
+  three digits. Had this not been established, the boundary fix would have been miscredited with
+  a cure it did not deliver.
 
-    chorin:       p = phi                      # rebuilt each step, no memory
-    incremental:  p = p + phi                  # accumulates
-    rotational:   p = p + phi - nu*div(u*)     # accumulates
+## What it got wrong, and the trap in it
 
-`p = p + phi` is an INTEGRATOR: an undamped mode in phi accumulates step over step. That is a
-better explanation of the 15,000x scheme ratio (rotational 15.292x against chorin 0.001x at
-t = 12) than anything about the schemes' accuracy.
+The successor hypothesis -- that `p = p + phi` is intrinsically an integrator, so the fault lies
+in the fractional-step formulation itself, and the remedy is to adopt upstream PICT's and
+OpenFOAM's segregated PISO (neither accumulates; PICT has no `p += ...` anywhere) -- was **wrong**.
+Accumulation was implicated, but the pathology was a missing state restore, not the formulation.
 
-**Two candidates, one discriminating arm -- and it has never been run.** The old probe only ever
-ran `base`, `noforce` and `oneblock`.
+**THE DISCRIMINATING EXPERIMENT WOULD HAVE FALSELY CONFIRMED IT.** The plan was to run an
+`incremental` arm, on the reasoning that accumulation predicts it amplifies while a
+rotational-term-specific cause predicts it stays clean. But `incremental` accumulates `p_flux`
+through the same unrestored path, so it would have amplified -- and the conclusion drawn would
+have been "the projection formulation is at fault", leading to an expensive rewrite of the
+pressure coupling to match upstream.
 
-| | mechanism | prediction for `incremental` |
-|---|---|---|
-| A: accumulation | `p = p + phi` integrates any undamped mode | amplifies, like rotational |
-| B: the rotational term | `-nu*div(u*)` injects a mode the flux never saw | clean, like chorin |
+The two hypotheses predicted the SAME outcome for the one arm chosen to separate them. A test is
+only discriminating if the candidates disagree about its result, and that has to be checked
+against each candidate's actual mechanism rather than its label. The 15,000x "scheme dependence"
+that motivated the whole line was itself measuring chorin's immunity to a state bug -- chorin
+replaces `p_flux` each sweep -- and not a property of the schemes at all.
 
-A -> the fix is STRUCTURAL: adopt the upstream PISO formulation, solve for p directly.
-B -> the fix is LOCAL: make `-nu*div(u*)` consistent with the flux, as the RC term now is.
-
-### How to run it when this comes off the shelf
-
-1. **Minutes, do this first.** `self._diag = {"phi": phi_tot, "div_star": div_star}` is already
-   stashed every step. Measure the Nyquist content of `div_star` against `phi`. If `div_star`
-   carries no checkerboard, B has no mechanism and dies before an hour is spent.
-2. **~1 hour.** Three arms -- chorin, incremental, rotational -- same seed, same dt, in parallel.
-   Stop at t ~ 4.5: the signal is present by t ~ 3 and an 18x slowdown starts just after 4.75.
-   **Equal `picard_iters` in every arm**, or the comparison confounds accumulation with the
-   second-order correction -- the same shape of error as the `momentum_tol` rigging in Gate 4.
-
-The probe is `results/logs/t7_base.log` / `t7_patch.log`'s driver, which is NOT in the repo (it
-lived in a scratchpad); it is ~60 lines and reproducible from those logs' header format.
-
-## Loose end worth its own look
+## Still open, from this side
 
 Both T7 arms slowed ~18x at t ~ 4.75 -- 2h43m at 100% CPU with no output, against 0.86 s/step
 before. Not a hang: RSS identical to the byte throughout, and the main thread sampled into numpy
-rather than `_sparsetools`, which points at the pressure solve's ITERATION COUNT exploding. Nobody
-has instrumented it, and the case reaches it in about an hour.
+rather than `_sparsetools`, pointing at the pressure solve's iteration count exploding. Measured
+on the PRE-FIX code, so it may simply be the checkerboard making the system ill-conditioned and
+may already be gone. Worth one instrumented re-run now that the cause is fixed.
