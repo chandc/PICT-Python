@@ -52,6 +52,7 @@ import time
 import numpy as np
 
 from channel_ic import interpolate_to
+from channel_gridmode_probe import nyquist_share
 from src import checkpoint
 from src import sgs
 from src.channel_stats import ChannelStats
@@ -164,7 +165,7 @@ def main():
                          f"{a.cfl_limit}. Reduce --dt to about "
                          f"{a.dt * a.cfl_limit / cy:.2e}.")
     print(f"  {'step':>8}{'t':>8}{'u_tau':>9}{'U+_c':>8}{'u_b+':>8}{'nu_t/nu':>9}"
-          f"{'div':>10}{'s/step':>9}", flush=True)
+          f"{'div':>10}{'2dx%':>8}{'s/step':>9}", flush=True)
 
     stats = ChannelStats(d)
     nsteps = int(round(a.t_end / a.dt))
@@ -200,8 +201,22 @@ def main():
             ut = stats.u_tau(nu) if stats.nsamp else float("nan")
             uc = U[-1] if U is not None else float("nan")
             ub = float(np.trapz(U, yv) / (yv[-1] - yv[0])) if U is not None else float("nan")
+            # GRID-MODE GUARD. The withdrawn production run spent 30 time units growing a 2dx
+            # checkerboard to 99.3% of the streamwise fluctuation energy while every integral
+            # diagnostic on this line reported health (such a mode is exactly divergence-free).
+            # The share, not the amplitude, is the alarm; 5% is far above turbulence's own
+            # Nyquist content (<0.1% in the clean probes) and far below useless.
+            gm_share, _, _ = nyquist_share(
+                np.concatenate([m.u[b] for b in range(nb)], axis=0), y)
             print(f"  {i:>8}{m.time:>8.2f}{ut:>9.4f}{uc:>8.2f}{ub:>8.2f}{ratio:>9.3f}"
-                  f"{m.interior_divergence():>10.1e}{(time.time()-t0)/i:>9.3f}", flush=True)
+                  f"{m.interior_divergence():>10.1e}{100*gm_share:>8.3f}"
+                  f"{(time.time()-t0)/i:>9.3f}", flush=True)
+            if gm_share > 0.05:
+                checkpoint.save(m, f"results/fields/{tag}_GRIDMODE_ABORT.npz")
+                raise SystemExit(
+                    f"  ABORT at step {i}, t = {m.time:.3f}: 2dx share {100*gm_share:.1f}% of "
+                    f"streamwise fluctuation energy at y+ = 12. Field saved to "
+                    f"results/fields/{tag}_GRIDMODE_ABORT.npz.")
             os.makedirs("results/fields", exist_ok=True)
             if stats.nsamp:
                 stats.save(f"results/{tag}_stats.npz", nu)

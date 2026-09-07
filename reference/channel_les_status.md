@@ -162,3 +162,29 @@ records the repo's earlier encounter with odd-even decoupling and is the place t
 
 `channel_gridmode_probe.py` is the tool: guarded against hangs, long enough to see growth, and
 set up for dose-response comparison across variants.
+
+## R5 mid-run structural check against the spectral DNS (2026-09-07, t = 11.4)
+
+First cross-code comparison: the re-run LES (R5, `chan_re180_v3_mac`, PISO finite-volume,
+24x80x24 + Smagorinsky/van Driest, post-p_flux-fix) against the FOSLS spectral DNS (`run01`,
+same box, same Re_tau, the run whose interpolated field seeds this LES). Same y+ = 15 plane,
+shared color scales; different instants (t = 11.4 vs 5.0), so the comparison is structural.
+`figures/les_vs_dns_plane15.png`; snapshot views in `figures/chan_re180_v3_mac_snapshot.png`,
+plotter `plot_utility/plot_r5_snapshot.py`.
+
+| plane rms at y+ = 15 | LES | spectral DNS | ratio |
+|---|---|---|---|
+| u'+ | 2.61 | 2.66 | 0.98 |
+| omega_x | 14.2 | 23.1 | 0.62 |
+| p' | 1.41 | 1.31 | 1.08 |
+
+Readings. (1) u': indistinguishable in structure and amplitude -- one low-speed streak spanning
+the box, lambda_z+ ~ 100, rms within 2%. (2) omega_x: same arrangement (cores on the streak
+flanks, alternating sign) at 62% amplitude, smoothed -- the honest deficit of dx+ = 23.6
+against cores of ~20-30 wall units, compounded by the LES omega_x being a wide difference of u
+while the DNS's is a primary FOSLS unknown (the derivative-quantity point of
+FOSLS_VS_FRACTIONAL_STEP.md section 1, visible as a picture). (3) p': same flow-scale patch
+structure and size in both, 8% hot on rms, no grid-scale content in either. The LES reproduces
+what its grid can carry and degrades exactly where it must, preserving the arrangement -- the
+signature of a healthy LES. The withdrawn-run comparison that motivated this file showed 99.3%
+of streamwise energy at 2dx; the same view now shows none.

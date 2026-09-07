@@ -381,3 +381,24 @@ spliced two experiments into one file with no visible seam.
 same experiment into a synced tree, the tag must include the machine, or the results directory
 must not sync. And a log's `DONE` line proves nothing about the process you launched -- only the
 process table and the artefacts it wrote (checkpoint mtimes at the expected cadence) do.
+
+## 18. A discriminating experiment validated by label, not mechanism
+
+To separate "the fractional-step pressure coupling is intrinsically an integrator" from other
+causes of the channel checkerboard, the chosen discriminating arm was the `incremental` scheme --
+OpenFOAM's coupling, the candidate remedy. It would have amplified the mode exactly as the
+hypothesis predicted, and the conclusion would have been to rewrite the pressure coupling.
+
+It would have been wrong. The actual cause was a state-restoration bug (the Picard loop restored
+`u`, `p`, `u_prev` between sweeps but not `p_flux`), and `incremental` accumulates `p_flux`
+through the SAME unrestored path as `rotational`. Both hypotheses predicted the same outcome for
+the one arm chosen to separate them; the arm was selected because its LABEL differed from the
+suspect ("this is the other formulation"), not because its MECHANISM did. Only chorin -- which
+replaces `p_flux` each sweep -- was mechanically immune, and that immunity was the whole of the
+measured 15,000x "scheme dependence".
+
+**Before running a discriminating experiment, trace each arm through the code path under
+suspicion and confirm the rival hypotheses predict DIFFERENT outcomes for it.** A discriminator
+whose arms differ in name but share the mechanism is not a discriminator. (The fix's R3 run --
+incremental, clean to t = 12 with zero drift -- is what the test would have looked like once the
+mechanism was actually different; see `channel_checkerboard_remediation.md` section 5.)

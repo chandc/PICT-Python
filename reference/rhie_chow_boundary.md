@@ -475,3 +475,31 @@ the channel -- is what the other session's root cause confirms.
 An 18x slowdown of the pressure solve at t ~ 4.75 is worth its own look: it is a measurable
 symptom, on a case that reaches it in about an hour, and nobody has instrumented the iteration
 count through it.
+
+**CLOSED, 2026-09-07 -- the slowdown does not survive the p_flux fix.** Three post-fix runs have
+crossed t ~ 4.75 with no cost anomaly:
+
+* R2 (`rotational`) and R3 (`incremental`), from the SAME `chan_re180_t4.npz` start as the T7
+  arms (dt = 5e-4): cumulative s/step FELL through the window, 0.75 at t = 4.25 to 0.70 at
+  t = 5.0. A T7-scale episode (~1300 steps at ~15 s/step) anywhere in that span would have
+  blown the running average up, not down.
+* R5 (production driver, dt = 1e-3, independent trajectory from the DNS IC): flat 0.647-0.652
+  s/step right up to t = 4.750 -- where it tripped the CFL_y guard (0.83 > 0.8) instead.
+
+The composite picture: the burst at t ~ 4.75 is PHYSICS -- this seed trajectory's spin-up
+transient peaking its wall-normal velocity (R5 tripped CFL_y there and again at t = 5.41) --
+and the 18x cost was the bug amplifying it: by t ~ 4.75 the unrestored `p_flux` carried ~750
+steps of accumulated grid-scale drift into the Rhie-Chow term, and the burst on top of that
+poisoned the pressure system's conditioning. Post-fix the burst survives, its pathological
+solver cost does not. Both T7 arms slowing IDENTICALLY is also explained: both ran the same
+bugged accumulation, and the fix section above shows the boundary patch touches neither.
+
+The dt = 1e-3 caveat, measured (probe `burst_dt1e3_mac`, 2026-09-07): the post-fix run at T7's
+own dt from the same t = 4 checkpoint held a flat 0.687 s/step to t = 4.40 and then ABORTED at
+t = 4.60 on the CFL guard (CFL_y 0.92, v_max 5.14) -- the fixed trajectory's burst exceeds the
+explicit-CFL envelope at dt = 1e-3 and the guard stops it in minutes, where the bugged T7 arms
+sailed under the same guard and ground for hours instead. So the 18x grind is unobservable
+post-fix in any configuration: at dt = 5e-4 the burst is crossed at declining cost (R2/R3), and
+at dt = 1e-3 it is a clean CFL stop, not a solver collapse. That the bugged arms did NOT trip
+the guard their trajectory now trips is itself evidence the bug was altering the flow at the
+burst, not just the solver cost.

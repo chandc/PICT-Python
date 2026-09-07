@@ -202,6 +202,16 @@ the same tags, and the sandbox logs synced over the Mac ones through Dropbox mid
 Mac milestones survive in that session's transcript). Two machines writing one Dropbox
 `results/` clobber each other: use distinct tags per machine.
 
+### Addendum: the T7 18x slowdown, closed by measurement
+
+The pre-fix T7 arms ground 18x at t ~ 4.75 (`rhie_chow_boundary.md`). Post-fix, on the same
+start checkpoint: R2/R3 (dt = 5e-4) crossed the window at declining cumulative cost (0.75 ->
+0.70 s/step), and a dedicated dt = 1e-3 probe (`burst_dt1e3_mac`) ran flat at 0.687 s/step
+until the CFL guard stopped it at t = 4.60 (CFL_y 0.92, v_max 5.14). The burst is this seed
+trajectory's spin-up transient (R5's production run tripped its guard at t = 4.750 and 5.41 on
+an independent trajectory); the 18x cost was the bug's accumulated p_flux drift poisoning the
+pressure conditioning on top of it, and it does not survive the fix in any configuration.
+
 ### Next: R5 and R7
 
 R5 is the production channel from the DNS initial condition with the fix, exactly as
