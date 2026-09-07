@@ -223,3 +223,30 @@ solves.** The port is now partition-independent to round-off.
 defect that has now been removed; the measured value is ~1.2e-14, so the criterion is eight
 orders too loose and would pass a serious regression unnoticed. `< 1e-12`, matching Gate 3, is
 now achievable and was achievable all along.
+
+## Gate 4's criterion tightened: 1e-6 -> 1e-12
+
+The old `bar = max(1000.0 * MOM_TOL, 1e-13)` rested on a measured table showing the trajectory
+difference tracking the solve tolerance. That tracking was real and it was a SYMPTOM: under
+bjacobi, serial and distributed took different Krylov paths, and two solves converged to the same
+tolerance along different paths differ by about that tolerance.
+
+Re-measured under jacobi, with the reference RECAPTURED at each tolerance:
+
+| momentum_tol | trajectory difference |
+|---|---|
+| 1e-6 | 2.120e-14 |
+| 1e-9 | 1.219e-14 |
+| 1e-12 | 1.279e-14 |
+
+**Flat across six orders** -- the difference no longer tracks the tolerance, so scaling by it is
+meaningless. A fixed `1e-12` is what the quantity now deserves, matching Gate 3.
+
+(The first attempt at this table was wrong and non-monotonic -- 1e-6 -> 8.9e-05, 1e-9 -> 1.2e-14,
+1e-12 -> 1.3e-07 -- because gate4's REF filename keys on the PRESSURE rtol and does not recapture
+when PICT_MOM_TOL changes, so it compared distributed at one tolerance against serial at another.
+It looked like tighter tolerances making agreement worse.)
+
+Verified, all at the new bar: 1.219e-14, 9.783e-15, 1.176e-14 at 2/4/8 ranks, ~50-100x margin.
+**And the criterion still bites:** solving at a tolerance the reference was not captured at gives
+8.869e-05 and FAILS, so tightening it did not merely make it look strict.

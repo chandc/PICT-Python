@@ -132,28 +132,43 @@ def main():
     # were actually run at. The factor of 100 covers ten steps of accumulation: measured growth
     # is 2.0e-14 at one step rising to a bounded 1.8e-12 by twenty, so it saturates rather than
     # diverging.
-    # THE AMPLIFICATION FACTOR IS MEASURED, NOT ASSUMED. Two solves converged to the same
-    # tolerance but along different iteration paths differ by about that tolerance, and ten
-    # steps amplify it. Measured on this case, at 2 ranks:
+    # SUPERSEDED. The tolerance-scaled criterion below was correct for its time and is no
+    # longer. It read:
     #
-    #     momentum_tol   trajectory difference   ratio
-    #        1e-14            1.0e-12             1e2
-    #        1e-9             4.8e-07             5e2
+    #     bar = max(1000.0 * MOM_TOL, 1e-13)          # 1e-6 at the default MOM_TOL
     #
-    # so the difference tracks the tolerance with a factor of a few hundred. 1000x gives margin
-    # without being vacuous -- it would still catch a defect an order of magnitude above the
-    # noise. Accumulation is bounded, not exponential: measured growth is 2.0e-14 at one step
-    # rising to 1.8e-12 by twenty, i.e. it saturates.
+    # and rested on a MEASURED table showing the trajectory difference tracking the solve
+    # tolerance with a factor of a few hundred (1e-14 -> 1.0e-12, 1e-9 -> 4.8e-07). That
+    # tracking was real, and it was a SYMPTOM: under bjacobi the serial and distributed runs
+    # took DIFFERENT Krylov paths, because block-Jacobi factorises one diagonal block per rank.
+    # Two solves converged to the same tolerance along different paths differ by about that
+    # tolerance -- hence the scaling.
     #
-    # A tighter trajectory match is available by tightening PICT_MOM_TOL; that is the honest
-    # trade and it is now explicit, rather than being bought by replicating the solve on every
-    # rank.
-    bar = max(1000.0 * MOM_TOL, 1e-13)
+    # Both solves now default to `jacobi`, which is diagonal and therefore partition-
+    # independent, so serial and distributed take the SAME path and only floating-point
+    # reduction order remains. Re-measured at 2 ranks, with the reference RECAPTURED at each
+    # tolerance (the first attempt reused one reference and produced a non-monotonic table that
+    # looked like tighter tolerances making agreement worse -- gate4's REF filename keys on the
+    # PRESSURE rtol, so it does not recapture when PICT_MOM_TOL changes):
+    #
+    #     momentum_tol   trajectory difference
+    #        1e-6             2.120e-14
+    #        1e-9             1.219e-14
+    #        1e-12            1.279e-14
+    #
+    # FLAT across six orders. The difference no longer tracks the tolerance, so scaling the
+    # criterion by it is meaningless; a fixed bar just above the reduction-order noise is what
+    # the quantity now deserves. 1e-12 leaves ~50x margin over the worst measured value and
+    # matches Gate 3, which was passing at that bar all along.
+    #
+    # It also closes a real hazard: at the old 1e-6 this check sat EIGHT orders above the
+    # measured value and would have passed almost any regression unnoticed.
+    bar = 1e-12
     ok_traj = rel < bar
     ok_its = rm < 2.0
     if rank == 0:
         print(f"  [{'PASS' if ok_traj else 'FAIL'}] {size} ranks, {NSTEPS} steps: max relative "
-              f"difference {rel:.3e}  (criterion < {bar:.1e}, from the solve tolerance)")
+              f"difference {rel:.3e}  (criterion < {bar:.1e}, reduction-order noise)")
         print(f"  [{'PASS' if ok_its else 'FAIL'}] momentum iterations {im[:6]}... "
               f"total ratio {rm:.2f}x of serial")
     return 0 if (ok_bc and ok_traj and ok_its) else 1
