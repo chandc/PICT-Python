@@ -1,0 +1,13 @@
+  [uniform_y     ] uniform-y: interpolated from the stretched state; p_flux/F_prev not carried (mesh-specific)
+  [uniform_y     ] blocks=2 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [uniform_y     ] start: 2dx share 0.083%, energy 9.0976e-02
+  [uniform_y     ] step   1000 t=  0.50  2dx share   0.003%  energy 1.4064e-02  amp    0.155x  total 4.047e+02  0.705 s/step
+  [uniform_y     ] step   2000 t=  1.00  2dx share   0.000%  energy 3.5500e-03  amp    0.039x  total 9.927e+02  0.710 s/step
+/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py:341: RuntimeWarning: divide by zero encountered in divide
+  for k, (comp, bcs) in enumerate(((self.u, self.u_bc), (self.v, self.v_bc),
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in subtract
+  return out
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in add
+  return out
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:956: RuntimeWarning: invalid value encountered in multiply
+  include_cross=False, rhie_chow=False):

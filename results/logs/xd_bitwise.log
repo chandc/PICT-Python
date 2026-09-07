@@ -1,0 +1,23 @@
+/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py:385: RuntimeWarning: divide by zero encountered in divide
+  coef_g = Jg / rowsum
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:1071: RuntimeWarning: invalid value encountered in multiply
+  val = 0.0 * val   # no valid wide stencil -> no correction here
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:1068: RuntimeWarning: invalid value encountered in subtract
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:1068: RuntimeWarning: invalid value encountered in add
+  val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:821: RuntimeWarning: invalid value encountered in add
+  d += (F[axis][tuple(hi_s)] - F[axis][tuple(lo_s)]) / blk.h[axis]
+/Users/danielchan/Dropbox/PICT-Python/.venv/lib/python3.9/site-packages/numpy/_core/_methods.py:127: RuntimeWarning: invalid value encountered in reduce
+  ret = umr_sum(arr, axis, dtype, out, keepdims, where=where)
+==============================================================================
+  Gate 1 — the Comm abstraction is behaviourally inert
+==============================================================================
+  [PASS] serial ownership: 16 blocks all on rank 0 of 1, 0 messages sent
+  [PASS] routing: _ghost_coords -> fetch_coords_slab, _ghost_field -> fetch_field_slab, 0 unrouted cross-block reads
+  [PASS] 10 steps bitwise identical to the Gate 0 reference: 640/640 digests match
+  [PASS] the 'ulp' mangle is DETECTED: 192/192 digests differ, first at step 1
+  [PASS] the 'period' mangle is DETECTED: 192/192 digests differ, first at step 1
+==============================================================================
+  5/5 checks passed
+==============================================================================

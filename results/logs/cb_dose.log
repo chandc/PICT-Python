@@ -1,0 +1,14 @@
+  [oneblock ] blocks=1 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [oneblock ] start: 2dx share 0.088%, energy 8.9698e-02
+  [fourblock] blocks=4 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [fourblock] start: 2dx share 0.088%, energy 8.9698e-02
+  [oneblock ] step   1000 t=  0.50  2dx share   0.004%  energy 1.3717e-02  amp    0.153x  total 3.827e+02  0.842 s/step
+  [fourblock] step   1000 t=  0.50  2dx share   0.004%  energy 1.3717e-02  amp    0.153x  total 3.827e+02  0.919 s/step
+  [oneblock ] step   2000 t=  1.00  2dx share   0.000%  energy 2.7232e-03  amp    0.030x  total 1.093e+03  0.795 s/step
+  [fourblock] step   2000 t=  1.00  2dx share   0.000%  energy 2.7232e-03  amp    0.030x  total 1.093e+03  0.857 s/step
+  [oneblock ] step   3000 t=  1.50  2dx share   0.002%  energy 3.1280e-02  amp    0.349x  total 1.546e+03  0.769 s/step
+  [fourblock] step   3000 t=  1.50  2dx share   0.002%  energy 3.1280e-02  amp    0.349x  total 1.546e+03  0.832 s/step
+  [oneblock ] step   4000 t=  2.00  2dx share   0.003%  energy 3.1358e-02  amp    0.350x  total 9.925e+02  0.755 s/step
+  [oneblock ] ABORT step 4200 t=2.100: CFL_y 4.97 exceeds 0.8 (u_max 355.11, v_max 55.22)
+  [fourblock] step   4000 t=  2.00  2dx share   0.003%  energy 3.1358e-02  amp    0.350x  total 9.925e+02  0.815 s/step
+  [fourblock] ABORT step 4200 t=2.100: CFL_y 4.97 exceeds 0.8 (u_max 355.11, v_max 55.22)

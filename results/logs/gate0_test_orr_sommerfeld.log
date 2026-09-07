@@ -1,0 +1,14 @@
+Orr-Sommerfeld growth at Re=7500 -- replicating Problem 2 of chandc/Python_SEM.
+
+  eigensolver reference: growth 0.002234983  phase 0.249891531
+  Streett / Chan:        growth 0.002234970  phase 0.249891540
+
+     nx x ny     dt       growth     err %   phase c_r    err %     wall
+      48x129  0.050     0.001595     28.6%    0.246243    1.46%     664s
+      48x201  0.050     0.001983     11.3%    0.246169    1.49%    1430s
+  [PASS] the disturbance GROWS (correct sign of stability): growth +0.001983 vs reference +0.002235
+  [PASS] phase speed within 5%: c_r = 0.246169 vs 0.249892 (1.49%)
+
+==============================================================================
+  2/2 checks passed
+==============================================================================

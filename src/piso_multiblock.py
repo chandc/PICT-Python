@@ -34,14 +34,33 @@ class MultiBlockPISO:
                  scheme='rotational', picard_iters=2, implicit_cross=False,
                  rhie_chow=False, persistent_flux=False, ddt_corr=False,
                  preconditioner='jacobi', linear_backend='scipy',
-                 distribute_momentum=True):
-        # DISTRIBUTE THE MOMENTUM SOLVE BY DEFAULT. Replicating it means every rank solving the
-        # whole system, which is not a decomposition at all; it survived only because a rigged
-        # comparison (the tolerance was tied to the decomposition) and a single rank count made
-        # it look competitive. Measured fairly at equal tolerance, distribution is 39% faster on
-        # the momentum bucket and 7.7% overall at 16 ranks, and the gap widens with rank count:
-        # replicated momentum holds 14.1 MB per rank, so 8 copies saturate the memory bus at
-        # 54 GB/s and 16 copies collapse it to 33 GB/s.
+                 distribute_momentum=None):
+        # DISTRIBUTING THE MOMENTUM SOLVE IS CONDITIONAL ON RANK COUNT, because measured fairly
+        # it is not a win everywhere -- it is a large win above 8 ranks and a large LOSS below.
+        #
+        # Replicating means every rank solving the whole system, which is not a decomposition at
+        # all, and replicated momentum holds 14.1 MB per rank so the copies saturate the memory
+        # bus as ranks multiply. That argument is right, and it is only half the picture. Both
+        # arms, in-container, same PICT_MOM_TOL, median of 3 reps on the cylinder:
+        #
+        #   ranks     replicated      distributed      momentum bucket        overall
+        #     2         1.44x            1.21x         0.318 -> 0.974 s        -19.2%
+        #     4         2.31x            2.19x         0.358 -> 0.415 s         -5.4%
+        #     8         2.69x            3.08x         0.441 -> 0.233 s        +12.7%
+        #    12         1.93x            2.45x         0.742 -> 0.254 s        +21.1%
+        #    16         1.76x            2.49x         0.524 -> 0.207 s        +29.4%
+        #
+        # Per-rep spreads do not overlap at any rank count, so the crossover between 4 and 8 is
+        # real and not noise. The 2-rank case is the surprise and is NOT understood: the momentum
+        # bucket triples. Until it is, the threshold is set from the measurement rather than from
+        # a model of why.
+        #
+        # An earlier note here claimed distribution was a win unconditionally, from a comparison
+        # that had tied the solve tolerance to the decomposition. `None` means "decide from the
+        # rank count"; pass True or False to override, which is what the scaling studies do.
+        if distribute_momentum is None:
+            _size = getattr(getattr(domain, "comm", None), "size", 1)
+            distribute_momentum = _size >= 8
         self.d = domain
         # nu MAY BE A FIELD: a scalar for molecular viscosity, or a per-block array of
         # nu_eff = nu + nu_t(x) for an eddy-viscosity closure. `nu_at(b)` and `nu_flat` are what
@@ -83,8 +102,50 @@ class MultiBlockPISO:
         # its hierarchy across steps; falls back to scipy off-GPU. See
         # src/linsolve.py and src/amgx/README.md.
         self.linear_backend = linear_backend
+        # THE PRESSURE PRECONDITIONER IS JACOBI BY DEFAULT, and the reason is CORRECTNESS
+        # before speed. bjacobi factorises one diagonal block PER RANK, so the preconditioner --
+        # and therefore the Krylov path, and therefore which of many valid within-tolerance
+        # solutions is reached -- depends on the decomposition. linsolve.py calls it "the last
+        # partition-dependent thing left"; measured on Gate 3's cylinder, 10 steps:
+        #
+        #   preconditioner   serial its   2 ranks vs serial   8 ranks vs serial
+        #   bjacobi              ~310        5.412e-07           1.242e-07
+        #   jacobi              ~1060        1.146e-13           9.305e-14
+        #
+        # Six orders of magnitude, and below Gate 3's < 1e-12 criterion. That criterion was
+        # thought incoherent and was nearly relaxed; it was achievable all along, and what
+        # failed it was this preconditioner. `redundant` gets the same property and is unusable
+        # -- eight full factorisations of a 158,720^2 matrix OOM at 8 ranks (signal 9).
+        #
+        # IT MUST BE THE SAME ON BOTH PATHS. Setting only PICT_MPI_PC leaves the serial
+        # reference on bjacobi, which changes the preconditioner and the partitioning together
+        # -- the exact confound the bitwise gates exist to isolate. This one value feeds both,
+        # which is also why the default is NOT rank-dependent the way `distribute_momentum` is:
+        # a threshold would put serial and distributed on different preconditioners and bring
+        # the 1e-07 discrepancy straight back.
+        #
+        # IT COSTS TIME AT LOW RANK COUNTS, and the bill is paid deliberately. bjacobi at ONE
+        # rank is full-matrix ILU, which is far stronger than diagonal scaling: ~310 pressure
+        # iterations against ~1060. Measured s/step, pinned to X925 cores:
+        #
+        #   ranks   bjacobi   jacobi   change
+        #     1      5.698    8.736    +53%   <-- the price
+        #     2      4.153    5.584    +34%
+        #     4      3.336    4.195    +26%
+        #     8      2.354    2.212     -6%
+        #
+        # Set PICT_PRES_PC=bjacobi for a serial or few-rank production run where the bitwise
+        # cross-rank guarantee is not needed.
+        #
+        # DO NOT READ THE SPEEDUP RATIO AS PROGRESS. With jacobi at both ends the 8-rank
+        # speedup reads 8.736/2.212 = 3.95x against bjacobi's 5.698/2.354 = 2.42x, which looks
+        # like Gate 6 almost passing. It is not: the ABSOLUTE 8-rank step improved 6%, and the
+        # ratio moved because the BASELINE got slower. Same shape of error as tying the
+        # momentum tolerance to the decomposition in Gate 4.
         self._pcache = SolveCache(backend=linear_backend,
-                                  precond=preconditioner)
+                                  precond=preconditioner,
+                                  petsc_pc=__import__("os").environ.get(
+                                      "PICT_PRES_PC", "jacobi"))
         # GATE 4: a SEPARATE cache for the momentum systems. Separate rather than shared
         # because SolveCache keys its factorisation on the SPARSITY PATTERN, and the momentum
         # and pressure operators have different ones -- sharing would thrash the cache and
@@ -93,7 +154,15 @@ class MultiBlockPISO:
         self._mcache = SolveCache(backend=linear_backend,
                                   precond=preconditioner,
                                   distribute=distribute_momentum,
-                                  petsc_pc=__import__("os").environ.get("PICT_MOM_PC"))
+                                  # JACOBI HERE TOO, for the same partition-independence
+                                  # reason as the pressure cache above -- and it was found the
+                                  # hard way. Defaulting only the PRESSURE preconditioner left
+                                  # Gate 3 passing at 2 and 4 ranks (3.2e-14, 3.1e-14) and
+                                  # FAILING at 8 with 5.178e-08, which is bit for bit the number
+                                  # Gate 4 reports. Gate 4 measures the momentum solve: the
+                                  # residual discrepancy was momentum's own bjacobi blocks.
+                                  petsc_pc=__import__("os").environ.get(
+                                      "PICT_MOM_PC", "jacobi"))
         # THE MOMENTUM SOLVE IS SOLVED MUCH TIGHTER THAN THE PRESSURE ONE, and it is nearly
         # free to do so: the time-derivative diagonal makes it converge in ~11 iterations a
         # step against the pressure system's ~1573, so tightening it by five orders costs a
@@ -223,6 +292,18 @@ class MultiBlockPISO:
         u0 = (dict(self.u), dict(self.v), dict(self.w))
         p0 = dict(self.p)
         prev0 = self.u_prev
+        # p_flux AND F_prev ARE STATE, and every sweep writes them. Restoring u, p and u_prev
+        # alone (as this loop did until 2026-09-06) let `p_flux += phi_tot` run once per SWEEP
+        # while `p += phi_tot` ran once per STEP after the restore, so under incremental and
+        # rotational the projection pressure the Rhie-Chow term reads drifted away from the
+        # pressure the predictor felt by one first-sweep increment per step, without bound:
+        # measured |p - p_flux| = 7.5 after 10 steps on the Re_tau=180 channel (pressure range
+        # 19), against 6.6e-03 from the rotational term itself with picard_iters=1. chorin was
+        # immune -- it REPLACES p_flux every sweep -- which is the whole of the scheme
+        # dependence the checkerboard A/B measured. reference/channel_checkerboard_remediation.md.
+        pflux0 = {b: a.copy() for b, a in self.p_flux.items()}
+        Fprev0 = (None if self.F_prev is None
+                  else {b: [f.copy() for f in fl] for b, fl in self.F_prev.items()})
         convect, out = None, None
         for _k in range(self.picard_iters):
             if _k > 0:
@@ -230,6 +311,9 @@ class MultiBlockPISO:
                 # latest u* -- that is what removes the O(dt) lag in the convecting velocity
                 self.u, self.v, self.w = dict(u0[0]), dict(u0[1]), dict(u0[2])
                 self.p, self.u_prev = dict(p0), prev0
+                self.p_flux = {b: a.copy() for b, a in pflux0.items()}
+                self.F_prev = (None if Fprev0 is None
+                               else {b: [f.copy() for f in fl] for b, fl in Fprev0.items()})
             out = self._step_once(convect)
             new_convect = (dict(self.u), dict(self.v), dict(self.w))
             # Stop once the convecting velocity stops moving by an amount the pressure solve

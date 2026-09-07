@@ -1,0 +1,41 @@
+--- n=1 ---
+  [PASS] 4 blocks / 1 ranks: 5,440 halo cells, max error 5.69e-16, 0 messages, 0.0 KiB
+  [PASS] 12 blocks / 1 ranks: 9,216 halo cells, max error 5.69e-16, 0 messages, 0.0 KiB
+  [PASS] distributed metrics == serial metrics: max |dJ| 0.00e+00, max |d(basis)| 0.00e+00
+  [PASS] gathered field == serial field: max diff 0.00e+00, 0 blocks missing
+  [PASS] width-1 halo sliced from a width-2 exchange == a direct width-1 exchange: max diff 0.00e+00
+  [PASS] padded coordinates vs closed form (independent of the field path): max error 8.88e-16
+  [SKIP] mangle not applicable at 1 rank: no message is sent, so nothing the exchange does can be corrupted
+  6/6 checks passed
+--- n=2 ---
+  [PASS] 4 blocks / 2 ranks: 5,440 halo cells, max error 5.69e-16, 8 messages, 36.0 KiB
+  [PASS] 12 blocks / 2 ranks: 9,216 halo cells, max error 5.69e-16, 8 messages, 18.0 KiB
+  [PASS] distributed metrics == serial metrics: max |dJ| 0.00e+00, max |d(basis)| 0.00e+00
+  [PASS] gathered field == serial field: max diff 0.00e+00, 0 blocks missing
+  [PASS] width-1 halo sliced from a width-2 exchange == a direct width-1 exchange: max diff 0.00e+00
+  [PASS] padded coordinates vs closed form (independent of the field path): max error 8.88e-16
+  [PASS] reversed-layer mangle DETECTED: max error 7.50e-01
+--- n=4 ---
+  [PASS] 4 blocks / 4 ranks: 5,440 halo cells, max error 5.69e-16, 16 messages, 72.0 KiB
+  [PASS] 12 blocks / 4 ranks: 9,216 halo cells, max error 5.69e-16, 16 messages, 36.0 KiB
+  [PASS] distributed metrics == serial metrics: max |dJ| 0.00e+00, max |d(basis)| 0.00e+00
+  [PASS] gathered field == serial field: max diff 0.00e+00, 0 blocks missing
+  [PASS] width-1 halo sliced from a width-2 exchange == a direct width-1 exchange: max diff 0.00e+00
+  [PASS] padded coordinates vs closed form (independent of the field path): max error 8.88e-16
+  [PASS] reversed-layer mangle DETECTED: max error 7.50e-01
+--- n=8 ---
+  [PASS] 4 blocks / 8 ranks: 5,440 halo cells, max error 5.69e-16, 16 messages, 72.0 KiB
+  [PASS] 12 blocks / 8 ranks: 9,216 halo cells, max error 5.69e-16, 32 messages, 72.0 KiB
+  [PASS] distributed metrics == serial metrics: max |dJ| 0.00e+00, max |d(basis)| 0.00e+00
+  [PASS] gathered field == serial field: max diff 0.00e+00, 0 blocks missing
+  [PASS] width-1 halo sliced from a width-2 exchange == a direct width-1 exchange: max diff 0.00e+00
+  [PASS] padded coordinates vs closed form (independent of the field path): max error 8.88e-16
+  [PASS] reversed-layer mangle DETECTED: max error 7.50e-01
+--- n=16 ---
+  [PASS] 4 blocks / 16 ranks: 5,440 halo cells, max error 5.69e-16, 16 messages, 72.0 KiB
+  [PASS] 12 blocks / 16 ranks: 9,216 halo cells, max error 5.69e-16, 48 messages, 108.0 KiB
+  [PASS] distributed metrics == serial metrics: max |dJ| 0.00e+00, max |d(basis)| 0.00e+00
+  [PASS] gathered field == serial field: max diff 0.00e+00, 0 blocks missing
+  [PASS] width-1 halo sliced from a width-2 exchange == a direct width-1 exchange: max diff 0.00e+00
+  [PASS] padded coordinates vs closed form (independent of the field path): max error 8.88e-16
+  [PASS] reversed-layer mangle DETECTED: max error 7.50e-01

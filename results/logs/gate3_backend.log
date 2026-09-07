@@ -1,0 +1,3 @@
+  scipy 4.347 s/step   petsc 2.268 s/step   fell_back=False
+  max |scipy - petsc| after 5 steps = 2.295e+02  (1.18e+03% of |u|max 19.373)
+  solver tolerance is 1e-6; agreement OUTSIDE it

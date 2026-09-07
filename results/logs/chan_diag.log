@@ -1,0 +1,32 @@
+  restarted at t=4.000 step 4000
+     step      t    u_max   v_max  nu_t/nu  nu_t max       div  solves   s/step  s/solve
+     4050  4.050   21.967   2.800    0.211     1.373   3.3e-14       4    0.662   0.1399
+     4100  4.100   22.004   2.612    0.212     1.382   3.2e-14       4    0.641   0.1317
+     4150  4.150   21.929   3.150    0.213     1.220   3.8e-14       4    0.664   0.1383
+     4200  4.200   21.656   3.487    0.213     1.207   3.3e-14       4    0.672   0.1406
+     4250  4.250   21.273   3.148    0.214     1.326   3.3e-14       4    0.627   0.1301
+     4300  4.300   21.278   3.340    0.216     1.294   3.4e-14       4    0.665   0.1402
+     4350  4.350   21.737   3.792    0.219     1.308   4.6e-14       4    0.642   0.1312
+     4400  4.400   21.992   3.811    0.222     1.324   3.5e-14       4    0.685   0.1421
+     4450  4.450   21.948   3.687    0.226     1.334   3.4e-14       4    0.665   0.1401
+     4500  4.500   21.974   3.767    0.231     1.387   3.6e-14       4    0.659   0.1389
+     4550  4.550   21.846   4.296    0.236     1.385   7.0e-14       4    0.630   0.1304
+     4600  4.600   21.836   5.149    0.242     1.399   3.8e-14       4    0.646   0.1371
+     4650  4.650   21.500   4.630    0.246     1.413   3.8e-14       4    0.657   0.1379
+     4700  4.700   21.842   3.790    0.247     1.641   3.8e-14       4    0.669   0.1392
+     4750  4.750   22.034   4.007    0.245     1.954   3.5e-14       4    0.660   0.1397
+     4800  4.800   22.031   3.489    0.243     1.971   3.7e-14       4    0.658   0.1397
+     4850  4.850   21.925   4.061    0.241     1.749   4.1e-14       4    0.645   0.1377
+     4900  4.900   21.724   4.595    0.238     1.587   3.4e-14       4    0.646   0.1380
+     4950  4.950   24.810   4.654    0.236     1.528   3.6e-14       4    0.643   0.1373
+     5000  5.000  369.961 158.508    0.299    69.424   7.0e-13       4    0.842   0.1360
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-danielchan-Dropbox-PICT-Python/00f19cd6-6cc4-4e07-9311-9e5a4525fe4c/scratchpad/chan_diag.py", line 27, in <module>
+    m.step()
+  File "/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py", line 174, in step
+    out = self._step_impl()
+  File "/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py", line 193, in _step_impl
+    out = self._step_once(convect)
+  File "/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py", line 351, in _step_once
+    coef_g = Jg / rowsum
+RuntimeWarning: divide by zero encountered in divide

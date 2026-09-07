@@ -1,0 +1,8 @@
+--- n=4 ---
+  [PASS] matrix serial == distributed: entries over 20 random rows differ by 0.00e+00 (exact), ||A||_F relative difference 6.61e-14 on ||A||_F = 1.2295e+06, n = 160,767
+  [PASS] 4 ranks, rtol 1e-09, 10 steps vs serial PETSc: max relative difference 8.041e-14  (criterion < 1e-12)
+  [PASS] pressure iterations [436, 433, 426, 411, 436, 452, 455, 458, 445, 456]
+--- n=16 ---
+  [PASS] matrix serial == distributed: entries over 20 random rows differ by 0.00e+00 (exact), ||A||_F relative difference 2.46e-15 on ||A||_F = 1.2295e+06, n = 160,767
+  [PASS] 16 ranks, rtol 1e-09, 10 steps vs serial PETSc: max relative difference 6.469e-14  (criterion < 1e-12)
+  [PASS] pressure iterations [443, 442, 440, 427, 444, 464, 463, 464, 469, 469]

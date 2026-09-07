@@ -1,0 +1,7 @@
+==============================================================================
+  Gate 0 — reference trajectories, captured from unmodified serial code
+==============================================================================
+  cylinder_re100     160,768 cells   16 blocks    5.067 s/step   div 8.27e-10
+                   fingerprint e7a59005e2228ee3...  -> reference/gate0/cylinder_re100.npz
+==============================================================================
+  wrote reference/gate0/manifest.json

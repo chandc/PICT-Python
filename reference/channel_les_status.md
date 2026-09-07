@@ -1,5 +1,12 @@
 # The Re_tau = 180 channel LES: result withdrawn, rig sound
 
+> **Superseded, 2026-09-07.** The "MECHANISM FOUND" section below identified the pressure
+> scheme by an A/B that was measuring a bug: the Picard loop double-accumulated `p_flux` under
+> incremental/rotational (chorin was immune). With the fix, rotational tracks chorin --
+> 5.1e-6 of the seed at t = 10 against 5.348x for the buggy run, on live turbulence.
+> See `channel_checkerboard_remediation.md` sections 2 and 5. Items (1)-(4) below are retained
+> as the record of how the wrong conclusion was reached.
+
 **Bottom line: there is no validated wall-bounded LES in this repo.** The Re_tau=180 channel run
 completed, produced plausible statistics, and those statistics are a numerical artefact. They
 are withdrawn. What the exercise DID establish is the rig, and that stands.

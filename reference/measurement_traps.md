@@ -362,3 +362,22 @@ units and reproduces growth to 5.35x.
 
 **Before running a probe, compute what the effect size will be over the window sampled.** If it
 is comparable to the transient, the probe cannot answer the question however clean its output.
+
+## 17. Two sessions, one Dropbox, same output paths
+
+R2/R3 ran twice in parallel -- on the Mac and in a second session's sandbox -- both writing
+`results/logs/rotational_fixed.log` under the same tag into the same Dropbox-synced tree. Mid-run,
+Dropbox replaced the Mac's log files with the sandbox's copies: the Mac processes kept appending
+to the orphaned inodes (`lsof` showed fd 1 on a 7 KB inode while the directory entry pointed at a
+25 KB file with a different `s/step`), and their remaining output was silently lost. The
+overwritten logs even carried a plausible-looking `DONE` line from the OTHER run's wrapper -- a
+finished-looking log for a run that had not finished.
+
+By luck the two runs were the same deterministic code on the same seed, so the trajectories were
+bitwise-identical and nothing scientific was lost; with different arms the collision would have
+spliced two experiments into one file with no visible seam.
+
+**A tag names an experiment, not a machine.** When more than one machine (or session) can run the
+same experiment into a synced tree, the tag must include the machine, or the results directory
+must not sync. And a log's `DONE` line proves nothing about the process you launched -- only the
+process table and the artefacts it wrote (checkpoint mtimes at the expected cadence) do.

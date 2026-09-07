@@ -101,3 +101,73 @@ tested. Gate 6 did not deliver the performance the plan required.
 Whether to stop is a judgement about goals rather than a technical one. What is technically clear
 is that continuing to Gate 7 on the current decomposition would buy an adjoint that runs at 2.6x,
 and that the three items above are cheaper than Gate 7 and address the actual limits.
+
+---
+
+# SUPERSEDED: the re-run never tested distributed momentum, and with it Gate 6 clears the abort
+
+## What was wrong with the earlier measurement
+
+`gate6_scaling.py` line 36 passes `distribute_momentum=False` explicitly, overriding the default
+that had just been changed to `True`. The Spark copy is byte-identical to local (same md5), so
+**`g6_redo.log` measured the REPLICATED configuration throughout** -- the verification that was
+asked for never happened.
+
+Worse, the driver prints a `DM` label taken from an environment variable while the BEHAVIOUR
+stayed hardcoded, so a run labelled `DM1` would not have been one. `gate6_scaling_dm.py` wires
+both to `PICT_DIST_MOM`; the original driver is untouched.
+
+Two further method notes, both of which would have corrupted the comparison:
+
+* **The container is ~5% slower than bare metal** (1-rank: 5.13 s/step in-container against
+  `g6_redo`'s 5.13... measured 5.391 on an earlier partial run). `g6_redo` and this sweep are
+  different environments and must not be mixed, which is why BOTH arms were re-run rather than
+  reusing the old DM0 column.
+* **16 ranks SEGFAULTED inside the container** (signal 11) on the container's default 64MB SHMEM
+  limit, and the sweep script had `2>/dev/null`, so the failures appeared as silently missing
+  rows rather than errors. `--ipc=host` fixes it; the follow-up script does not suppress stderr.
+
+## The measurement
+
+Cylinder nz=4, in-container, median of 3 reps, base = 1 rank replicated. Same `PICT_MOM_TOL`
+(default) in both arms -- this is not the rigged comparison that tied tolerance to decomposition.
+
+| ranks | DM0 s/step | x | DM1 s/step | x | mom DM0 | mom DM1 | imbal |
+|---|---|---|---|---|---|---|---|
+| 1 | 5.133 | 1.00 | 5.141 | 1.00 | 0.297 | 0.298 | 0.0% |
+| 2 | 3.553 | 1.44 | 4.234 | 1.21 | 0.318 | **0.974** | 0.7% |
+| 4 | 2.226 | 2.31 | 2.347 | 2.19 | 0.358 | 0.415 | 0.8% |
+| **8** | 1.910 | 2.69 | **1.668** | **3.08** | 0.441 | **0.233** | 17.2% |
+| 12 | 2.657 | 1.93 | 2.096 | 2.45 | 0.742 | 0.254 | 47.5% |
+| 16 | 2.919 | 1.76 | 2.061 | 2.49 | 0.524 | 0.207 | 55.2% |
+
+Per-rep spreads do not overlap at any rank count (n8 totals: DM0 1.783/1.910/2.019 against DM1
+1.668/1.668/1.759), so the pattern is not noise.
+
+## Verdict
+
+The plan's criteria are **success at >= 4x on 8 ranks, abort under 3x**. The peak is **3.08x at 8
+ranks with the momentum solve distributed**. That **lifts the abort** and does **not** meet
+success: Gate 6 moves from "stop" to "continue, below target". Whether to continue is a judgement
+about goals, not a technical conclusion.
+
+## Corrections to the text above this section
+
+* "Distributing the momentum solve is NOT on this list: measured, it makes things worse" is
+  **WRONG at 8 ranks and above** and is retracted. It came from the rigged comparison. Measured
+  fairly, distribution halves the momentum bucket at 8 ranks (0.441 -> 0.233 s) and cuts it by
+  60-72% at 12 and 16.
+* It is **right below 8 ranks**, and by more than was thought: at 2 ranks distribution makes the
+  momentum bucket THREE TIMES worse (0.318 -> 0.974 s, no overlap across reps) and costs 19%
+  overall. The crossover is between 4 and 8 ranks.
+
+**So `distribute_momentum=True` as an UNCONDITIONAL default is wrong.** It should be conditional
+on rank count -- on this problem, distribute at >= 8 ranks and replicate below. The 2-rank spike
+is not understood and is worth its own look before the threshold is hardcoded.
+
+## What still caps the result
+
+Unchanged, and the three items above still address it. The pressure solve scales 5.85x (3.591 ->
+0.614 s at 8 ranks); assembly scales ~1.9x, so 68% of the 8-rank step is non-solve work. Beyond
+8 ranks the binding constraint is the BLOCK TOPOLOGY: 16 blocks of unequal size give 47.5% and
+55.2% imbalance at 12 and 16 ranks, which is why both are slower than 8.

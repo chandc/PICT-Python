@@ -1,0 +1,6 @@
+--- distribute_momentum=1 ---
+   1 ranks:  3.710 s/step | pressure  2.343s (  1200 its) | momentum  0.256s (  26 its) | other  1.111s | blocks/rank 16
+   8 ranks:  1.708 s/step | pressure  0.753s (  1302 its) | momentum  0.328s (  32 its) | other  0.627s | blocks/rank 2
+--- distribute_momentum=0 ---
+   1 ranks:  3.660 s/step | pressure  2.334s (  1200 its) | momentum  0.253s (  26 its) | other  1.073s | blocks/rank 16
+   8 ranks:  1.963 s/step | pressure  0.772s (  1302 its) | momentum  0.527s (  26 its) | other  0.664s | blocks/rank 2

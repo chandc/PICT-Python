@@ -878,6 +878,14 @@ class Domain:
         # value for the face, breaks that.
         nu_of = (lambda b: nu[b]) if isinstance(nu, (dict, list, tuple)) else (lambda b: nu)
 
+        # THE GEOMETRIC FACTOR g IS STATIC and was rebuilt on every call -- 160 calls per step
+        # at each of the two Jg_of sites, 0.074 s/step between them in the 8-rank profile, for
+        # three squares and two adds over a quantity fixed by the mesh.
+        #
+        # CACHE g ALONE, NEVER Js*g OR nu*Js*g. The expression evaluates left to right, and
+        # floating-point multiplication is not associative: caching the product and
+        # re-associating is mathematically identical and broke bitwise agreement with the Gate 0
+        # reference on all 640 arrays. `jg_field` already carries this scar.
         def Jg_of(b, axis):
             m = metrics_list[b]
             key = ("xi", "eta", "zeta")[axis]
@@ -986,7 +994,7 @@ class Domain:
         # the stencil central at every width-1 cell; the extra layer is then trimmed away.
         pp2 = None
         if rhie_chow:
-            pp2, lo2, _h2 = self.pad_field(b, ps, 2)
+            pp2, lo2, hi2 = self.pad_field(b, ps, 2)
             _off = tuple(lo2[a] - plo[a] for a in range(3))
         KEYS = (("xi_x", "xi_y", "xi_z"), ("eta_x", "eta_y", "eta_z"),
                 ("zeta_x", "zeta_y", "zeta_z"))
@@ -1032,19 +1040,49 @@ class Domain:
             shape = list(blk.shape); shape[axis] += 1
             f = np.zeros(shape)
             # the wide counterpart of the compact face difference, on the SAME padded field
-            dpw = dpw_ok = None
+            dpw = None
             if rhie_chow:
                 g2 = np.gradient(pp2, blk.h[axis], axis=axis, edge_order=2)
+                # A BC-CONSISTENT GHOST AT A PHYSICAL BOUNDARY, which is what makes the wide
+                # half well defined everywhere. `pad_field` supplies no ghost at a wall, inflow
+                # or outflow (`_ghost_field` returns None), so np.gradient falls back to a
+                # one-sided edge_order=2 stencil there. That stencil extrapolates the INTERIOR
+                # field and knows nothing about the pressure BC, so `compact - wide` stops being
+                # the O(h^3) difference of two centred approximations and becomes O(1): tried,
+                # and it grew from 5e+01 to 4e+02 over 30 steps at an inflow and diverged.
+                # Dropping the correction there instead left 4,096 of 533,568 faces with
+                # exactly zero damping, all of them in the one cell layer beside a boundary.
+                #
+                # Neither upstream code has the choice to make, because neither ever forms the
+                # wide gradient from interior data alone. PICT's getPressureAtWithBounds returns
+                # the boundary cell's OWN pressure at a prescribed-velocity bound -- "enforce 0
+                # pressure gradient to avoid changing the prescribed value" -- and its
+                # getPressureGradient then stays a two-point central difference at every cell.
+                # OpenFOAM's fvc::grad(p) is a Gauss sum that reads the fixedFluxPressure patch
+                # value, which constrainPressure has set from the flux. See
+                # reference/rhie_chow_boundary.md.
+                #
+                # With p_ghost = p_boundary the central difference collapses to HALF the
+                # one-sided difference. That is the whole reason this is safe where the
+                # edge_order=2 stencil was not: it is bounded by construction, giving
+                # `compact - wide = compact/2` -- the same sign as the compact term and between
+                # half and all of its magnitude. It cannot run away.
+                #
+                # mb_adjoint.cell_gradient_matrix ALREADY does exactly this: it is P @ F with P
+                # weighting each adjacent face 0.5, and a boundary cell has only one face. The
+                # two implementations disagreed by 5.7e+01 relative on a channel while agreeing
+                # to 2e-16 on a periodic box, confined to the wall-adjacent layers;
+                # verify_rc_divergence measures it and is the test that this restores.
+                for side, absent in ((0, lo2[axis] == 0), (1, hi2[axis] == 0)):
+                    if not absent:
+                        continue                  # a real ghost is present; g2 is already central
+                    sb = [slice(None)] * 3; sb[axis] = -1 if side else 0
+                    sn = [slice(None)] * 3; sn[axis] = -2 if side else 1
+                    d = pp2[tuple(sb)] - pp2[tuple(sn)] if side else \
+                        pp2[tuple(sn)] - pp2[tuple(sb)]
+                    g2[tuple(sb)] = 0.5 * d / blk.h[axis]
                 sl2 = tuple(slice(_off[a], _off[a] + pp.shape[a]) for a in range(3))
                 dpw = g2[sl2]
-                # Where np.gradient fell back to a ONE-SIDED stencil, `compact - wide` is no
-                # longer the O(h^3) difference of two centred second-order approximations --
-                # it is an O(1) spurious term. Harmless at a wall (dp/dn ~ 0) and fatal at an
-                # inflow, where it grew from 5e+01 to 4e+02 over 30 steps and then diverged.
-                # Mark those cells and drop the correction on any face that touches one.
-                ok2 = np.ones(pp2.shape[axis], bool); ok2[0] = ok2[-1] = False
-                shp = [1, 1, 1]; shp[axis] = pp.shape[axis]
-                dpw_ok = ok2[_off[axis]:_off[axis] + pp.shape[axis]].reshape(shp)
             core = [slice(lo[a], lo[a] + blk.shape[a]) for a in range(3)]
             ccore = [slice(glo[a], glo[a] + blk.shape[a]) for a in range(3)] \
                 if include_cross else None
@@ -1062,13 +1100,8 @@ class Domain:
                     cf = 0.5 * (Jg[tuple(s1)] + Jg[tuple(s2)])
                     val = val + cf * (pp[tuple(s2)] - pp[tuple(s1)]) / blk.h[axis]
                     if rhie_chow:
-                        good = (np.take(dpw_ok, a_lo, axis=axis).all()
-                                and np.take(dpw_ok, a_hi, axis=axis).all())
-                        if good:
-                            val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
-                                               + Jg[tuple(s2)] * dpw[tuple(s2)])
-                        else:
-                            val = 0.0 * val   # no valid wide stencil -> no correction here
+                        val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+                                           + Jg[tuple(s2)] * dpw[tuple(s2)])
                 if include_cross:
                     c1 = list(ccore); c1[axis] = glo[axis] + k - 1
                     c2 = list(ccore); c2[axis] = glo[axis] + k
@@ -1109,6 +1142,8 @@ class Domain:
         rows, cols, vals = [], [], []
         diag = [np.zeros(b.shape) for b in self.blocks]
 
+        # g is static -- see the note at the momentum Jg_of. Same cache, same reason, and the
+        # same rule: g alone, never c*Js*g, or the association changes and bitwise identity goes.
         def Jg_of(b, axis):
             m = metrics_list[b]
             key = ("xi", "eta", "zeta")[axis]

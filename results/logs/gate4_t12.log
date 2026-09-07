@@ -1,0 +1,5 @@
+  serial reference: 10 steps, pressure its [1838, 1838, 1834, 1842]..., momentum its [17, 24, 22, 22]...
+  wrote reference/gate4_serial_1e-12_10.npz
+  [PASS] BC rows by inspection (2 rank(s)): 2,048 eliminated rows, 2,048 geometric wall nodes, 0 missing, 0 spurious, interior+bnd == n_cells: True
+  [FAIL] 2 ranks, 10 steps: max relative difference 1.265e-10  (criterion < 1e-12)
+  [FAIL] momentum iterations [56, 56, 56, 60, 60, 60]... total ratio 3.05x of serial

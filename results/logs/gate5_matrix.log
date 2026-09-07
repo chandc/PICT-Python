@@ -1,0 +1,4 @@
+  [PASS] read at M=1: N=1:0e+00  N=2:0e+00  N=4:0e+00  N=8:0e+00  N=16:0e+00   worst 0.000e+00 (must be exactly 0)
+  [PASS] read at M=2: N=1:0e+00  N=2:0e+00  N=4:0e+00  N=8:0e+00  N=16:0e+00   worst 0.000e+00 (must be exactly 0)
+  [PASS] read at M=4: N=1:0e+00  N=2:0e+00  N=4:0e+00  N=8:0e+00  N=16:0e+00   worst 0.000e+00 (must be exactly 0)
+  [PASS] read at M=8: N=1:0e+00  N=2:0e+00  N=4:0e+00  N=8:0e+00  N=16:0e+00   worst 0.000e+00 (must be exactly 0)

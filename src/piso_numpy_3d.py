@@ -498,11 +498,17 @@ class PISOSolver:
             return self._step_once()
         u0, v0, w0, p0 = self.u.copy(), self.v.copy(), self.w.copy(), self.p.copy()
         prev0 = self.u_prev
+        # p_flux and F_prev are state too -- see MultiBlockPISO._step_impl for the measured
+        # consequence of restoring p without them (p_flux double-accumulated per step).
+        pflux0 = self.p_flux.copy()
+        Fprev0 = None if self.F_prev is None else [f.copy() for f in self.F_prev]
         convect, out = None, None
         for _k in range(self.picard_iters):
             if _k > 0:
                 self.u, self.v, self.w = u0.copy(), v0.copy(), w0.copy()
                 self.p, self.u_prev = p0.copy(), prev0
+                self.p_flux = pflux0.copy()
+                self.F_prev = None if Fprev0 is None else [f.copy() for f in Fprev0]
             out = self._step_once(convect)
             convect = (self.u.copy(), self.v.copy(), self.w.copy())
         return out

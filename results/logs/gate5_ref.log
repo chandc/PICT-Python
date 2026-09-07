@@ -1,0 +1,4 @@
+  serial reference: C_D 1.2762004079591367, div 9.870e-01, KE 1.4321349385e+05
+  [PASS] grid_fingerprint identical on all 1 rank(s): e7a59005e2228ee3...
+  [PASS] exact restart at 1 ranks: 20 continuous vs 10+restart+10 differ by 0.000e+00
+  2/2 checks passed at 1 rank(s)

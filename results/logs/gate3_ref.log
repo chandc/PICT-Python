@@ -1,0 +1,6 @@
+==============================================================================
+  Gate 3 — serial PETSc reference captured
+==============================================================================
+  64 arrays, 10 steps, pressure iterations [303, 302, 302, 327, 326, 300, 311, 317, 317, 313]
+  fell_back = False
+  wrote reference/gate3_serial_petsc.npz

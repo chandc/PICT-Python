@@ -1,0 +1,3 @@
+  [PASS] BC rows by inspection (1 rank(s)): 2,048 eliminated rows, 2,048 geometric wall nodes, 0 missing, 0 spurious, interior+bnd == n_cells: True
+  serial reference: 10 steps, pressure its [1573, 1573, 1566, 1547]..., momentum its [11, 16, 16, 16]...
+  wrote reference/gate4_serial_1e-09_10.npz

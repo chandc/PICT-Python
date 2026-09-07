@@ -1,0 +1,6 @@
+--- PC=bjacobi ---
+  [FAIL] 2 ranks, 10 steps: max relative difference 1.000e-12  (criterion < 1e-12)
+  [PASS] momentum iterations [24, 31, 30, 29, 28, 28]... total ratio 1.14x of serial
+--- PC=redundant ---
+  [FAIL] 2 ranks, 10 steps: max relative difference 1.815e-12  (criterion < 1e-12)
+  [PASS] momentum iterations [6, 6, 6, 6, 6, 6]... total ratio 0.24x of serial

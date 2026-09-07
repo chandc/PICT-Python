@@ -1,0 +1,28 @@
+  channel Re_tau = 180, 24x80x24 in 2 blocks = 46,080 cells, model = smagorinsky + van Driest
+  dx+ 23.6   dz+ 8.0   dy+ wall 1.00 max 8.48   8 points under y+ = 10
+  dt = 0.001:  CFL_x 0.15, CFL_y 0.54
+      step       t    u_tau    U+_c    u_b+  nu_t/nu       div   s/step
+       500    0.50      nan     nan     nan    0.180   3.0e-14    0.667
+      1000    1.00      nan     nan     nan    0.183   3.2e-14    0.710
+      1500    1.50      nan     nan     nan    0.181   3.2e-14    0.809
+      2000    2.00      nan     nan     nan    0.175   3.0e-14    0.877
+      2500    2.50      nan     nan     nan    0.171   3.1e-14    0.900
+      3000    3.00      nan     nan     nan    0.165   3.3e-14    0.897
+      3500    3.50      nan     nan     nan    0.174   3.2e-14    0.887
+      4000    4.00      nan     nan     nan    0.209   3.4e-14    0.876
+      4500    4.50      nan     nan     nan    0.231   3.6e-14    0.859
+      5000    5.00      nan     nan     nan    0.299   7.0e-13    0.839
+/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py:341: RuntimeWarning: divide by zero encountered in divide
+  x = np.zeros(A.shape[0]); x[self.interior] = xi; x[self.bnd] = phi_b
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in subtract
+  if include_cross else None
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in add
+  if include_cross else None
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:956: RuntimeWarning: invalid value encountered in multiply
+  if a_lo < 0 or a_hi >= Jg.shape[axis]:
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:720: RuntimeWarning: invalid value encountered in add
+  if a_lo < 0 or a_hi >= cp.shape[axis]:
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:720: RuntimeWarning: invalid value encountered in subtract
+  if a_lo < 0 or a_hi >= cp.shape[axis]:
+/Users/danielchan/Dropbox/PICT-Python/.venv/lib/python3.9/site-packages/numpy/_core/_methods.py:127: RuntimeWarning: invalid value encountered in reduce
+  ret = umr_sum(arr, axis, dtype, out, keepdims, where=where)

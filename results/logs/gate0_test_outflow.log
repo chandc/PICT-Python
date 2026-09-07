@@ -1,0 +1,30 @@
+1. Fully developed Poiseuille through an inflow/outflow channel
+   (the exact solution is the parabola everywhere, so a good outlet must not distort it)
+             BC      grid     L2/Umax  outlet vs exact  flux imbalance
+     convective     17x13   2.291e-08        4.880e-08       +0.00e+00
+     convective     33x25   2.711e-07        6.363e-07       -2.22e-16
+     convective     65x49   3.335e-08        1.080e-07       +1.11e-16
+  [PASS] convective: reproduces the exact parabola: worst L2/Umax 2.71e-07 over three grids
+           dong     17x13   1.432e-08        2.988e-08       +6.91e-14
+           dong     33x25   4.016e-08        9.859e-08       +4.46e-12
+           dong     65x49   1.217e-08        2.185e-08       -3.45e-10
+  [PASS] dong: reproduces the exact parabola: worst L2/Umax 4.02e-08 over three grids
+
+2. Mass conservation (inflow flux must equal outflow flux)
+     convective  in 0.665509  out 0.665509  relative imbalance 3.34e-16
+  [PASS] convective: conserves mass: relative imbalance 3.34e-16
+           dong  in 0.665509  out 0.665509  relative imbalance 6.70e-12
+  [PASS] dong: conserves mass: relative imbalance 6.70e-12
+
+3. BACKFLOW robustness — a vortex driven out through the outlet at Re=200
+   (this is the regime convective outflow is known to fail in; Dong's -1/2|u|^2*Theta
+    term exists precisely to stop energy entering where n.u < 0)
+             BC  steps  max|u| end  E_end/E_0  backflow frac     status
+     convective   1200   1.000e+00     0.6962          0.333     stable
+           dong   1200   1.001e+00     0.6964          0.333     stable
+  [PASS] dong survives backflow: max|u| 1.001e+00, E_end/E_0 0.6964
+  [PASS] dong does not gain energy through the outlet: E_end/E_0 = 0.6964 (energy-stable BC must not pump energy in)
+
+============================================================================
+  6/6 checks passed
+============================================================================

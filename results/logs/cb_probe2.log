@@ -1,0 +1,16 @@
+  [oneblock ] blocks=1 rhie_chow=True force=1.0
+  [oneblock ] seeded 2dx energy 5.7218e-01 (0.56% of fluctuation)
+  [noforce  ] blocks=2 rhie_chow=True force=0.0
+  [noforce  ] seeded 2dx energy 5.7218e-01 (0.56% of fluctuation)
+  [base     ] blocks=2 rhie_chow=True force=1.0
+  [base     ] seeded 2dx energy 5.7218e-01 (0.56% of fluctuation)
+  [norc     ] blocks=2 rhie_chow=False force=1.0
+  [norc     ] seeded 2dx energy 5.7218e-01 (0.56% of fluctuation)
+  [norc     ] step   200  2dx energy 6.7523e-01 (  0.43%)  amplification    1.180x
+  [oneblock ] step   200  2dx energy 4.2520e-01 (  0.27%)  amplification    0.743x
+  [base     ] step   200  2dx energy 7.5268e-01 (  0.48%)  amplification    1.315x
+  [noforce  ] step   200  2dx energy 7.5287e-01 (  0.48%)  amplification    1.316x
+  [oneblock ] step   400  2dx energy 2.7594e-01 (  0.16%)  amplification    0.482x
+  [norc     ] step   400  2dx energy 4.1060e-01 (  0.24%)  amplification    0.718x
+  [base     ] step   400  2dx energy 5.1979e-01 (  0.30%)  amplification    0.908x
+  [noforce  ] step   400  2dx energy 5.1961e-01 (  0.30%)  amplification    0.908x

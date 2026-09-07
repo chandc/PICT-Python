@@ -1,0 +1,4 @@
+   1 ranks:  3.735 s/step | pressure  2.359s (  1200 its) | momentum  0.260s (  26 its) | other  1.116s | blocks/rank 16
+   2 ranks:  2.982 s/step | pressure  1.537s (  1323 its) | momentum  0.807s (  70 its) | other  0.639s | blocks/rank 8
+   4 ranks:  1.724 s/step | pressure  0.836s (  1289 its) | momentum  0.411s (  72 its) | other  0.476s | blocks/rank 4
+   8 ranks:  1.235 s/step | pressure  0.535s (  1302 its) | momentum  0.242s (  72 its) | other  0.457s | blocks/rank 2

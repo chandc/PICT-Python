@@ -1,0 +1,18 @@
+  [uniform_y     ] uniform-y: interpolated from the stretched state; p_flux/F_prev not carried (mesh-specific)
+  [uniform_y     ] blocks=2 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [uniform_y     ] start: 2dx share 0.083%, energy 9.0976e-02
+  [rotational    ] blocks=2 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [rotational    ] start: 2dx share 0.088%, energy 8.9698e-02
+  [chorin_uniform] uniform-y: interpolated from the stretched state; p_flux/F_prev not carried (mesh-specific)
+  [chorin_uniform] blocks=2 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [chorin_uniform] start: 2dx share 0.083%, energy 9.0976e-02
+  [chorin        ] blocks=2 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [chorin        ] start: 2dx share 0.088%, energy 8.9698e-02
+  [chorin_uniform] step   1000 t=  0.50  2dx share   0.001%  energy 5.2788e-03  amp    0.058x  total 3.853e+02  0.582 s/step
+  [uniform_y     ] step   1000 t=  0.50  2dx share   0.003%  energy 1.4064e-02  amp    0.155x  total 4.047e+02  0.593 s/step
+  [chorin        ] step   1000 t=  4.50  2dx share   0.002%  energy 5.7541e-03  amp    0.064x  total 3.660e+02  0.781 s/step
+  [rotational    ] step   1000 t=  4.50  2dx share   0.012%  energy 4.5816e-02  amp    0.511x  total 3.864e+02  0.833 s/step
+  [chorin_uniform] step   2000 t=  1.00  2dx share   0.000%  energy 3.2311e-04  amp    0.004x  total 9.272e+02  0.582 s/step
+  [uniform_y     ] step   2000 t=  1.00  2dx share   0.000%  energy 3.5500e-03  amp    0.039x  total 9.927e+02  0.585 s/step
+  [chorin        ] step   2000 t=  5.00  2dx share   0.000%  energy 1.8006e-04  amp    0.002x  total 1.022e+03  0.782 s/step
+  [rotational    ] step   2000 t=  5.00  2dx share   0.002%  energy 2.4480e-02  amp    0.273x  total 1.113e+03  0.823 s/step

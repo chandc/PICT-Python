@@ -1,0 +1,3 @@
+  pc=ilu     norm=UNPRECONDITIONED   its=330   reason=2   ksp_resid=1.266e+00 ||b||=1.273e+06 TRUE rel resid=9.949e-07
+  pc=ilu     norm=PRECONDITIONED     its=321   reason=2   ksp_resid=2.993e-03 ||b||=1.273e+06 TRUE rel resid=1.529e-06
+  pc=jacobi  norm=UNPRECONDITIONED   its=1128  reason=2   ksp_resid=1.271e+00 ||b||=1.273e+06 TRUE rel resid=9.985e-07

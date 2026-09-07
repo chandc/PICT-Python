@@ -1,0 +1,5 @@
+  rtol 1e-12: 64 arrays, 10 steps, iterations [290, 297, 291, 286, 283, 272, 277, 281, 276, 281]
+  wrote reference/gate3_serial_petsc_1e-12_dong.npz
+  [PASS] matrix serial == distributed: entries over 20 random rows differ by 0.00e+00 (exact), ||A||_F relative difference 5.91e-14 on ||A||_F = 1.2292e+06, n = 160,640
+  [PASS] 2 ranks, rtol 1e-12, 10 steps vs serial PETSc: max relative difference 3.266e-14  (criterion < 1e-12)
+  [PASS] pressure iterations [293, 303, 310, 310, 310, 299, 287, 300, 313, 287]

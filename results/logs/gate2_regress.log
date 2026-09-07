@@ -1,0 +1,8 @@
+  test_rhie_chow                   28/28 checks passed
+  test_energy_conservation         6/6 checks passed
+  test_phase5_piso                 10/10 checks passed
+  test_forces                      6/6 checks passed
+  test_variable_viscosity          6/6 checks passed
+  test_implicit_cross              10/10 checks passed
+  test_duct                        <no summary / check>
+  test_outflow                     6/6 checks passed
