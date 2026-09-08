@@ -1,0 +1,15 @@
+{
+    "config_version": 2,
+    "solver": {
+        "solver": "PCG",
+        "scope": "main",
+        "max_iters": 20000,
+        "convergence": "RELATIVE_INI_CORE",
+        "tolerance": 1e-06,
+        "monitor_residual": 1,
+        "preconditioner": {
+            "solver": "BLOCK_JACOBI",
+            "scope": "jacobi"
+        }
+    }
+}

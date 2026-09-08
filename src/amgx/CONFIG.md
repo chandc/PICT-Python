@@ -93,3 +93,28 @@ fallback ran the run on scipy while every library looked "hung". Fixed: one conf
 tolerance against the shared resources object (which genuinely must be a singleton), and the
 fallback now prints. The teardown wart remains: AMGX_solver_destroy throws "Mode not found"
 at interpreter exit, after all output is written.
+
+## 2026-09-08: the cylinder shootout — one config per SYSTEM, and a benchmark trap
+
+The round-cylinder R8 arms exposed that "the" AmgX config is really two. Measured on the REAL
+operators (dumped from a live run via PICT_DUMP_SOLVE, solved cold, one process per config):
+
+| system | Jacobi-PCG | aggregation AMG (SIZE_2+BJ) | scipy CG+Jacobi (CPU) |
+|---|---|---|---|
+| pressure, n=160,640, rtol 1e-6 | 0.599 s / 65 it | **0.062 s / 61 it** | 2.52 s / 888 it |
+| momentum, n=158,720, rtol 1e-9 | **0.014 s / 1 it** | 55.9 s / 20,000 it, DIVERGED | -- |
+
+Also: SIZE_4/SIZE_8 + MULTICOLOR_DILU diverge on the pressure system; classical D2 still rc 6.
+The momentum operator is dt-scaled and diagonally dominant -- Jacobi converges in ONE
+iteration and an AMG hierarchy is actively wrong for it. That divergence, not the pressure
+solve, was the whole of R8 take 1's >22 s/step. The binding now takes AMGX_CONFIG_TIGHT, a
+second template used for rtol <= 1e-8; production sets pcg_agg_1e6.json (pressure) +
+pcg_jac_1e6.json (momentum).
+
+Two caveats for the record. (1) A cold-solve shootout RANKS preconditioners but does not
+decompose a step budget: in-run solves warm-start from the previous step, so the cylinder ran
+at the same 2.71 s/step under all-Jacobi and under the split -- the floor is CPU-side
+per-block assembly (16 blocks, GPU at 14%), not the solver. The split config is kept because
+it removes the divergence failure mode, not because it bought speed. (2) The pressure system
+is mildly NON-symmetric (Dong outflow rows) and is being solved by PCG; it converges cleanly
+(61 its) but an FGMRES outer solver is the principled alternative if that ever degrades.

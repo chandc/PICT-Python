@@ -36,6 +36,8 @@ cache is therefore keyed on the sparsity pattern and invalidated if it ever chan
 """
 from time import perf_counter as _perf
 
+import os
+
 import numpy as np
 import scipy.sparse.linalg as spla
 
@@ -138,6 +140,20 @@ class SolveCache:
                      singular=False):
         A = A.tocsr()
         A.sort_indices()
+        # PICT_DUMP_SOLVE=<dir>: save each DISTINCT system (keyed by shape and
+        # tolerance) once, for offline preconditioner shootouts on the real
+        # operators. Diagnostic only; costs one isfile check per solve when set.
+        _dump = os.environ.get("PICT_DUMP_SOLVE")
+        if _dump:
+            import numpy as _np
+            _f = os.path.join(_dump, f"sys_n{A.shape[0]}_rtol{rtol:.0e}"
+                                     f"_{'sym' if symmetric else 'gen'}.npz")
+            if not os.path.isfile(_f):
+                os.makedirs(_dump, exist_ok=True)
+                _np.savez(_f, data=A.data, indices=A.indices, indptr=A.indptr,
+                          shape=A.shape, b=b,
+                          x0=(x0 if x0 is not None else _np.zeros_like(b)),
+                          rtol=rtol, symmetric=symmetric, singular=singular)
         if self.backend == "petsc":
             # THE NORMALISATION IS DECIDED INSIDE, where the measured singularity is known.
             # `singular` is a HINT the SciPy path ignores entirely, and this is the THIRD place
@@ -189,38 +205,75 @@ class SolveCache:
         globally.
         """
         from petsc4py import PETSc
+        import os as _os
         comm = PETSc.COMM_WORLD
         n = A.shape[0]
-        M = PETSc.Mat().createAIJ(size=((PETSc.DECIDE, n), (PETSc.DECIDE, n)), comm=comm)
-        M.setUp()
-        r0, r1 = M.getOwnershipRange()
-        # insert only this rank's rows, taken from the replicated CSR
-        sub = A[r0:r1]
-        M.setValuesCSR(sub.indptr, sub.indices, sub.data)
-        M.assemble()
-
         really_singular = singular and _is_singular(A)
-        ns = None
-        if really_singular:
-            ns = PETSc.NullSpace().create(constant=True, comm=comm)
-            M.setNullSpace(ns)
 
-        ksp = PETSc.KSP().create(comm=comm)
-        ksp.setOperators(M)
-        ksp.setType("cg" if symmetric else "bcgs")
-        # bjacobi is the DEFAULT parallel preconditioner and is PARTITION-DEPENDENT by
-        # construction: each rank factorises its own diagonal block, so more ranks means a
-        # weaker preconditioner and more iterations. Gate 3 aborts if that exceeds 2x, which is
-        # why the iteration count is returned rather than discarded.
-        # PC CHOICE IS THE LAST PARTITION-DEPENDENT THING LEFT. bjacobi factorises one
-        # diagonal block PER RANK, so the preconditioner -- and therefore the iteration path,
-        # and therefore which of many valid within-tolerance solutions is reached -- depends on
-        # the decomposition. `redundant` applies the FULL factorisation on every rank instead,
-        # making it partition-independent at the cost of doing that work everywhere.
-        # PICT_MPI_PC selects it, so the contribution can be measured rather than argued.
-        import os as _os
-        ksp.getPC().setType(self.petsc_pc or _os.environ.get("PICT_MPI_PC", "bjacobi"))
-        ksp.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
+        # THE DISTRIBUTED PATH REBUILT EVERYTHING ON EVERY CALL. The serial path has cached its
+        # Mat and KSP since Gate 3 (`_petsc_key` below); this one created a fresh
+        # PETSc.Mat AND a fresh PETSc.KSP each time. With 16 solves per step that is 16 matrix
+        # allocations, 16 symbolic assemblies and 16 preconditioner setups per step, and it is
+        # visible in `-log_view`: MatAssemblyEnd, MatILUFactorSym, MatLUFactorNum and
+        # PCSetUpOnBlocks all report exactly 96 calls over 6 steps.
+        #
+        # It also explains why the preconditioner comparison came out the way it did: AMG lost
+        # by 68% because its hierarchy was rebuilt 16 times a step, and jacobi won relatively
+        # because it has nothing to rebuild. Setup cost was being paid per solve rather than
+        # per pattern.
+        #
+        # THE PATTERN IS TOPOLOGY-ONLY, which is what makes the cache safe, and it was verified
+        # rather than assumed: the pressure matrix is identical under a changed coefficient
+        # field and the momentum matrix under a REVERSED flow (see
+        # `Domain._csr_from_coo_cached`'s history and gate6_profile_8rank.md). Only the VALUES
+        # move between calls.
+        #
+        # NEW_NONZERO_ALLOCATION_ERR makes a pattern change FAIL LOUDLY instead of silently
+        # mallocing its way to a correct-but-slow answer, which would hide exactly the
+        # assumption this cache rests on.
+        use_cache = _os.environ.get("PICT_MPI_CACHE", "0") == "1"
+        key = (n, int(A.nnz), bool(symmetric), bool(really_singular))
+        ent = getattr(self, "_mpi_cache", None) if use_cache else None
+        if ent is not None and ent["key"] == key:
+            M, ksp, ns = ent["M"], ent["ksp"], ent["ns"]
+            r0, r1 = M.getOwnershipRange()
+            sub = A[r0:r1]
+            M.setValuesCSR(sub.indptr, sub.indices, sub.data)
+            M.assemble()
+            ksp.setOperators(M)
+        else:
+            M = PETSc.Mat().createAIJ(size=((PETSc.DECIDE, n), (PETSc.DECIDE, n)), comm=comm)
+            M.setUp()
+            r0, r1 = M.getOwnershipRange()
+            # insert only this rank's rows, taken from the replicated CSR
+            sub = A[r0:r1]
+            M.setValuesCSR(sub.indptr, sub.indices, sub.data)
+            M.assemble()
+
+            ns = None
+            if really_singular:
+                ns = PETSc.NullSpace().create(constant=True, comm=comm)
+                M.setNullSpace(ns)
+
+            ksp = PETSc.KSP().create(comm=comm)
+            ksp.setOperators(M)
+            ksp.setType("cg" if symmetric else "bcgs")
+            # bjacobi is the DEFAULT parallel preconditioner and is PARTITION-DEPENDENT by
+            # construction: each rank factorises its own diagonal block, so more ranks means a
+            # weaker preconditioner and more iterations. Gate 3 aborts if that exceeds 2x, which
+            # is why the iteration count is returned rather than discarded.
+            # PC CHOICE IS THE LAST PARTITION-DEPENDENT THING LEFT. bjacobi factorises one
+            # diagonal block PER RANK, so the preconditioner -- and therefore the iteration
+            # path, and therefore which of many valid within-tolerance solutions is reached --
+            # depends on the decomposition. `redundant` applies the FULL factorisation on every
+            # rank instead, making it partition-independent at the cost of doing that work
+            # everywhere. PICT_MPI_PC selects it, so the contribution can be measured rather
+            # than argued.
+            ksp.getPC().setType(self.petsc_pc or _os.environ.get("PICT_MPI_PC", "bjacobi"))
+            ksp.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
+            if use_cache:
+                M.setOption(PETSc.Mat.Option.NEW_NONZERO_ALLOCATION_ERR, True)
+                self._mpi_cache = {"key": key, "M": M, "ksp": ksp, "ns": ns}
         # SAME CRITERION AS THE SERIAL PATH -- relative to ||b||, not to the initial residual.
         # This block is a second copy of the solver configuration, and the copies had drifted:
         # fixing the convergence test in `_petsc_solve` alone changed nothing distributed,

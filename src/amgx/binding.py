@@ -156,6 +156,16 @@ def _init_once(cfg_path, rtol=None):
     key = None if rtol is None else float(f"{rtol:.6e}")
     cfg = _cfg_by_rtol.get(key)
     if cfg is None:
+        # AMGX_CONFIG_TIGHT: a different template for tight-tolerance systems
+        # (the momentum solves at 1e-9). Measured on the real cylinder
+        # operators: momentum under PCG+Jacobi converges in ONE iteration
+        # (0.014 s); under the pressure-tuned aggregation AMG it never
+        # converges (20,000 iters, 56 s) -- and the reverse holds for the
+        # pressure system (AMG 0.062 s vs Jacobi 0.599 s). One template per
+        # tolerance class, not one per process.
+        tight = os.environ.get("AMGX_CONFIG_TIGHT")
+        if tight and rtol is not None and rtol <= 1e-8:
+            cfg_path = tight
         cfg_path = _config_with_tolerance(cfg_path, rtol)
         cfg = ctypes.c_void_p()
         _chk(_lib.AMGX_config_create_from_file(ctypes.byref(cfg),
