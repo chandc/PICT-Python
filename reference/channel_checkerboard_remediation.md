@@ -212,6 +212,24 @@ trajectory's spin-up transient (R5's production run tripped its guard at t = 4.7
 an independent trajectory); the 18x cost was the bug's accumulated p_flux drift poisoning the
 pressure conditioning on top of it, and it does not survive the fix in any configuration.
 
+### R7 VERDICT (2026-09-08 06:12): the Strouhal number survives the fix
+
+`sqcyl_r7_spark`, the full protocol on the rebuilt 82k-cell/ratio-1.10 grid at nz = 8
+(164,192 cells), tol 1e-6, AmgX (see src/amgx/CONFIG.md for the restored stack), post-fix
+code: settle to t = 80, sinuous kick, shedding to t = 380.
+
+    St  = 0.1488 +- 0.0001   (32 periods over t = 162-377, period 6.7216 +- 0.0036)
+    C_D = 1.427              (literature 1.4-1.5 at ~5% blockage)
+    C_L rms = 0.163
+
+Against the pre-fix headline 0.1467 +- 0.0067: inside its error bar, inside the published
+CFD band 0.145-0.150, measured on a cleaner limit cycle (period scatter 0.05% vs the old
+4.6%) and on the rebuilt grid the truncated v3 run never got to judge. The last
+blast-radius item clears: every number the p_flux bug touched has now been re-measured
+and stands. figures/R7_shedding_t380_vorticity.png is the street; the post-fix BASE flow
+far field is clean to x = 25D (figures/R7_postfix_base_Re100_vorticity.png), with the
+boundary-fix attribution pair (R8, cyl_postfix_spark vs cyl_legacybc_spark) running next.
+
 ### Next: R5 and R7
 
 R5 is the production channel from the DNS initial condition with the fix, exactly as
