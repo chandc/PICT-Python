@@ -129,10 +129,20 @@ class MultiBlockPISO:
         # iterations against ~1060. Measured s/step, pinned to X925 cores:
         #
         #   ranks   bjacobi   jacobi   change
-        #     1      5.698    8.736    +53%   <-- the price
-        #     2      4.153    5.584    +34%
-        #     4      3.336    4.195    +26%
-        #     8      2.354    2.212     -6%
+        #     1       2.190    3.733   +70.5%   <-- the price
+        #     8       0.985    1.095   +11.2%
+        #
+        # RETRACTED: an earlier version of this comment reported jacobi as 6-8% FASTER at 8
+        # ranks. That measurement ran while another user's process held a core at 100%, and
+        # `--cpu-set` confines our ranks to those cores without reserving them -- so we
+        # time-shared, and pinning removed the OS's ability to migrate away. Everything from
+        # that window ran ~2.6x slow and the sign of the 8-rank comparison flipped. Re-measured
+        # idle, 3 non-overlapping reps each: jacobi [1.092, 1.095, 1.100] against bjacobi
+        # [0.984, 0.985, 0.990]. **Jacobi is slower at every rank count.**
+        #
+        # It is still the right default, for the reason at the top of this block and not for
+        # speed: it is what makes Gates 3 and 4 agree to ~1e-14 instead of ~1e-7 across rank
+        # counts. That is a correctness property and no timing changes it. The 11% is the bill.
         #
         # Set PICT_PRES_PC=bjacobi for a serial or few-rank production run where the bitwise
         # cross-rank guarantee is not needed.

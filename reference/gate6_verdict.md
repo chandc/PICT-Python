@@ -171,3 +171,58 @@ Unchanged, and the three items above still address it. The pressure solve scales
 0.614 s at 8 ranks); assembly scales ~1.9x, so 68% of the 8-rank step is non-solve work. Beyond
 8 ranks the binding constraint is the BLOCK TOPOLOGY: 16 blocks of unequal size give 47.5% and
 55.2% imbalance at 12 and 16 ranks, which is why both are slower than 8.
+
+---
+
+# RE-MEASURED ON AN IDLE MACHINE: the 3.08x was contended, and the verdict moves
+
+## Why the earlier numbers were wrong
+
+Every sweep from the 2026-09-06 evening window ran while another user's process held a core at
+100%. **`--cpu-set` CONFINES our ranks to the named cores; it does not RESERVE them.** We
+time-shared with that process, and pinning additionally removed the OS's ability to migrate away
+-- so pinning made those measurements MORE vulnerable to contention, not less, which is the
+reverse of what was claimed for it at the time. Absolute times from that window ran ~2.6x slow.
+
+Ruled out as the cause: commit 822c468 (the p_flux fix). Gate 3's pressure iteration counts are
+bit-identical before and after -- [1063, 1062, 1033, 1095, 1140, 1066, 1108] both times -- so the
+solver is doing the same work and only the wall clock moved.
+
+## Production configuration, idle machine, median of 3 reps
+
+Shipped defaults, no overrides: jacobi on both solves, `distribute_momentum` by rank count.
+Ranks 1-8 pinned to Cortex-X925; 12 and 16 cannot be (only 10 fast cores exist) and are
+hardware-limited rather than scaling-limited.
+
+| ranks | cores | DM | s/step | vs best-serial | vs same-config n1 | imbal |
+|---|---|---|---|---|---|---|
+| 1 | pinned | 0 | 3.750 | 0.59x | 1.00x | 0.0% |
+| 2 | pinned | 0 | 2.495 | 0.89x | 1.50x | 0.9% |
+| 4 | pinned | 0 | 2.116 | 1.05x | 1.77x | 1.4% |
+| **8** | pinned | 1 | **1.104** | **2.00x** | **3.40x** | 40.4% |
+| 12 | unpinned | 1 | 1.387 | 1.60x | 2.70x | 74.3% |
+| 16 | unpinned | 1 | 1.570 | 1.41x | 2.39x | 83.2% |
+
+The rank-count rule fired correctly: DM 0 at 1/2/4, DM 1 at 8/12/16.
+
+## The verdict, on the same configuration at both ends
+
+| configuration | 1 rank | 8 ranks | speedup | against Gate 6's bars |
+|---|---|---|---|---|
+| bjacobi -- FASTEST | 2.190 | **0.985** | **2.22x** | **BELOW the 3x abort bar** |
+| jacobi -- shipped default | 3.733 | 1.095 | 3.41x | between abort and success |
+
+**Neither reaches 4x, and the fastest configuration is an ABORT.** jacobi's higher ratio is not
+better scaling -- its absolute 8-rank time is 11% WORSE. The ratio is larger only because jacobi
+handicaps the serial baseline by 70%, which is exactly the trap this file warned about two
+sections ago and which has now caught the headline number itself.
+
+The most defensible one-line summary: **the port reaches ~2.2x at 8 ranks in its fastest
+configuration.** The 3.08x previously reported here is withdrawn.
+
+## What is unaffected
+
+The correctness result stands entirely. Gates 3 and 4 agree to ~1e-14 across rank counts because
+jacobi is partition-independent; that is a property of the arithmetic and no timing bears on it.
+The 11% at 8 ranks and 70% at 1 rank are the PRICE of that property, not a bonus, and the trade
+is now explicit rather than assumed.
