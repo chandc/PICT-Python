@@ -1,0 +1,26 @@
+{
+    "config_version": 2,
+    "solver": {
+        "solver": "PCG",
+        "scope": "main",
+        "max_iters": 5000,
+        "convergence": "RELATIVE_INI_CORE",
+        "tolerance": 1e-06,
+        "monitor_residual": 1,
+        "preconditioner": {
+            "solver": "AMG",
+            "scope": "amg",
+            "algorithm": "AGGREGATION",
+            "selector": "SIZE_2",
+            "cycle": "V",
+            "max_iters": 1,
+            "max_levels": 20,
+            "smoother": {
+                "solver": "BLOCK_JACOBI",
+                "scope": "jacobi",
+                "monitor_residual": 0,
+                "print_solve_stats": 0
+            }
+        }
+    }
+}

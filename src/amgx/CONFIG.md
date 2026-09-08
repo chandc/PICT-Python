@@ -73,3 +73,23 @@ Silent-fallback trap, worth its own line: `_amgx_solve` returns None on any init
 the caller falls back to scipy without a visible line at default verbosity -- a "hung" AmgX
 run and a healthy scipy run look identical for the first ~50 minutes at 1e-6 on 82k cells.
 Two R7 attempts were killed on that ambiguity. `fell_back` exists; it should PRINT.
+
+## RESOLVED (2026-09-07 late): AmgX working again — the recipe, and the real saboteur
+
+Working stack (verified at 0.666 s/step on the 164k-cell R7, GPU active):
+* source: AMGX main @ 91a8413 ("Fix CUDA 13 tuple compatibility", 2026-07-09). The v2.5.0
+  RELEASE TAG does not work on CUDA 13 (classical-AMG setup: THRUST_FAILURE rc 6 / hangs) --
+  the Aug 30 "2.5.0" that worked was main, whose banner also says 2.5.0.
+* builder: cpn-spark:latest (NGC pytorch 25.11, CUDA 13.0.88 -- matches the driver), --gpus all,
+  cmake -DCMAKE_CUDA_ARCHITECTURES=native -DCMAKE_NO_MPI=1.
+* config: aggregation AMG (pcg_agg_1e6.json). The classical D2 path fails on every 2026-09 build.
+* the library now lives at ~/amgx/libamgxsh.so on Spark (REBOOT-PROOF) with RECIPE.md beside it;
+  the launcher bind-mounts it over /tmp/AMGX/build.
+
+And the hidden saboteur that outlived every library fix: the binding held ONE process-wide
+config, keyed to the first rtol requested. This week's momentum-tolerance decoupling made the
+momentum solver (1e-9) claim it first, the pressure solver (1e-6) was refused, and the silent
+fallback ran the run on scipy while every library looked "hung". Fixed: one config per
+tolerance against the shared resources object (which genuinely must be a singleton), and the
+fallback now prints. The teardown wart remains: AMGX_solver_destroy throws "Mode not found"
+at interpreter exit, after all output is written.

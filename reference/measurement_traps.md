@@ -402,3 +402,20 @@ suspicion and confirm the rival hypotheses predict DIFFERENT outcomes for it.** 
 whose arms differ in name but share the mechanism is not a discriminator. (The fix's R3 run --
 incremental, clean to t = 12 with zero drift -- is what the test would have looked like once the
 mechanism was actually different; see `channel_checkerboard_remediation.md` section 5.)
+
+## 19. Bisecting through a silent fallback
+
+Six AmgX rebuilds -- across source revisions, CUDA toolkits and configs -- all "failed the
+same way": banner printed, then silence at 100% CPU with the GPU idle. The bisection treated
+each arm as a test of the library. It was not: `_amgx_solve` caught every init failure and
+silently fell back to scipy, so most arms were measuring the FALLBACK (a 6 s/step CPU solve
+whose first log line takes 50 minutes), and the actual failure -- a process-wide config
+refusing the second tolerance, momentum 1e-9 vs pressure 1e-6 -- was invisible in all of them.
+Standalone smoke tests passed the whole time because they created ONE solver.
+
+The bisection produced real findings (the release tag genuinely cannot run on CUDA 13), but it
+burned hours attributing one bug's symptoms to another. **Before bisecting a failure, make
+every failure path in the harness LOUD; a fallback that silently substitutes a working slow
+path makes all arms of the bisection measure the substitute.** One printed traceback located
+in one minute what six builds could not. Related: trap 17's lesson that a DONE line proves
+nothing -- here, the absence of an error line proved even less.

@@ -30,6 +30,8 @@ tangentially moving lid, since a tangential velocity has no component along the 
 J*grad(xi_ax)) and are never corrected. That is exactly consistent with the pressure matrix,
 which builds no face at the domain boundary and is therefore the zero-flux (Neumann) operator.
 """
+import os
+
 import numpy as np
 from src.phase1_grid_metrics import as_periodic, deriv
 
@@ -147,7 +149,10 @@ def pressure_face_fluxes(p, J, metrics, h, coef=None, include_orth=True,
     # A SEPARATE ARRAY, not a patched `dp`. `deriv` is shared with the grid metrics, and `dp` is
     # also consumed by the non-orthogonal cross term below -- neither wants this ghost.
     dpw = list(dp)
-    if rhie_chow:
+    # PICT_RC_BOUNDARY=legacy reverts to the pre-fix one-sided edge stencil; the
+    # attribution arm for the cylinders' far-field oscillation. Default path is
+    # bitwise-unchanged. reference/rhie_chow_boundary.md.
+    if rhie_chow and os.environ.get("PICT_RC_BOUNDARY", "ghost") != "legacy":
         for a in range(3):
             if per[a]:
                 continue                       # already a true central difference across the seam

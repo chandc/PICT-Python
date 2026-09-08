@@ -24,6 +24,8 @@ docstring warns about for periodic axes. A connected axis therefore behaves like
 for node placement: block A stores up to but not including the interface, and block B's first
 node IS the next node. `Domain.validate()` enforces this rather than leaving it to the caller.
 """
+import os
+
 import numpy as np
 
 from src.comm import Comm
@@ -1073,8 +1075,11 @@ class Domain:
                 # two implementations disagreed by 5.7e+01 relative on a channel while agreeing
                 # to 2e-16 on a periodic box, confined to the wall-adjacent layers;
                 # verify_rc_divergence measures it and is the test that this restores.
+                # PICT_RC_BOUNDARY=legacy: pre-fix one-sided edge stencil, for
+                # the far-field attribution arm. Default is bitwise-unchanged.
+                _legacy = os.environ.get("PICT_RC_BOUNDARY", "ghost") == "legacy"
                 for side, absent in ((0, lo2[axis] == 0), (1, hi2[axis] == 0)):
-                    if not absent:
+                    if not absent or _legacy:
                         continue                  # a real ghost is present; g2 is already central
                     sb = [slice(None)] * 3; sb[axis] = -1 if side else 0
                     sn = [slice(None)] * 3; sn[axis] = -2 if side else 1

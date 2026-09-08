@@ -447,6 +447,14 @@ class SolveCache:
                 self._amgx = AmgXSolver(A, config=self.config,
                                         drift_tol=self.drift_tol, rtol=rtol)
             except Exception:
+                # LOUD, ONCE. The silent fallback made a failed AmgX run and a
+                # slow scipy run indistinguishable for 50 minutes, twice.
+                if not getattr(self, "_amgx_warned", False):
+                    self._amgx_warned = True
+                    import traceback, sys
+                    print("  AMGX INIT FAILED -- FALLING BACK TO SCIPY:",
+                          file=sys.stderr, flush=True)
+                    traceback.print_exc()
                 return None
             self._key = k
         x = self._amgx.solve(A.data, b, x0=x0)

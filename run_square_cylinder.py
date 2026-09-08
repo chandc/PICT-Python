@@ -121,7 +121,7 @@ def probe_index(d, idx):
     return best[1], best[2]
 
 
-def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=None,
+def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=500, restart=None, tag=None,
         tol=DEFAULT_TOL, settle=0, kick=0.0, backend=None, Re=RE):
     d, idx, m = build(dt, rhie_chow, nz, tol, backend, Re)
     tag = tag or (f"sqcyl_Re{Re:.0f}{'_rc' if rhie_chow else ''}"
@@ -143,19 +143,34 @@ def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=Non
     print(f"  symmetry-breaking pulse: v = {PULSE_AMP} at the inlet until t = {PULSE_UNTIL}\n")
     print(f"  {'step':>7}{'t':>9}{'v_probe':>11}{'max|u|':>9}{'max div':>11}{'s/step':>9}")
 
-    if settle and not restart:
+    # `m.nstep < settle` keeps a restart from a mid-settle file IN the settle
+    # loop: the old `not restart` skipped straight to the kick, which would put
+    # the kick on an unconverged base. A restart from the base file (nstep ==
+    # settle) still skips, as before.
+    if settle and m.nstep < settle:
         print(f"  settling {settle} steps to the base flow before kicking\n", flush=True)
-        st0 = time.time()
-        for i in range(1, settle + 1):
+        st0, i0 = time.time(), m.nstep
+        for i in range(i0 + 1, settle + 1):
             m.step()
             hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
             if i % 500 == 0:
                 seg = np.array([h[1] for h in hist[-500:]])
                 print(f"  settle{i:>7}{m.time:>9.1f}{hist[-1][1]:>11.6f}"
-                      f"{seg.max()-seg.min():>11.3e}{(time.time()-st0)/i:>9.3f}", flush=True)
+                      f"{seg.max()-seg.min():>11.3e}"
+                      f"{(time.time()-st0)/max(i - i0, 1):>9.3f}", flush=True)
+                # RESTART FILE, atomically: a 14-hour settle whose only artefact
+                # is at its end is one power cut from being repeated (R7 ran that
+                # way once). os.replace so a kill mid-write leaves the previous
+                # restart intact rather than a truncated npz.
+                checkpoint.save(m, f"results/fields/{tag}_settle_tmp.npz")
+                os.replace(f"results/fields/{tag}_settle_tmp.npz",
+                           f"results/fields/{tag}_settle.npz")
+                np.save(f"results/{tag}_history.npy", np.array(hist))
         checkpoint.save(m, f"results/fields/{tag}_base.npz")
         print(f"  base flow saved; v_probe = {hist[-1][1]:+.6f}", flush=True)
-    if kick:
+    # kick only at the settle->shed transition: a restart from a mid-shedding
+    # checkpoint (nstep > settle) must not be kicked a second time
+    if kick and m.nstep <= settle:
         wake_kick(m, d, kick)
         print(f"  SINUOUS wake kick at {100*kick:.3g}% of U\n", flush=True)
 
@@ -170,7 +185,10 @@ def run(nsteps, dt=0.01, rhie_chow=True, nz=8, every=2000, restart=None, tag=Non
     def dump():
         np.save(f"results/{tag}_history.npy", np.array(hist))
         np.save(f"results/{tag}_forces.npy", np.array(forces))
-        checkpoint.save(m, f"results/fields/{tag}.npz")
+        # atomic for the same reason as the settle restart file: `every` is now
+        # 500, so this IS the restart file, and it must never be half-written
+        checkpoint.save(m, f"results/fields/{tag}_tmp.npz")
+        os.replace(f"results/fields/{tag}_tmp.npz", f"results/fields/{tag}.npz")
         if mean.n:
             mean.save(f"results/fields/{tag}_mean.npz")
 

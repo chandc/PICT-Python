@@ -98,7 +98,8 @@ _PRINT_CB = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int)
 _silent = _PRINT_CB(lambda msg, n: None)
 
 
-_cfg_shared = None
+_cfg_shared = None            # kept for the resources bootstrap
+_cfg_by_rtol = {}             # one config PER TOLERANCE; resources stay shared
 _rsrc_shared = None
 _cfg_rtol = None
 
@@ -144,25 +145,28 @@ def _init_once(cfg_path, rtol=None):
         except Exception:
             pass          # cosmetic only; never fail a run over logging
         _initialised = True
-    global _cfg_rtol
-    if _cfg_shared is None:
+    # ONE CONFIG PER TOLERANCE, ONE RESOURCES PER PROCESS. The resources object
+    # must be a singleton (a second one throws Cuda 'invalid argument' -- see
+    # the spanwise-study note above), but AMGX_solver_create takes its OWN
+    # config handle, so different tolerances can coexist against the shared
+    # resources. The previous process-wide-config rule made the momentum solver
+    # (rtol 1e-9) and the pressure solver (1e-6) mutually exclusive, and the
+    # loser fell back to scipy -- silently, before the fallback learned to
+    # print.
+    key = None if rtol is None else float(f"{rtol:.6e}")
+    cfg = _cfg_by_rtol.get(key)
+    if cfg is None:
         cfg_path = _config_with_tolerance(cfg_path, rtol)
-        _cfg_shared = ctypes.c_void_p()
-        _chk(_lib.AMGX_config_create_from_file(ctypes.byref(_cfg_shared),
+        cfg = ctypes.c_void_p()
+        _chk(_lib.AMGX_config_create_from_file(ctypes.byref(cfg),
                                                cfg_path.encode()), "config_create")
-        _cfg_rtol = rtol
+        _cfg_by_rtol[key] = cfg
+    if _rsrc_shared is None:
+        _cfg_shared = cfg
         _rsrc_shared = ctypes.c_void_p()
-        _chk(_lib.AMGX_resources_create_simple(ctypes.byref(_rsrc_shared), _cfg_shared),
+        _chk(_lib.AMGX_resources_create_simple(ctypes.byref(_rsrc_shared), cfg),
              "resources_create")
-    elif rtol is not None and _cfg_rtol is not None and \
-            abs(rtol - _cfg_rtol) > 1e-15 * max(rtol, _cfg_rtol):
-        # The config is a PROCESS-WIDE singleton, so a second solver cannot quietly get a
-        # different tolerance. Raising beats returning an answer converged to someone else's.
-        raise RuntimeError(
-            f"AmgX config already built for rtol={_cfg_rtol:.3e}; this solver asked for "
-            f"{rtol:.3e}. The config is process-wide, so the two cannot coexist -- use one "
-            f"tolerance per process.")
-    return _cfg_shared, _rsrc_shared
+    return cfg, _rsrc_shared
 
 
 class AmgXSolver:
