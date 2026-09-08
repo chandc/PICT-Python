@@ -135,6 +135,15 @@ class SolveCache:
             self.t_solve += _perf() - _t0
             self.n_solve += 1
             self.total_iterations += int(self.iterations or 0)
+            # PICT_SOLVE_STATS=<N>: per-cache running stats every N solves.
+            _n = os.environ.get("PICT_SOLVE_STATS")
+            if _n and self.n_solve % int(_n) == 0:
+                _rb = getattr(self._amgx, "rebuilds", "-") if self._amgx else "-"
+                print(f"  SOLVESTATS cache={id(self)%100000} backend={self.backend} "
+                      f"n={A.shape[0] if hasattr(A, 'shape') else '?'} "
+                      f"solves={self.n_solve} iters={self.total_iterations} "
+                      f"rebuilds={_rb} t={self.t_solve:.1f}s "
+                      f"({self.t_solve/self.n_solve*1e3:.0f} ms/solve)", flush=True)
 
     def _solve_timed(self, A, b, x0=None, symmetric=True, rtol=1e-12, maxiter=20000,
                      singular=False):

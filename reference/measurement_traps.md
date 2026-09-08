@@ -419,3 +419,21 @@ every failure path in the harness LOUD; a fallback that silently substitutes a w
 path makes all arms of the bisection measure the substitute.** One printed traceback located
 in one minute what six builds could not. Related: trap 17's lesson that a DONE line proves
 nothing -- here, the absence of an error line proved even less.
+
+## 20. The profiler contended with the thing it profiled
+
+Every cylinder performance probe -- cProfile, the solve-stats runs, the preconditioner
+shootout -- ran on the same GPU as the live production arm, and for several hours THREE
+processes were solving concurrently: the arm, a leftover arm from the previous configuration
+take, and an orphaned profiling container. Two mechanics put them there: `docker ps -q
+--filter ancestor=X | head -1` kills an arbitrary one of several matching containers (probes
+and arms share the image), and a remote `timeout` kills the docker CLIENT while the container
+runs on. The contended numbers were internally consistent and wrong: a 59 ms pressure solve
+read as 449 ms, which spawned a coarse-operator-refresh theory, an (exact, harmless, useless)
+skip-identical-upload patch, and an hour of misdirected analysis. The stale cumulative s/step
+column in the driver log reinforced the wrong number.
+
+**Before profiling, enumerate everything sharing the resource (`docker ps` in full, not
+head -1 of a filter), and measure throughput by wall-clock arrival of progress markers, not
+by in-process averages that integrate over a dirty past.** Kill containers by exact ID; a
+timeout on `docker run` orphans, not stops.

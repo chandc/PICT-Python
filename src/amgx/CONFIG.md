@@ -118,3 +118,15 @@ per-block assembly (16 blocks, GPU at 14%), not the solver. The split config is 
 it removes the divergence failure mode, not because it bought speed. (2) The pressure system
 is mildly NON-symmetric (Dong outflow rows) and is being solved by PCG; it converges cleanly
 (61 its) but an FGMRES outer solver is the principled alternative if that ever degrades.
+
+## Addendum: the clean number, and where the 2.7 s/step went
+
+Measured by row-arrival wall clock with the GPU verified empty of strays: the split-config
+cylinder arm runs at **1.47 s/step** (pressure 3.2 solves x 59 ms, momentum ~0.23 s, per-block
+assembly ~0.7 s, overhead the rest). Solo, replace_coefficients costs ~3 ms, not the ~400 ms a
+contended probe suggested -- the "in-run refresh cost" theory was an artifact. The 2.7 s/step
+era decomposes as: take 2 genuinely paid ~0.6 s/solve for Jacobi pressure; after the split
+config, the remainder was CONTENTION from stray processes (see measurement trap 20). CuPy is
+not worth pursuing for assembly (small per-block arrays; launch overhead dominates); Numba on
+the 0.7 s assembly bucket is the one remaining lever, ceiling ~1.5x, worth it only for a
+program of cylinder runs.

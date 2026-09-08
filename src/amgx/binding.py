@@ -227,11 +227,25 @@ class AmgXSolver:
 
     def solve(self, values, b, x0=None):
         vals = np.ascontiguousarray(values, dtype=np.float64)
-        drift = (np.abs(vals - self._ref).max()
-                 / max(np.abs(self._ref).max(), 1e-300))
-        _chk(_lib.AMGX_matrix_replace_coefficients(
-            self._A, self.n, self.nnz,
-            vals.ctypes.data_as(ctypes.c_void_p), None), "replace_coefficients")
+        # SKIP THE UPLOAD WHEN THE MATRIX IS BIT-IDENTICAL to the last one
+        # uploaded. replace_coefficients makes AmgX refresh its Galerkin coarse
+        # operators even when nothing changed -- measured at ~0.4 s per solve
+        # on the 160k cylinder pressure system, which was most of the gap
+        # between the 62 ms shootout solve and the 449 ms in-run solve. The
+        # correctors within a step share one matrix, so this is exact, not an
+        # approximation. self._last tracks the upload; self._ref still tracks
+        # the hierarchy build for the drift rebuild below.
+        _last = getattr(self, "_last", None)
+        if _last is not None and vals.shape == _last.shape and \
+                np.array_equal(vals, _last):
+            drift = 0.0
+        else:
+            drift = (np.abs(vals - self._ref).max()
+                     / max(np.abs(self._ref).max(), 1e-300))
+            _chk(_lib.AMGX_matrix_replace_coefficients(
+                self._A, self.n, self.nnz,
+                vals.ctypes.data_as(ctypes.c_void_p), None), "replace_coefficients")
+            self._last = vals.copy()
         if drift > self.drift_tol:
             # The hierarchy is stale. Rebuilding costs ~43 ms against a ~28 ms solve, so this
             # must stay rare -- which it is at ~1e-3 drift per step.
