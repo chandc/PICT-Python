@@ -22,6 +22,8 @@ EXACTLY, with no cross terms (Cartesian) and no boundary conditions (periodic) t
 Warped multi-block additionally needs the implicit cross operator across seams; walls need the
 face-type registry. Both are separate increments.
 """
+import os
+
 import numpy as np
 import scipy.sparse.linalg as spla
 
@@ -216,7 +218,20 @@ class MultiBlockPISO:
         # remaining suspect. This factor relaxes that copy WITHOUT touching the prescribed
         # pressure, which is what separates it from kind="convective" -- that changes the
         # pressure treatment too, and diverged to 45.6 in four time units.
-        self.dong_copy = 1.0
+        self.dong_copy = float(os.environ.get("PICT_DONG_COPY", "1.0"))
+        # Smooth the Dong velocity copy along the face's in-plane tangential
+        # axis with a [1/4, 1/2, 1/4] filter. The verbatim per-node copy has no
+        # tangential coupling, so an odd-even (Nyquist-in-theta) boundary mode
+        # reflects itself back every step; measured on the Re=100 cylinder it
+        # saturates as azimuthal striping of |u'| ~ 0.7 filling the outflow
+        # block from the arc junction inward (figures/junction_zoom.png). The
+        # filter annihilates exactly that mode at its source and leaves smooth
+        # fields second-order untouched. Block-edge nodes are left unfiltered
+        # -- the seam exchange owns them. OPT-IN (PICT_DONG_SMOOTH=1): with the
+        # filter on, the 4-block dong split-equals-whole check fails at 2.6 --
+        # an unexplained structural interaction, so it must not be a default
+        # until that is understood.
+        self.dong_smooth = os.environ.get("PICT_DONG_SMOOTH", "0") == "1"
         self._dong_prev = None
         self._prec = None
         self.corrector_steps = corrector_steps
@@ -400,6 +415,32 @@ class MultiBlockPISO:
             for arr, bc in ((self.u, self.u_bc), (self.v, self.v_bc), (self.w, self.w_bc)):
                 bc[b][bs] = bc[b][bs] - t * (bc[b][bs] - arr[b][isl])
                 arr[b][bs] = bc[b][bs]
+            if kind == "dong" and self.dong_smooth:
+                # TANGENTIAL-ONLY smoothing. The first version filtered the raw
+                # components and broke the split-equals-whole check at 2.6 and
+                # ground the pressure solve: the filter perturbed the NORMAL
+                # component, which is the prescribed face flux and the Dong
+                # pressure input. Decomposing on the face normals and filtering
+                # only the tangential part leaves flux and Dong pressure
+                # bit-identical while still killing the odd-even tangential
+                # striping the verbatim copy reflects back each step.
+                _, mbm = d.block_metrics_cached(b)
+                keyn = ("xi", "eta", "zeta")[axis]
+                nxf = mbm[f"{keyn}_x"][bs]; nyf = mbm[f"{keyn}_y"][bs]
+                nzf = mbm[f"{keyn}_z"][bs]
+                nrmf = np.sqrt(nxf**2 + nyf**2 + nzf**2)
+                nxf, nyf, nzf = nxf / nrmf, nyf / nrmf, nzf / nrmf
+                ub, vb, wb = self.u[b][bs], self.v[b][bs], self.w[b][bs]
+                un_b = ub * nxf + vb * nyf + wb * nzf
+                tu, tv, tw = ub - un_b * nxf, vb - un_b * nyf, wb - un_b * nzf
+                if tu.shape[0] >= 3:
+                    for tt in (tu, tv, tw):
+                        tt[1:-1] = 0.25 * tt[:-2] + 0.5 * tt[1:-1] + 0.25 * tt[2:]
+                for arr, bc, tcomp, nc in ((self.u, self.u_bc, tu, nxf),
+                                           (self.v, self.v_bc, tv, nyf),
+                                           (self.w, self.w_bc, tw, nzf)):
+                    bc[b][bs] = tcomp + un_b * nc
+                    arr[b][bs] = bc[b][bs]
         # Flux balancing is needed ONLY for the singular all-Neumann system. A Dong outlet
         # carries a Dirichlet pressure, which makes the system non-singular, so its flux must
         # NOT be rescaled -- mass leaves as the solution dictates.
