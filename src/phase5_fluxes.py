@@ -113,7 +113,8 @@ def divergence_from_fluxes(F, J, h):
     return d / J
 
 def pressure_face_fluxes(p, J, metrics, h, coef=None, include_orth=True,
-                         include_cross=True, periodic=None, rhie_chow=False):
+                         include_cross=True, periodic=None, rhie_chow=False,
+                         pressure_pinned=()):
     """
     Pressure flux through each INTERIOR face,
 
@@ -152,12 +153,16 @@ def pressure_face_fluxes(p, J, metrics, h, coef=None, include_orth=True,
     # PICT_RC_BOUNDARY=legacy reverts to the pre-fix one-sided edge stencil; the
     # attribution arm for the cylinders' far-field oscillation. Default path is
     # bitwise-unchanged. reference/rhie_chow_boundary.md.
-    if rhie_chow and os.environ.get("PICT_RC_BOUNDARY", "ghost") != "legacy":
+    _mode = os.environ.get("PICT_RC_BOUNDARY", "auto")
+    _pinned = () if _mode == "ghost" else pressure_pinned
+    if rhie_chow and _mode != "legacy":
         for a in range(3):
             if per[a]:
                 continue                       # already a true central difference across the seam
             g = np.array(dp[a], copy=True)
             for lo_side in (True, False):
+                if (a, 0 if lo_side else 1) in _pinned:
+                    continue                   # pressure pinned there: keep the one-sided stencil
                 sb = [slice(None)] * 3; sn = [slice(None)] * 3
                 sb[a], sn[a] = (0, 1) if lo_side else (-1, -2)
                 d = (p[tuple(sn)] - p[tuple(sb)]) if lo_side else (p[tuple(sb)] - p[tuple(sn)])

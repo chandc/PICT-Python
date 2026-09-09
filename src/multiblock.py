@@ -1075,11 +1075,19 @@ class Domain:
                 # two implementations disagreed by 5.7e+01 relative on a channel while agreeing
                 # to 2e-16 on a periodic box, confined to the wall-adjacent layers;
                 # verify_rc_divergence measures it and is the test that this restores.
-                # PICT_RC_BOUNDARY=legacy: pre-fix one-sided edge stencil, for
-                # the far-field attribution arm. Default is bitwise-unchanged.
-                _legacy = os.environ.get("PICT_RC_BOUNDARY", "ghost") == "legacy"
+                # PICT_RC_BOUNDARY: 'legacy' = pre-fix one-sided edge stencil
+                # everywhere; 'ghost' = zero-gradient ghost everywhere (the
+                # 2026-09-05 fix, which R8 showed EXCITES the Dong-junction
+                # mode); default 'auto' = BC-AWARE -- ghost at walls/inflow,
+                # one-sided at faces whose pressure the solve PINS (Dong rows
+                # are Dirichlet, so the boundary value anchors the interior
+                # extrapolation; the runaway the ghost fix feared was measured
+                # at an UNPINNED inflow). reference/rhie_chow_boundary.md.
+                _mode = os.environ.get("PICT_RC_BOUNDARY", "auto")
+                _pinned = (frozenset() if _mode == "ghost"
+                           else getattr(self, "pressure_pinned", frozenset()))
                 for side, absent in ((0, lo2[axis] == 0), (1, hi2[axis] == 0)):
-                    if not absent or _legacy:
+                    if not absent or _mode == "legacy" or (b, axis, side) in _pinned:
                         continue                  # a real ghost is present; g2 is already central
                     sb = [slice(None)] * 3; sb[axis] = -1 if side else 0
                     sn = [slice(None)] * 3; sn[axis] = -2 if side else 1

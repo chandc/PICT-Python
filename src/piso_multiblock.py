@@ -297,6 +297,14 @@ class MultiBlockPISO:
 
     def _step_impl(self):
         """Repeat the Picard linearisation if asked; time advances ONCE across the repeats."""
+        # Faces whose pressure the solve PINS (Dong Dirichlet rows), stamped on
+        # the domain once for the BC-aware Rhie-Chow edge treatment in
+        # pressure_face_fluxes. Outflow specs are static after setup.
+        if not hasattr(self.d, "pressure_pinned"):
+            from src.multiblock import face_axis_side
+            self.d.pressure_pinned = frozenset(
+                (sp[0],) + face_axis_side(sp[1]) for sp in self.outflow
+                if (sp[3] if len(sp) > 3 else "convective") == "dong")
         if self.picard_iters <= 1:
             return self._step_once()
         u0 = (dict(self.u), dict(self.v), dict(self.w))
