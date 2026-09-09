@@ -503,3 +503,26 @@ post-fix in any configuration: at dt = 5e-4 the burst is crossed at declining co
 at dt = 1e-3 it is a clean CFL stop, not a solver collapse. That the bugged arms did NOT trip
 the guard their trajectory now trips is itself evidence the bug was altering the flow at the
 burst, not just the solver cost.
+
+## R8 (2026-09-08): the far-field attribution INVERTS — the fix destabilizes the Dong arc
+
+The controlled pair this doc's claims awaited: round cylinder at Re = 100, p_flux fix in both
+arms, one with this boundary fix, one with PICT_RC_BOUNDARY=legacy. The LEGACY arm ran the
+full protocol: **St = 0.1643 +- 0.0001** (19 periods, lit. 0.164), C_D 1.267 (ref 1.33), far
+field bounded at ~0.9 for 300 time units. The FIXED arm aborted at t = 105 with the far-field
+metric at 2.006 and growing -- grid-scale noise erupting at the two CORNERS where the Dong
+outflow arc meets the freestream boundary (figures/cyl_vorticity_cyl_postfix_spark_ABORT.png),
+starting the moment the kick's pressure signal reached the outer boundary, while the near
+field stayed clean in both arms (0.126 vs 0.101).
+
+So "it explains the cylinders' far-field oscillation" was backwards: the far-field
+oscillation is a Dong-junction mode that THIS FIX excites. The mechanism is the fix's own
+ghost choice: p_ghost = p_boundary is right at a prescribed-VELOCITY bound (the wall-bounded
+channel validated it, and that result stands) but contradicts a prescribed-PRESSURE bound --
+OpenFOAM reads the fixedFluxPressure PATCH VALUE there, not a zero gradient. The legacy
+zero-damping faces were accidentally inert at exactly that junction.
+
+**Refined remedy, not yet implemented: make the ghost BC-aware** -- keep p_ghost = p_boundary
+at walls and inflow, use the prescribed pressure VALUE as the ghost at Dong/outflow faces.
+Until then, outflow-arc cases run with PICT_RC_BOUNDARY=legacy (production guidance), and
+wall-bounded cases keep the fix.
