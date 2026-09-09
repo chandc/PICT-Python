@@ -1,0 +1,275 @@
+"""RECT-GRID VARIANT of run_cylinder.py: the round cylinder on the
+butterfly-in-rectangle grid (cylinder_ring_grid), Dong on the flat right
+face. Protocol, guards, restarts and reporting identical to run_cylinder.
+
+Original doc:
+
+Vortex street behind a CIRCULAR cylinder at Re = 100. Target: St ~ 0.164, C_D ~ 1.33.
+
+EVERY SETTING HERE IS A LESSON FROM THE SQUARE-CYLINDER CASE. In order of how much they cost to
+learn:
+
+  tol = 1e-6, NOT the solver's 1e-4 default. At 1e-4 the square case converged BITWISE STEADY and
+  never shed -- at Re 100, 200 and 300, and at every grid resolution tried. The pressure
+  correction is under-resolved there, so every velocity update is damped: harmless for a steady
+  problem, fatal for a marginally unstable one. It is an argument, not a literal, because it is
+  the single setting that decides whether this case has any physics in it at all.
+
+  ddt_corr = False. Its F_prev recurrence has unit gain by construction and diverges; the square
+  case died at step 455 with it on, and Rhie-Chow itself was innocent.
+
+  rhie_chow = True with persistent_flux. 41x smaller pressure checkerboard than off, and
+  persistent_flux is free (no stability effect, 1.7x better damping).
+
+  TWO STAGES, and this is the one that looked like a detail and was not. A symmetric
+  configuration on a symmetric discretisation stays symmetric forever, so the instability must be
+  triggered. But a kick applied at t = 0 -- before any wake exists -- just convects away through
+  undisturbed flow and is gone by the time the recirculation forms. The square case wasted a full
+  45,000-step run that way. So: converge to the base flow FIRST, then perturb THAT.
+
+The far field is at 30 D and the wake is resolved to ~12 D at 21.8 cells per shedding wavelength;
+see cylinder_grid.py for why a pure geometric radial stretch is not enough.
+"""
+import argparse
+import os
+import time
+
+import os
+
+import numpy as np
+
+from cylinder_ring_grid import ring_rect_domain, D
+from cylinder_rect_bc import apply as apply_bc, classify, probe_index, U_INF
+from src import checkpoint
+from src.forces import surface_force
+from src.running_mean import RunningMean
+from src.piso_multiblock import MultiBlockPISO
+
+RE = 100.0
+DEFAULT_TOL = 1e-6
+ST_REF = 0.164          # circular cylinder at Re = 100
+CD_REF = 1.33
+
+
+def build(dt, tol, nz, nblk, backend):
+    d, _idx = ring_rect_domain(nz=nz)          # nblk kept for CLI compatibility
+    m = MultiBlockPISO(d, U_INF * D / RE, dt, 2, tol, time_scheme="bdf2", scheme="rotational",
+                       picard_iters=2, rhie_chow=True, persistent_flux=True, ddt_corr=False,
+                       linear_backend=backend)
+    for b in range(len(d.blocks)):
+        m.u[b][:] = U_INF
+        m.v[b][:] = 0.0
+        m.w[b][:] = 0.0
+    apply_bc(m, d)
+    return d, m
+
+
+def kick(m, d, amp):
+    """Antisymmetric nudge in the near wake. Applied to an ESTABLISHED base flow, not at t=0."""
+    for b in range(len(d.blocks)):
+        blk = d.blocks[b]
+        sel = (blk.x > 0.5 * D) & (blk.x < 4.0 * D) & (np.abs(blk.y) < 1.5 * D)
+        if sel.any():
+            # SINUOUS, not varicose. The von Karman mode meanders the wake bodily
+            # sideways, so the transverse velocity has the SAME sign right across the wake --
+            # v EVEN in y. An earlier version used `np.sign(blk.y)`, which is v ODD in y: that
+            # is the VARICOSE mode, in which the wake breathes symmetrically, and it is stable.
+            # It excited the wrong mode and decayed every time, on every grid and at every
+            # resolution, which read as "the grid lost the instability".
+            m.v[b][sel] += amp * U_INF * \
+                np.exp(-((blk.x[sel] - 1.5) ** 2) / 1.0) * \
+                np.exp(-(blk.y[sel] / 0.75) ** 2)
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--tol", type=float, default=DEFAULT_TOL,
+                   help="linear solver tolerance; 1e-4 suppresses shedding entirely")
+    p.add_argument("--settle", type=int, default=8000, help="steps to reach the base flow")
+    p.add_argument("--force-kick", action="store_true",
+                   help="kick even though the checkpoint's step count is past --settle. Needed "
+                        "when the base flow was settled by a DIFFERENT script, or at a different "
+                        "dt, so its nstep does not mean what the phase logic assumes. Kicking a "
+                        "flow that is already shedding would corrupt the amplitude, so this is "
+                        "opt-in rather than a default.")
+    p.add_argument("--steps", type=int, default=30000, help="steps after the kick")
+    p.add_argument("--dt", type=float, default=0.01)
+    p.add_argument("--nz", type=int, default=4)
+    p.add_argument("--nblk", type=int, default=16,
+                   help="azimuthal blocks; sets how finely the far-field "
+                        "outflow arc can be cut (16 -> |theta| <= 21.8 deg)")
+    p.add_argument("--kick", type=float, default=0.01, help="fraction of U")
+    p.add_argument("--backend", default="scipy")
+    p.add_argument("--restart", default=None)
+    p.add_argument("--tag", default=None)
+    a = p.parse_args()
+
+    d, m = build(a.dt, a.tol, a.nz, a.nblk, a.backend)
+    tag = a.tag or f"cylrect_Re{RE:.0f}_tol{a.tol:.0e}_n{d.n_cells}"
+    os.makedirs("results/fields", exist_ok=True)
+
+    # RESTART SEMANTICS. The restart file is written every 500 steps in BOTH phases, so a
+    # crash costs 500 steps and not the whole settle. Which phase to resume in is derived from
+    # the step count in the checkpoint rather than from the file name: below `--settle` the run
+    # is still converging to the base flow and must finish it and then be kicked; at or above
+    # it the flow has already been kicked and must NOT be kicked a second time, which would
+    # inject a fresh perturbation into an established wake and corrupt the amplitude.
+    settle, kicked = a.settle, False
+    hist = []
+    if a.restart and os.path.exists(a.restart):
+        checkpoint.load(m, a.restart)
+        h = f"results/{tag}_history.npy"
+        if os.path.exists(h):
+            hist = [tuple(row) for row in np.load(h)]
+        kicked = (m.nstep >= a.settle) and not a.force_kick
+        settle = 0 if m.nstep >= a.settle else a.settle - m.nstep
+        print(f"  restarted from {a.restart}: t={m.time:.1f}, step {m.nstep}, "
+              f"{len(hist)} history samples", flush=True)
+        where = ("already kicked; continuing the shedding stage" if kicked
+                 else f"{settle} settle steps still to run before the kick")
+        print(f"  -> {where}", flush=True)
+
+    pb, pk = probe_index(d)
+    print(f"  {d.n_cells:,} cells  Re={RE:.0f}  dt={a.dt}  tol={a.tol:.0e}  "
+          f"backend={a.backend}  nz={a.nz}", flush=True)
+    print(f"  probe at ({d.blocks[pb].x[pk[0],pk[1],0]:.3f}, "
+          f"{d.blocks[pb].y[pk[0],pk[1],0]:.3f})", flush=True)
+    print(f"  reference: St = {ST_REF}, C_D = {CD_REF}\n", flush=True)
+
+    # FAR-FIELD WATCHDOG. The previous cylinder run died of a disturbance that grew in the outer
+    # grid, where the cell Peclet number reached 218, and nothing in the reporting was watching
+    # it: max|u| went 3.13 at t = 200, 4.97 at t = 215, NaN shortly after, and 200 time units of
+    # a converged-looking shedding record turned out to be measured on a contaminated field.
+    # This column would have shown it at t = 20. The mask takes r > 10 and |y| > 4, which is
+    # outside the wake, so anything appearing there is numerical.
+    far = [(np.hypot(b.x, b.y) > 10.0) & (np.abs(b.y) > 4.0) for b in d.blocks]
+    # NEAR-BODY, OUTSIDE THE WAKE. This is the region the forces actually come from, and it is
+    # the one the abort should gate on. Measured on this case: 0.1270 before the kick and
+    # 0.1270 twenty-two time units later, while the FAR-field metric went 0.148 -> 0.238. The
+    # outer-boundary mode is confined to r > 17 and does not reach here, so aborting on the far
+    # field alone would have killed a run whose measurement region was untouched.
+    nearm = [(np.hypot(b.x, b.y) > 2.0) & (np.hypot(b.x, b.y) < 8.0) & (np.abs(b.y) > 2.5)
+             for b in d.blocks]
+    n_far = sum(int(f.sum()) for f in far)
+
+    def _mx(masks):
+        return max((float(np.hypot(m.u[b] - U_INF, m.v[b])[masks[b]].max())
+                    for b in range(len(d.blocks)) if masks[b].any()), default=0.0)
+
+    def farfield():
+        return _mx(far)
+
+    def nearfield():
+        return _mx(nearm)
+
+    NEAR_ABORT = 0.30      # 2.4x the value this region holds steady at
+    FF_ABORT = 1.5         # backstop only: the first run reached 4.08 before NaN
+
+    def report(i, n, hist, t0, phase):
+        seg = np.array([h[1] for h in hist[-500:]])
+        ff, nf = farfield(), nearfield()
+        print(f"  {phase:<7}{i:>7}{m.time:>8.1f}{hist[-1][1]:>12.6f}"
+              f"{seg.max()-seg.min():>11.3e}{nf:>9.3f}{ff:>9.3f}"
+              f"{(time.time()-t0)/max(i,1):>9.3f}", flush=True)
+        bad = (not np.isfinite(nf)) or nf > NEAR_ABORT or (not np.isfinite(ff)) or ff > FF_ABORT
+        if bad:
+            checkpoint.save(m, f"results/fields/{tag}_ABORT.npz")
+            raise SystemExit(
+                f"\n  ABORT at t = {m.time:.1f}: near-body {nf:.3f} (limit {NEAR_ABORT}), "
+                f"far-field {ff:.3f} (limit {FF_ABORT}).\n"
+                f"  The near-body figure is the one that invalidates a force measurement; the\n"
+                f"  far-field one is a backstop. Field saved to results/fields/{tag}_ABORT.npz.")
+
+    print(f"  {'phase':<7}{'step':>7}{'t':>8}{'v_probe':>12}{'amp/500':>11}{'near':>9}"
+          f"{'far':>9}{'s/step':>9}", flush=True)
+
+    # SPONGE LAYER (opt-in, PICT_SPONGE="sigma,width"): interior damping of
+    # (u - U_inf) over the outer `width` D of radius, quintic ramp, applied by
+    # operator splitting after each step. Boundary-side interventions at the
+    # Dong arc all destabilised a marginally-stable far-field striping mode
+    # (ghost: aborts; tangential filter: aborts; copy relaxation: no effect),
+    # so the striping is damped INSIDE the domain instead, touching no BC
+    # logic. The decay is applied implicitly (1/(1+dt*sigma)): stable for any sigma.
+    _sp = os.environ.get("PICT_SPONGE")
+    sponge = None
+    if _sp:
+        sig, wid = (float(x) for x in _sp.split(","))
+        rmax = max(float(np.sqrt(blk.x**2 + blk.y**2).max()) for blk in d.blocks)
+        sponge = []
+        for blk in d.blocks:
+            r = np.sqrt(blk.x**2 + blk.y**2)
+            xi = np.clip((r - (rmax - wid * D)) / (wid * D), 0.0, 1.0)
+            sponge.append(sig * xi**3 * (10 - 15*xi + 6*xi*xi))
+        print(f"  sponge: sigma={sig}, width={wid} D (r > {rmax - wid*D:.1f})", flush=True)
+
+    def apply_sponge():
+        if sponge is None:
+            return
+        for b in range(len(d.blocks)):
+            g = 1.0 / (1.0 + m.dt * sponge[b])
+            m.u[b][:] = 1.0 + (m.u[b] - 1.0) * g
+            m.v[b][:] *= g
+            m.w[b][:] *= g
+
+    t0 = time.time()
+    for i in range(1, settle + 1):
+        m.step()
+        apply_sponge()
+        hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
+        if i % 500 == 0:
+            report(i, settle, hist, t0, "settle")
+            checkpoint.save(m, f"results/fields/{tag}.npz")
+            np.save(f"results/{tag}_history.npy", np.array(hist))
+    if settle:
+        checkpoint.save(m, f"results/fields/{tag}_base.npz")
+        print(f"  base flow saved -> results/fields/{tag}_base.npz", flush=True)
+
+    v0 = float(m.v[pb][pk[0], pk[1], 0])
+    if kicked:
+        print(f"\n  NOT kicking: this checkpoint is already past the kick "
+              f"(step {m.nstep} >= settle {a.settle}), v = {v0:+.6f}\n", flush=True)
+    else:
+        kick(m, d, a.kick)
+        print(f"\n  kicked at {100*a.kick:.3g}% of U about v0 = {v0:+.6f}\n", flush=True)
+
+    # C_D and C_L every step, and the MEAN field over the shedding window. Both are what the
+    # literature actually tabulates, and neither is recoverable afterwards from instantaneous
+    # checkpoints: the mean wake is a different object from any snapshot of it. A force
+    # evaluation is 0.26 ms, 0.07% of a step here, so there is no reason to sub-sample.
+    body = [k for k, v in classify(d).items() if v == "body"]
+    span = float(d.blocks[0].period[2])
+    q = 0.5 * U_INF**2 * D * span
+    mean = RunningMean(d, m.time)
+    forces = []
+
+    def dump():
+        np.save(f"results/{tag}_history.npy", np.array(hist))
+        np.save(f"results/{tag}_forces.npy", np.array(forces))
+        checkpoint.save(m, f"results/fields/{tag}.npz")
+        if mean.n:
+            mean.save(f"results/fields/{tag}_mean.npz")
+
+    t0 = time.time()
+    for i in range(1, a.steps + 1):
+        m.step()
+        apply_sponge()
+        hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
+        mean.add(m)
+        R = surface_force(d, body, m.u, m.v, m.w, m.p, m.nu)
+        forces.append((m.time, R["total"][0] / q, R["total"][1] / q,
+                       R["viscous_normal"][0] / q))
+        if i % 500 == 0:
+            report(i, a.steps, hist, t0, "shed")
+            fa = np.array(forces)
+            print(f"           C_D {fa[-500:, 1].mean():+.4f}   C_L rms "
+                  f"{np.sqrt((fa[-500:, 2]**2).mean()):.4f}   "
+                  f"(reference C_D {CD_REF}, spurious normal stress in C_D "
+                  f"{fa[-500:, 3].mean():+.4f})", flush=True)
+            dump()
+    dump()
+    print(f"\n  saved results/fields/{tag}.npz, {tag}_mean.npz, "
+          f"{tag}_history.npy and {tag}_forces.npy", flush=True)
+
+
+if __name__ == "__main__":
+    main()

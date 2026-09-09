@@ -186,7 +186,11 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
             W[:, jcol] = _geometric_n(L, ring_last, nrt)
         Xt = Ef[None, :, 0] * (1 - W) + O[None, :, 0] * W
         Yt = Ef[None, :, 1] * (1 - W) + O[None, :, 1] * W
-        tb = add_block("trap" + name, Xt[:-1, i0:i1], Yt[:-1, i0:i1])
+        # ALL traps keep their full radial extent: the trap-trap diagonal
+        # seams demand one shared radial count, and N/W/S end at physical
+        # walls. The E-wake interface ownership therefore flips: E owns the
+        # X_HAND line and the wake block drops its first column instead.
+        tb = add_block("trap" + name, Xt[:, i0:i1], Yt[:, i0:i1])
         if name != "E":
             tb.faces[face_id(0, 1)] = "wall"                # rectangle side
         else:
@@ -202,6 +206,7 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
                                wake_hold, 1.10, wake_ratio)
     yw = (rc["se"][None, :] * (1 - tE_out[:, None])
           + rc["ne"][None, :] * tE_out[:, None])[:, 1]
+    xw = xw[1:]                    # X_HAND line is owned by the east trap
     Xw, Yw = np.meshgrid(xw, yw, indexing="ij")
     wb = add_block("wake", Xw, Yw)
     wb.faces[face_id(0, 1)] = "wall"                        # Dong plane (role via BC module)
