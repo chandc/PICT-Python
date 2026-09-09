@@ -526,3 +526,16 @@ zero-damping faces were accidentally inert at exactly that junction.
 at walls and inflow, use the prescribed pressure VALUE as the ghost at Dong/outflow faces.
 Until then, outflow-arc cases run with PICT_RC_BOUNDARY=legacy (production guidance), and
 wall-bounded cases keep the fix.
+
+## R9 (2026-09-09): the BC-aware ghost VALIDATES — closing the boundary story
+
+`cyl_bcaware_spark`, full protocol under the new default (`PICT_RC_BOUNDARY=auto`: ghost at
+walls/inflow, one-sided at the pressure-pinned Dong faces): **St = 0.1643 +- 0.0001** and
+C_D 1.271 -- identical to the legacy arm (a periodic attractor admits exact agreement) -- with
+the far field BOUNDED all run: 0.18 at t = 105 where ghost-everywhere read 2.006 and aborted,
+plateauing at the legacy arm's 0.91 as the saturated street exits the arc. The junction
+corners carry only the faint residual speckle the legacy arm also shows
+(figures/cyl_vorticity_cyl_bcaware_spark.png); quieting them entirely (corner blend or
+sponge) remains optional polish, not remediation. Ledger: the wall-ghost half of the 09-05
+fix stands (channel-validated); its indiscriminate application to prescribed-pressure faces
+was the defect; `auto` is the production default and `ghost`/`legacy` remain for A/B.
