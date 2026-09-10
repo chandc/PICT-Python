@@ -1,0 +1,15 @@
+{
+    "config_version": 2,
+    "solver": {
+        "solver": "PBICGSTAB",
+        "scope": "main",
+        "max_iters": 500,
+        "convergence": "RELATIVE_INI_CORE",
+        "tolerance": 1e-09,
+        "monitor_residual": 1,
+        "preconditioner": {
+            "solver": "MULTICOLOR_DILU",
+            "scope": "prec"
+        }
+    }
+}

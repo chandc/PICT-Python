@@ -104,6 +104,36 @@ _rsrc_shared = None
 _cfg_rtol = None
 
 
+def reset():
+    """Tear the WHOLE AmgX context down so the next solver starts clean.
+
+    Escalation of last resort: on the R11 butterfly grid, momentum solves
+    started failing at a deterministic step and stayed failed through fresh
+    solver objects -- but the same matrix solved instantly in a fresh
+    PROCESS. The durable state is here: the shared resources and config
+    handles. Every AmgXSolver must be close()d BEFORE calling this.
+    """
+    global _initialised, _cfg_shared, _rsrc_shared, _cfg_by_rtol
+    for cfg, _path in list(_cfg_by_rtol.values()):
+        try:
+            _lib.AMGX_config_destroy(cfg)
+        except Exception:
+            pass
+    _cfg_by_rtol = {}
+    if _rsrc_shared is not None:
+        try:
+            _lib.AMGX_resources_destroy(_rsrc_shared)
+        except Exception:
+            pass
+    _cfg_shared = None
+    _rsrc_shared = None
+    try:
+        _lib.AMGX_finalize()
+    except Exception:
+        pass
+    _initialised = False
+
+
 def _config_with_tolerance(cfg_path, rtol):
     """Return a config path whose outer-solver tolerance is `rtol`. Substitution, not patching.
 
@@ -154,7 +184,7 @@ def _init_once(cfg_path, rtol=None):
     # loser fell back to scipy -- silently, before the fallback learned to
     # print.
     key = None if rtol is None else float(f"{rtol:.6e}")
-    cfg = _cfg_by_rtol.get(key)
+    cfg, used_path = _cfg_by_rtol.get(key, (None, None))
     if cfg is None:
         # AMGX_CONFIG_TIGHT: a different template for tight-tolerance systems
         # (the momentum solves at 1e-9). Measured on the real cylinder
@@ -170,13 +200,19 @@ def _init_once(cfg_path, rtol=None):
         cfg = ctypes.c_void_p()
         _chk(_lib.AMGX_config_create_from_file(ctypes.byref(cfg),
                                                cfg_path.encode()), "config_create")
-        _cfg_by_rtol[key] = cfg
+        used_path = cfg_path
+        _cfg_by_rtol[key] = (cfg, used_path)
     if _rsrc_shared is None:
         _cfg_shared = cfg
         _rsrc_shared = ctypes.c_void_p()
         _chk(_lib.AMGX_resources_create_simple(ctypes.byref(_rsrc_shared), cfg),
              "resources_create")
-    return cfg, _rsrc_shared
+    return cfg, _rsrc_shared, used_path
+
+
+class NeedsRebuild(Exception):
+    """Raised by solve() when the matrix drifted past drift_tol; the caller
+    rebuilds by constructing a fresh AmgXSolver (in-place setup crashes)."""
 
 
 class AmgXSolver:
@@ -204,7 +240,10 @@ class AmgXSolver:
                 "solver hit its iteration cap at convergence rate 0.90 on this operator.")
 
         self.rtol = rtol
-        self._cfg, self._rsrc = _init_once(cfg_path, rtol)  # shared, NOT per-solver
+        self.config_path = cfg_path
+        # config_path is the TEMPLATE the caller named; config_used is what the
+        # solver actually loaded after tight-tolerance routing + substitution.
+        self._cfg, self._rsrc, self.config_used = _init_once(cfg_path, rtol)
         self._A = ctypes.c_void_p(); self._b = ctypes.c_void_p(); self._x = ctypes.c_void_p()
         self._slv = ctypes.c_void_p()
         m = ctypes.c_int(AMGX_MODE_dDDI)
@@ -247,14 +286,25 @@ class AmgXSolver:
                 vals.ctypes.data_as(ctypes.c_void_p), None), "replace_coefficients")
             self._last = vals.copy()
         if drift > self.drift_tol:
-            # The hierarchy is stale. Rebuilding costs ~43 ms against a ~28 ms solve, so this
-            # must stay rare -- which it is at ~1e-3 drift per step.
-            _chk(_lib.AMGX_solver_setup(self._slv, self._A), "solver_setup (rebuild)")
-            self._ref = vals.copy()
-            self.rebuilds += 1
+            # The hierarchy is stale. The in-place AMGX_solver_setup rebuild
+            # crashes with a CUDA failure (rc 5) on the 2026-09 builds, for
+            # PBICGSTAB and for PCG+aggregation alike, so the caller must tear
+            # this solver down and construct a fresh one -- the construction
+            # path is the one that demonstrably works.
+            raise NeedsRebuild(f"drift {drift:.3e} > {self.drift_tol}")
 
         rhs = np.ascontiguousarray(b, dtype=np.float64)
-        x = np.ascontiguousarray(np.zeros_like(rhs) if x0 is None else x0, dtype=np.float64)
+        # x MUST BE A COPY, never the caller's x0: vector_download writes the
+        # result into this buffer, and np.ascontiguousarray does NOT copy an
+        # already-contiguous array. With the caller's buffer aliased, a FAILED
+        # solve overwrote the warm start with divergence garbage in place --
+        # so every retry, fresh solver, and even full-context reset then
+        # "failed" too, because each inherited the poisoned x0 (R11, solve
+        # #115: x0 went 2.29 -> 2.2e5 across one rejected solve).
+        x = (np.zeros_like(rhs) if x0 is None
+             else np.array(x0, dtype=np.float64, copy=True))
+        if not x.flags.c_contiguous:
+            x = np.ascontiguousarray(x)
         one = 1
         _chk(_lib.AMGX_vector_upload(self._b, self.n, one,
                                      rhs.ctypes.data_as(ctypes.c_void_p)), "vector_upload b")
@@ -266,6 +316,24 @@ class AmgXSolver:
         it = ctypes.c_int(0)
         _lib.AMGX_solver_get_iterations_number(self._slv, ctypes.byref(it))
         self.iterations = it.value
+        # AMGX_solver_solve returns rc 0 even when the ITERATION diverged --
+        # the rc reports API health only. Divergence lives in the status
+        # handle, and a diverged solve hands back NaN with no error (R11:
+        # one silent NaN solve poisoned every field within a few dozen steps).
+        st = ctypes.c_int(0)
+        _lib.AMGX_solver_get_status(self._slv, ctypes.byref(st))
+        if st.value != 0 or np.isnan(x).any():
+            err = FloatingPointError(
+                f"AmgX solve unhealthy: status={st.value} (0=ok 1=failed "
+                f"2=diverged 3=not converged) after {it.value} iters, NaNs in "
+                f"x: {int(np.isnan(x).sum())}/{x.size} (n={self.n}, "
+                f"rtol={self.rtol}, config={self.config_used})")
+            # The caller holds A and can judge the TRUE residual -- AmgX's
+            # "not converged" means it missed ITS criterion (relative to the
+            # initial residual), which a good warm start makes unattainable.
+            err.x = x
+            err.status = st.value
+            raise err
         return x
 
     def close(self):

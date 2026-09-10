@@ -75,6 +75,9 @@ def _has_pc(name, _cache={}):
     return _cache[name]
 
 
+_all_caches = []              # every SolveCache, for the AmgX full reset
+
+
 class SolveCache:
     """Holds a backend solver bound to one sparsity pattern, across steps.
 
@@ -106,6 +109,20 @@ class SolveCache:
         self._amgx = None
         self.iterations = 0
         self.fell_back = False
+        # Direct-solve refuge for operators AmgX cannot handle (the rect-grid
+        # momentum system past ~step 20 develops a conditioning cliff that
+        # defeats every Krylov+preconditioner combination while splu solves it
+        # to machine precision). The factorization is reused while the matrix
+        # VALUES are unchanged -- correctors within a step share one matrix --
+        # and the cooldown keeps us from paying failed AmgX attempts on every
+        # solve of a hard stretch.
+        self._splu = None
+        self._splu_vals = None
+        self._amgx_cooldown = 0
+        # Registry of every live cache, for the full-context AmgX reset: the
+        # shared resources can only be destroyed after EVERY solver bound to
+        # them is closed, and the caches are the only place they are tracked.
+        _all_caches.append(self)
         # TIME SPENT INSIDE THE LINEAR SOLVES, accumulated across every call. This is not
         # curiosity: Gate 6 of the PETSc plan has to decide whether to continue, and that
         # decision turns on what fraction of the runtime is even ADDRESSABLE by distributing
@@ -149,6 +166,16 @@ class SolveCache:
                      singular=False):
         A = A.tocsr()
         A.sort_indices()
+        # FAIL FAST ON NaN. A NaN system never converges; iterative solvers run
+        # to maxiter on it, so a single upstream NaN turns into hours of
+        # full-GPU grinding with no output (R10: 2 h at 90% GPU, zero rows)
+        # instead of a stack trace pointing at the step that produced it.
+        # ~0.5 ms per solve on 1M nnz -- noise against a 30+ ms solve.
+        if np.isnan(A.data).any() or np.isnan(b).any():
+            raise FloatingPointError(
+                f"NaN entering linear solve (n={A.shape[0]}, rtol={rtol:.0e}, "
+                f"A NaNs={int(np.isnan(A.data).sum())}, b NaNs={int(np.isnan(b).sum())}) "
+                f"-- the fields or matrix coefficients went NaN upstream this step")
         # PICT_DUMP_SOLVE=<dir>: save each DISTINCT system (keyed by shape and
         # tolerance) once, for offline preconditioner shootouts on the real
         # operators. Diagnostic only; costs one isfile check per solve when set.
@@ -516,8 +543,18 @@ class SolveCache:
             except ImportError:
                 return None
             try:
+                # Tight-tolerance (momentum) systems run Jacobi-class
+                # preconditioners: a STALE preconditioner there is harmless
+                # (the matrix itself is refreshed by replace_coefficients
+                # every call), and the in-place AMGX_solver_setup rebuild
+                # crashed with a CUDA failure (rc 5) on PBICGSTAB when the
+                # developing flow tripped the drift threshold. Disable drift
+                # rebuilds for those caches; the pressure AMG keeps them.
+                _dt = 1e30 if (rtol is not None and rtol <= 1e-8) \
+                    else float(os.environ.get("PICT_AMGX_DRIFT",
+                                              self.drift_tol))
                 self._amgx = AmgXSolver(A, config=self.config,
-                                        drift_tol=self.drift_tol, rtol=rtol)
+                                        drift_tol=_dt, rtol=rtol)
             except Exception:
                 # LOUD, ONCE. The silent fallback made a failed AmgX run and a
                 # slow scipy run indistinguishable for 50 minutes, twice.
@@ -529,8 +566,156 @@ class SolveCache:
                     traceback.print_exc()
                 return None
             self._key = k
-        x = self._amgx.solve(A.data, b, x0=x0)
+        # THE CONVERGENCE CRITERION IS ||b - A x|| <= rtol ||b||, HERE, NOT IN
+        # AMGX. AmgX's RELATIVE_INI_CORE measures against the INITIAL residual,
+        # and a good warm start makes that target unattainable: as the startup
+        # transient settled, momentum x0 became so accurate that a further 1e-9
+        # reduction sat below machine precision -- the solve ground to
+        # max_iters "not converged" on a solution that was already exact
+        # (and BiCGStab breakdown on the floor residual then manufactured the
+        # NaN that killed R10/R11). One SpMV per solve buys immunity.
+        _nb = np.linalg.norm(b)
+        if x0 is not None and \
+                np.linalg.norm(b - A @ x0) <= rtol * max(_nb, 1e-300):
+            self.iterations = 0
+            return np.array(x0, dtype=np.float64, copy=True)
+
+        def _splu_solve():
+            vals = A.data
+            if self._splu is None or self._splu_vals is None or \
+                    not np.array_equal(vals, self._splu_vals):
+                self._splu = spla.splu(A.tocsc())
+                self._splu_vals = vals.copy()
+            xd = self._splu.solve(b)
+            if np.linalg.norm(b - A @ xd) <= rtol * max(_nb, 1e-300):
+                return xd
+            return None
+
+        if self._amgx_cooldown > 0:
+            self._amgx_cooldown -= 1
+            x = _splu_solve()
+            if x is not None:
+                self.iterations = 0
+                return x
+
+        def _accepted(e):
+            xr = getattr(e, "x", None)
+            if xr is None or np.isnan(xr).any():
+                return None
+            r = np.linalg.norm(b - A @ xr)
+            if r <= rtol * max(_nb, 1e-300):
+                return xr
+            print(f"  AMGX REJECT: true resid {r:.3e} > target "
+                  f"{rtol * max(_nb, 1e-300):.3e} (|b|={_nb:.3e}, "
+                  f"n={A.shape[0]}, rtol={rtol})", flush=True)
+            return None
+
+        def _dump_fail(e):
+            d = os.environ.get("PICT_DUMP_SOLVE")
+            if d:
+                import time as _time
+                f = os.path.join(d, f"failing_n{A.shape[0]}_rtol{rtol:.0e}"
+                                    f"_{int(_time.time())}.npz")
+                np.savez(f, data=A.data, indices=A.indices, indptr=A.indptr,
+                         shape=A.shape, b=b,
+                         x0=(x0 if x0 is not None else np.zeros_like(b)),
+                         x=getattr(e, "x", np.zeros_like(b)))
+                print(f"  failing system dumped -> {f}", flush=True)
+
+        def _reconstruct():
+            _old = self._amgx
+            if _old is not None:
+                try:
+                    _old.close()
+                except Exception:
+                    pass
+            from src.amgx.binding import AmgXSolver
+            _rb = _old.rebuilds if _old is not None else 0
+            _dt = _old.drift_tol if _old is not None else self.drift_tol
+            self._amgx = AmgXSolver(A, config=self.config,
+                                    drift_tol=_dt, rtol=rtol)
+            self._amgx.rebuilds = _rb + 1
+
+        try:
+            x = self._amgx.solve(A.data, b, x0=x0)
+        except FloatingPointError as e:
+            x = _accepted(e)
+            if x is None:
+                # A solver that converged in 1 iteration for a hundred solves
+                # does not honestly need 500 on the next one: the solver
+                # OBJECT went bad, not the operator (the same system solves in
+                # 1 iter in a fresh solver). Reconstruct and retry once before
+                # declaring the system unsolvable.
+                print(f"  AMGX RECONSTRUCT-RETRY after unhealthy solve "
+                      f"(n={A.shape[0]}, rtol={rtol}): {e}", flush=True)
+                _reconstruct()
+                try:
+                    x = self._amgx.solve(A.data, b, x0=x0)
+                except FloatingPointError as e2:
+                    x = _accepted(e2)
+                    if x is None:
+                        # A fresh SOLVER still failed, but a fresh PROCESS
+                        # solves this same matrix instantly (R11 trace,
+                        # solve #115): the rot is in the process-wide AmgX
+                        # state. Escalate: close every solver, destroy the
+                        # shared config/resources, finalize, re-initialize,
+                        # and try once more from truly clean state.
+                        print(f"  AMGX FULL RESET after persistent failure "
+                              f"(n={A.shape[0]}, rtol={rtol})", flush=True)
+                        from src.amgx import binding as _B
+                        for c in _all_caches:
+                            if c._amgx is not None:
+                                try:
+                                    c._amgx.close()
+                                except Exception:
+                                    pass
+                                c._amgx = None
+                                c._key = None
+                        _B.reset()
+                        _reconstruct()
+                        try:
+                            x = self._amgx.solve(A.data, b, x0=x0)
+                        except FloatingPointError as e3:
+                            x = _accepted(e3)
+                            if x is None:
+                                # AmgX is beaten on this operator. Direct
+                                # splu (verified by residual), and a cooldown
+                                # so the hard stretch is not retried through
+                                # the whole failure chain on every solve.
+                                self._amgx_cooldown = int(os.environ.get(
+                                    "PICT_AMGX_COOLDOWN", 30))
+                                print(f"  AMGX -> SPLU: direct solve, "
+                                      f"cooldown {self._amgx_cooldown} "
+                                      f"(n={A.shape[0]}, rtol={rtol})",
+                                      flush=True)
+                                x = _splu_solve()
+                                if x is None:
+                                    _dump_fail(e3)
+                                    print("  SPLU MISSED TOLERANCE TOO -- "
+                                          "scipy fallback", flush=True)
+                                    self.fell_back = True
+                                    return None
+                                self.iterations = 0
+                                return x
+        except Exception as e:
+            if type(e).__name__ != "NeedsRebuild":
+                raise
+            # drifted past drift_tol: reconstruct fresh (see binding.solve)
+            _reconstruct()
+            try:
+                x = self._amgx.solve(A.data, b, x0=x0)
+            except FloatingPointError as e2:
+                x = _accepted(e2)
+                if x is None:
+                    _dump_fail(e2)
+                    raise
         self.iterations = self._amgx.iterations
+        # A healthy solve here is O(1)-O(60) iterations. Iteration growth is
+        # the leading indicator of the field degrading (R11: 1 iter at step 1,
+        # 20000 by step ~40) -- surface it while the run is still alive.
+        if self.iterations > 2000:
+            print(f"  AMGX SLOW: {self.iterations} iters at solve "
+                  f"#{self.n_solve} (n={A.shape[0]}, rtol={rtol})", flush=True)
         return x
 
     def close(self):

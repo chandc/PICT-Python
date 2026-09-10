@@ -53,8 +53,15 @@ CD_REF = 1.33
 
 def build(dt, tol, nz, nblk, backend):
     d, _idx = ring_rect_domain(nz=nz)          # nblk kept for CLI compatibility
+    # PICT_IMPLICIT_CROSS=1: solve the FULL non-orthogonal pressure operator.
+    # The orthogonal-only default is fine on near-orthogonal grids, but on the
+    # butterfly grid's sheared trapezoid corners the dropped cross-flux leaves
+    # unprojected divergence in exactly those cells, and the field blows up
+    # from t~0.1 (2x per step, east trapezoid first) with every linear solve
+    # exact -- measured with the R11 growth probe.
     m = MultiBlockPISO(d, U_INF * D / RE, dt, 2, tol, time_scheme="bdf2", scheme="rotational",
                        picard_iters=2, rhie_chow=True, persistent_flux=True, ddt_corr=False,
+                       implicit_cross=bool(int(os.environ.get("PICT_IMPLICIT_CROSS", "0"))),
                        linear_backend=backend)
     for b in range(len(d.blocks)):
         m.u[b][:] = U_INF

@@ -656,7 +656,11 @@ class MultiBlockPISO:
                 rhs = rhs - 0.0
             b_free = rhs[free] - (M_fD @ pD_val if M_fD is not None else 0.0)
             if self.implicit_cross:
-                sol = self._solve_cross(M, M_ff, free, rhs, coef, Jg)
+                if os.environ.get("PICT_CROSS_DC", "1") != "0":
+                    sol = self._solve_cross_dc(M, M_ff, M_fD, pD, pD_val,
+                                               free, rhs, coef, Jg)
+                else:
+                    sol = self._solve_cross(M, M_ff, free, rhs, coef, Jg)
             elif M_fD is not None:
                 sol = self._pcache.solve(M_ff, b_free, symmetric=False,
                                          rtol=self.tol, maxiter=20000, singular=False)
@@ -860,4 +864,57 @@ class MultiBlockPISO:
         sol, info = spla.bicgstab(op, rhs[free], M=prec, rtol=self.tol, maxiter=20000)
         if info != 0:
             sol, info = spla.lgmres(op, rhs[free], M=prec, rtol=self.tol, maxiter=5000)
+        return sol
+
+    def _solve_cross_dc(self, M, M_ff, M_fD, pD, pD_val, free, rhs, coef, Jg):
+        """Deferred correction for the non-orthogonal pressure operator.
+
+        Solve  M p = rhs + J div(Phi_cross(p))  by LAGGING the cross flux:
+        each outer sweep is one orthogonal solve (the fast backend path, AmgX
+        when available) plus one cross-flux evaluation on the lagged p. The
+        matrix-free full-operator Krylov above pays a cross evaluation PER
+        MATVEC and was measured 70+ minutes inside a single solve on the
+        butterfly grid; a sweep here costs one cross evaluation total.
+
+        Iterates until the relative change in p drops below PICT_CROSS_DC_TOL
+        (default 1e-3) or PICT_CROSS_DC_ITERS sweeps (default 6). The point
+        of the cross terms on this grid is STABILITY -- the orthogonal-only
+        projection leaves unremoved divergence in the sheared trapezoid
+        corners and the field doubles per step from t~0.1 -- so a partially
+        converged correction that breaks that feedback loop is already the
+        product; exactness beyond it buys nothing the correctors don't.
+        """
+        d, nb = self.d, len(self.d.blocks)
+        singular = M_fD is None
+        base = rhs[free] - (M_fD @ pD_val if M_fD is not None else 0.0)
+        tol_dc = float(os.environ.get("PICT_CROSS_DC_TOL", "1e-3"))
+        it_max = int(os.environ.get("PICT_CROSS_DC_ITERS", "6"))
+        v = np.zeros(M.shape[0])
+        if M_fD is not None:
+            v[pD] = pD_val
+        sol = None
+        for k in range(it_max):
+            if k == 0:
+                b_free = base
+            else:
+                pb = self._unflat(v)
+                dc = {}
+                for b in range(nb):
+                    Phi = d.pressure_face_fluxes(b, pb, coef[b], coef,
+                                                 include_orth=False,
+                                                 include_cross=True)
+                    dc[b] = d.divergence(b, Phi, self.Js[b])
+                b_free = base + (Jg * self._flat(dc))[free]
+                if singular:
+                    b_free = b_free - b_free.mean()       # compatibility
+            sol_new = self._pcache.solve(M_ff, b_free, x0=sol,
+                                         symmetric=singular, rtol=self.tol,
+                                         maxiter=20000, singular=singular)
+            prev = v[free].copy()
+            v[free] = sol_new
+            sol = sol_new
+            self.cross_dc_iters = k + 1
+            if k > 0 and np.linalg.norm(v[free] - prev) <= \
+                    tol_dc * max(np.linalg.norm(v[free]), 1e-300):
+                break
         return sol
