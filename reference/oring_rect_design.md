@@ -86,3 +86,31 @@ c518e44 commit message): the orthogonal-only pressure projection is UNSTABLE on 
 grid's sheared trapezoid corners (field doubles per step from t~0.1; cured by
 PICT_IMPLICIT_CROSS=1 deferred correction at ~2x step cost), and the AmgX binding needed
 status/aliasing/true-residual hardening before any of the above could even be measured.
+
+## R11 vs published data (Re = 100 circular cylinder)
+
+| Source | Type | St | C_D (mean) | C_L rms |
+|---|---|---|---|---|
+| **R11, butterfly grid (this work)** | FS/PISO, laterals +-10D | **0.1673** | **1.321** | **0.23** |
+| PICT O-grid legacy arm (R8/R9) | FS/PISO, same code | 0.1643 | 1.267-1.271 | -- |
+| Williamson (1989), parallel shedding | experiment | 0.164 | -- | -- |
+| Roshko (1954), St-Re relation | experiment | ~0.167 | -- | -- |
+| Tritton (1959) | experiment | -- | ~1.26 | -- |
+| Norberg (2003), compilation | experiment | 0.164 | -- | 0.23 |
+| Braza, Chassaing & Ha Minh (1986) | simulation | 0.16 | ~1.36 | -- |
+| Henderson (1995) | spectral element | -- | 1.35 | -- |
+| Liu, Zheng & Sung (1998) | simulation | 0.165 | 1.35 | 0.24 |
+| Park, Kwon & Choi (1998) | simulation | 0.165 | 1.33 | 0.23 |
+| Sharman et al. (2005) | finite volume | 0.164 | 1.33 | 0.23 |
+| Posdziech & Grundmann (2007), large domain | spectral element, blockage study | 0.164 | 1.325 | 0.23 |
+
+Reading: C_D sits in the center of the numerical band (1.32-1.36) and matches the
+blockage-controlled Posdziech & Grundmann value almost exactly; experiments run lower
+(~1.26) partly from finite-span three-dimensionality a nominally 2D computation lacks.
+St is ~2% above the parallel-shedding experimental 0.164, in the direction and size the
+domain-size studies predict for prescribed-freestream laterals at +-10D; the legacy
+O-grid arm (farther boundary) landing on 0.1643 is the same trend, not a contradiction.
+C_L rms agrees with Norberg and every simulation listed. To close the confinement claim
+rigorously: rerun with Y_HALF = 20 and expect St to drop toward 0.164-0.165.
+(Literature values as commonly cited; entries marked ~ are round numbers as originally
+reported.)
