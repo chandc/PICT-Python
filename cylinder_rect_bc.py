@@ -11,7 +11,7 @@ quarter's wall face.
 import numpy as np
 
 from src.multiblock import face_slice, FACE_NAMES
-from cylinder_ring_grid import D, R_CYL, X_IN, X_OUT, Y_HALF
+from cylinder_ring_grid import D, R_CYL, X_IN, X_OUT, Y_HALF, X_HAND
 
 U_INF = 1.0
 TOL = 1e-9
@@ -43,6 +43,26 @@ def classify(d):
     return out
 
 
+def seam_endpoint_columns(d):
+    """Boundary nodes that NO face classifies: the trapezoid diagonal seam
+    rays end exactly at (X_HAND, +-Y_HALF) and (-X_IN, +-Y_HALF). Their owner
+    block (the E/W trapezoid, which owns both corner rays) has all four
+    in-plane faces CONNECTED, so wall_mask -- which skips connected faces --
+    never marks these nodes and the freestream BC never reaches them. Left
+    alone, each such column settles at a fixed point of the edge-replicated
+    corner discretisation: measured u = 1.41 at (7, +-10) for the entire R11
+    run, frozen over 300 time units, and it was the far-field metric's 0.4157
+    floor all along."""
+    cols = []
+    for b, blk in enumerate(d.blocks):
+        x, y = blk.x[:, :, 0], blk.y[:, :, 0]
+        on = ((np.abs(np.abs(y) - Y_HALF) < 1e-9) &
+              ((np.abs(x - X_HAND) < 1e-9) | (np.abs(x + X_IN) < 1e-9)))
+        for i, j in zip(*np.where(on)):
+            cols.append((b, int(i), int(j)))
+    return cols
+
+
 def apply(m, d, kind="dong"):
     """Write boundary values into the solver; register the Dong outlet."""
     roles = classify(d)
@@ -62,6 +82,20 @@ def apply(m, d, kind="dong"):
         for arr, bc, val in ((m.u, m.u_bc, u), (m.v, m.v_bc, v), (m.w, m.w_bc, 0.0)):
             bc[b][fs] = val
             arr[b][fs] = val
+    # Pin the seam-endpoint corner columns and ENROLL them in the solver's
+    # Dirichlet set -- writing the bc arrays alone does nothing for a node
+    # wall_mask never marked.
+    corners = seam_endpoint_columns(d)
+    for b, i, j in corners:
+        for arr, bc, val in ((m.u, m.u_bc, U_INF), (m.v, m.v_bc, 0.0),
+                             (m.w, m.w_bc, 0.0)):
+            bc[b][i, j, :] = val
+            arr[b][i, j, :] = val
+    if corners and hasattr(m, "wall"):
+        for b, i, j in corners:
+            m.wall[d.global_ids(b)[i, j, :]] = True
+        m.interior = np.where(~m.wall)[0]
+        m.bnd = np.where(m.wall)[0]
     m.outflow = outflow
     return roles
 

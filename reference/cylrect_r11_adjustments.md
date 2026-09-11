@@ -125,3 +125,28 @@ docker run -d --rm --gpus all \
 8000 settle + 30000 shed, 2.17 s/step, 18 h, restarts every 500 steps, zero
 incidents. Commits: `c518e44` (fixes), `c266cb9` (verdict), `92bc7d1`
 (literature table).
+
+## Post-verdict finding: unclaimed seam-endpoint corner nodes (fixed)
+
+The R11 vorticity figures showed small blemishes on the lateral boundaries near
+x = 7. Verified against the raw fields: the trapezoid diagonal seam rays end
+exactly at (X_HAND, +-Y_HALF) and (-X_IN, +-Y_HALF), and the E/W trapezoids that
+OWN those ray endpoints have all four in-plane faces CONNECTED -- so wall_mask
+(which skips connected faces) never marks those nodes and no BC ever claims them,
+even though they sit geometrically ON the domain boundary. Each such column
+settles at a fixed point of the edge-replicated corner discretisation: u = 1.41
+at (7, +-10), frozen from t = 80 to t = 380. Consequences: (a) the run's
+far-field metric floor of 0.4157 was this node all along, not wake physics --
+the metric still worked as a GROWTH detector, but its resting value was the
+defect; (b) about half the visible blemish size was plot-side (the seam
+stitching's edge-replicated pad corner inflates local |omega| 2.9 -> 12.3).
+The W-trap endpoints coincide with the inlet corners and stayed ~1.0 naturally.
+
+Fix (`cylinder_rect_bc.py`): `seam_endpoint_columns()` finds every such node by
+geometry; `apply()` pins them to freestream AND enrolls them in the solver's
+Dirichlet set (m.wall/m.bnd/m.interior rebuilt) -- writing the bc arrays alone
+does nothing for a node wall_mask never marked. Verified: 60-step probe, corner
+u = 1.0000 exactly (was 1.4077 at the same t), inboard halo 1.19 -> 1.03,
+trajectory elsewhere unchanged. R11's published St/C_D/C_L are unaffected (the
+defect was static, 10 D from the body); future runs also get a physical far-field
+metric floor.
