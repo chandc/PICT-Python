@@ -243,6 +243,27 @@ def main():
         print(f"  corner sponge (v,w only): sigma={sigc}, radius={rad} D at "
               f"4 junction corners", flush=True)
 
+    # LAGGED DIRICHLET SLIP (see cylinder_rect_bc.apply): before each step,
+    # the lateral wall rows' tangential bc is copied from the adjacent
+    # interior row -- discretely du/dn = 0 with v = 0. One-step lag, stable
+    # at these dt; the momentum Dirichlet rows then pin to the copied value.
+    from src.multiblock import face_slice as _fslice, face_axis_side as _faxis
+
+    def update_slip():
+        for b, fid in getattr(m, "slip_faces", []):
+            ax, side = _faxis(fid)
+            wall = _fslice(fid)
+            inner = [slice(None)] * 3
+            inner[ax] = -2 if side == 1 else 1
+            inner = tuple(inner)
+            m.u_bc[b][wall] = m.u[b][inner]
+            m.w_bc[b][wall] = m.w[b][inner]
+            m.v_bc[b][wall] = 0.0
+        for b, i, j, jsrc in getattr(m, "slip_corners", []):
+            m.u_bc[b][i, j, :] = m.u[b][i, jsrc, :]
+            m.w_bc[b][i, j, :] = m.w[b][i, jsrc, :]
+            m.v_bc[b][i, j, :] = 0.0
+
     def apply_sponge():
         if sponge is not None:
             for b in range(len(d.blocks)):
@@ -258,6 +279,7 @@ def main():
 
     t0 = time.time()
     for i in range(1, settle + 1):
+        update_slip()
         m.step()
         apply_sponge()
         hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
@@ -296,6 +318,7 @@ def main():
 
     t0 = time.time()
     for i in range(1, a.steps + 1):
+        update_slip()
         m.step()
         apply_sponge()
         hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))

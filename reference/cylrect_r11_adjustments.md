@@ -233,3 +233,23 @@ doubled, 0.082 -> 0.161 -- user-spotted in the contours). The dipole lives in v,
 physical value there is ~0; the overspeed lives in u. Damping ONLY v and w keeps the
 full dipole suppression (|v| 0.035) with NO rim streak (streak-zone |omega| 1e-4).
 A sponge must force toward a state the physics agrees with, component by component.
+
+### R13 (queued): slip laterals -- removing the wall sheet at its source
+
+The last visible blemish under freestream laterals is the wall shear sheet itself,
+concentrated at the (X_HAND, +-Y_HALF) corner cells: the wall row is CLAMPED to
+u = U while one row in the confinement overspeed runs +6-15%, and the corner cell's
+tiny skewed metrics render that enforced gradient as an |omega| ~ 4 dot. That is the
+lateral BC's physics, not an error -- so the removal is a different BC.
+`PICT_LATERAL=slip` (cylinder_rect_bc + run_cylinder_rect): free-slip laterals as
+LAGGED DIRICHLET -- before each step the wall row's tangential bc is copied from the
+adjacent interior row (discretely du/dn = 0, v = 0; the solver has no Neumann
+velocity faces). The X_HAND seam-endpoint corner columns follow the interior the
+same way instead of clamping freestream. Measured on the 60-step Y7 testbed vs
+freestream: wall sheet GONE (wall-to-inner du 9e-4), corner |v| 0.019, streak-zone
+|omega| 0.0000, residual junction signature ONE interior cell at |omega| 1.75 (was a
+4.2 wall dot + sheet + dipole). Freestream stays the default: R11/R12 measured it,
+and the two lateral conditions have different blockage laws.
+R13 pair queued behind R12b on Spark (`~/r13_slip_pair.sh`): Y7-slip then Y10-slip,
+same protocol, tags `cylrect_r13_y{7,10}slip_spark` -- a matched confinement pair
+with publication-clean walls.

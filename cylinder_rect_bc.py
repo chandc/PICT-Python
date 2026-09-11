@@ -64,9 +64,25 @@ def seam_endpoint_columns(d):
 
 
 def apply(m, d, kind="dong"):
-    """Write boundary values into the solver; register the Dong outlet."""
+    """Write boundary values into the solver; register the Dong outlet.
+
+    PICT_LATERAL=slip: the lateral walls become free-slip instead of
+    prescribed freestream. The solver has no Neumann velocity faces, so slip
+    is imposed as LAGGED DIRICHLET: the runner copies the adjacent interior
+    row's tangential velocity into the wall row's bc arrays before every
+    step (v stays 0). Discretely du/dn = 0, v = 0 -- no wall shear sheet,
+    and the seam-endpoint corner columns follow the interior instead of
+    clamping freestream against the confinement overspeed (the visible
+    "dot" at (X_HAND, +-Y_HALF) under the freestream laterals). Freestream
+    remains the default: it is what R11/R12 measured, and the two lateral
+    conditions are DIFFERENT physical configurations with different
+    blockage laws."""
+    import os as _os
+    slip = _os.environ.get("PICT_LATERAL", "freestream") == "slip"
     roles = classify(d)
     outflow = []
+    m.slip_faces = []
+    m.slip_corners = []
     for (b, fid), role in roles.items():
         fs = face_slice(fid)
         if role == "body":
@@ -82,6 +98,8 @@ def apply(m, d, kind="dong"):
         for arr, bc, val in ((m.u, m.u_bc, u), (m.v, m.v_bc, v), (m.w, m.w_bc, 0.0)):
             bc[b][fs] = val
             arr[b][fs] = val
+        if slip and role == "lateral":
+            m.slip_faces.append((b, fid))
     # Pin the seam-endpoint corner columns and ENROLL them in the solver's
     # Dirichlet set -- writing the bc arrays alone does nothing for a node
     # wall_mask never marked.
@@ -95,6 +113,15 @@ def apply(m, d, kind="dong"):
                              (m.w, m.w_bc, 0.0)):
             bc[b][i, j, :] = val
             arr[b][i, j, :] = val
+        if slip:
+            # under slip the X_HAND corner columns follow the interior like
+            # every other wall node (copy source = one node inboard in j);
+            # the inlet corners stay pinned freestream (u=1 is physical
+            # there, one cell from the prescribed inflow).
+            blk = d.blocks[b]
+            if abs(float(blk.x[i, j, 0]) - X_HAND) < 1e-9:
+                jsrc = j - 1 if float(blk.y[i, j, 0]) > 0 else j + 1
+                m.slip_corners.append((b, i, j, jsrc))
     if corners and hasattr(m, "wall"):
         for b, i, j in corners:
             m.wall[d.global_ids(b)[i, j, :]] = True
