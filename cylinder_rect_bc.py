@@ -85,7 +85,11 @@ def apply(m, d, kind="dong"):
     # Pin the seam-endpoint corner columns and ENROLL them in the solver's
     # Dirichlet set -- writing the bc arrays alone does nothing for a node
     # wall_mask never marked.
-    corners = seam_endpoint_columns(d)
+    # PICT_NO_CORNER_PIN=1: diagnostic kill-switch for A/B isolation of the
+    # seam-endpoint treatment (the R11 frozen-corner cure).
+    import os as _os
+    corners = ([] if _os.environ.get("PICT_NO_CORNER_PIN") == "1"
+               else seam_endpoint_columns(d))
     for b, i, j in corners:
         for arr, bc, val in ((m.u, m.u_bc, U_INF), (m.v, m.v_bc, 0.0),
                              (m.w, m.w_bc, 0.0)):

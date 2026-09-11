@@ -209,6 +209,36 @@ def main():
             sponge.append(sig * xi**3 * (10 - 15*xi + 6*xi*xi))
         print(f"  sponge: sigma={sig}, width={wid} D (r > {rmax - wid*D:.1f})", flush=True)
 
+    # CORNER SPONGE (opt-in, PICT_CORNER_SPONGE="sigma,radius"): the same
+    # implicit damping, but in small discs around the four seam-endpoint
+    # junction corners (x = X_HAND and x = -X_IN on the laterals). The wall
+    # Dirichlet row, the pinned corner column, the trap-trap diagonal seam
+    # and the trap-wake seam all meet there with no corner logic, and the
+    # residual is a static two-cell v-dipole: |v| 0.29 with the corner pin,
+    # 0.18 without (measured, Y_HALF=7, both backends). It is truncation
+    # error at a degenerate junction, not physics -- damping it locally
+    # touches nothing the measurements see (7+ D from the body).
+    from cylinder_ring_grid import X_HAND, X_IN, Y_HALF
+    _csp = os.environ.get("PICT_CORNER_SPONGE")
+    if _csp:
+        sigc, rad = (float(x) for x in _csp.split(","))
+        corners_xy = [(cx, cy) for cx in (X_HAND, -X_IN)
+                      for cy in (Y_HALF, -Y_HALF)]
+        cs = []
+        for blk in d.blocks:
+            s = np.zeros(blk.shape)
+            for cx, cy in corners_xy:
+                rr = np.sqrt((blk.x - cx) ** 2 + (blk.y - cy) ** 2)
+                xi = np.clip(1.0 - rr / (rad * D), 0.0, 1.0)
+                s = np.maximum(s, sigc * xi**3 * (10 - 15*xi + 6*xi*xi))
+            cs.append(s)
+        if sponge is None:
+            sponge = cs
+        else:
+            sponge = [np.maximum(a, b) for a, b in zip(sponge, cs)]
+        print(f"  corner sponge: sigma={sigc}, radius={rad} D at 4 junction "
+              f"corners", flush=True)
+
     def apply_sponge():
         if sponge is None:
             return
