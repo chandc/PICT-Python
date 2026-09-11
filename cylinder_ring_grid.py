@@ -21,13 +21,21 @@ the working coarse spacing and hold; their node counts are derived, not
 prescribed. All blocks share computational h = (1,1,1) -- a gauge the metrics
 absorb, and the diffusion assembly refuses seams whose h differ.
 """
+import os
+
 import numpy as np
 
 from src.multiblock import Block, Connection, Domain, face_id
 
 D = 1.0
 R_CYL = 0.5 * D
-X_IN, X_OUT, Y_HALF = 10.0 * D, 30.0 * D, 10.0 * D
+# PICT_Y_HALF (in diameters) widens the lateral extent for confinement
+# studies: R11 at +-10 D measured St 0.1673 vs open-domain 0.164, the
+# documented blockage shift; +-20 D is the attribution check. Everything
+# downstream -- trapezoid radial counts, BC classification, seam layout --
+# adapts through the geometry, and validate() re-audits the result.
+X_IN, X_OUT = 10.0 * D, 30.0 * D
+Y_HALF = float(os.environ.get("PICT_Y_HALF", "10")) * D
 X_HAND = 7.0 * D                 # butterfly ends; tensor wake block begins
 
 
@@ -53,6 +61,52 @@ def _ramp_hold(d0, d1, ratio):
         dt = min(dt * ratio, d1)
     t = np.array(t)
     return t / t[-1]
+
+
+def _two_sided_n(L, d0, d1, n):
+    """n nodes over [0,1] (ray length L): first spacing d0/L, LAST spacing
+    d1/L, interior log-linear to a bulge B solved by bisection so the sum
+    lands exactly on L. The Vinokur-style answer to a fan of rays with very
+    different lengths that must all END at one prescribed spacing: at
+    Y_HALF=20 the east trap's columns span 6-20 D, and pure geometric
+    distributions end anywhere from 0.1 to 0.8 against the wake block's
+    single dx -- a 3.8x seam FAIL no single-parameter family can fix."""
+    m = n - 1                                 # cells
+    k = np.arange(m, dtype=float)
+    mid = max(1, m // 2)
+
+    def spac(B):
+        up = d0 * (B / d0) ** (np.minimum(k, mid) / mid)
+        dn = B * (d1 / B) ** (np.maximum(k - mid, 0.0) / max(m - 1 - mid, 1))
+        return np.where(k <= mid, up, dn)
+
+    lo, hi = 1e-9 * L, 50.0 * L
+    for _ in range(90):
+        B = np.sqrt(lo * hi)
+        if spac(B).sum() < L:
+            lo = B
+        else:
+            hi = B
+    w = spac(np.sqrt(lo * hi))
+    w = w * (L / w.sum())                     # close the bisection residual
+    return np.concatenate([[0.0], np.cumsum(w)]) / L
+
+
+def _ramp_hold_sym(d0, d1, ratio):
+    """param nodes on [0,1]: BOTH end spacings d0, geometric growth `ratio`
+    to a plateau <= d1, symmetric about 0.5. For a wall whose two corners
+    both meet finer neighbours: at Y_HALF=20 the west wall (40 D) met the
+    north/south walls (17 D) with a 2.35x corner jump under the uniform
+    parameterisation, a validate() FAIL."""
+    ds, dt = [], d0
+    s = 0.0
+    while s < 0.5:
+        ds.append(dt)
+        s += dt
+        dt = min(dt * ratio, d1)
+    half = np.concatenate([[0.0], np.cumsum(ds)])
+    half = half * (0.5 / half[-1])
+    return np.concatenate([half, (1.0 - half[::-1])[1:]])
 
 
 def _ramp_then_uniform(L, d0, d1, ratio):
@@ -118,7 +172,25 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
     t_N = _ramp_hold(0.72 * de, side_dt, 1.12)   # ne -> nw: fine at east corner;
     # 0.72*de: geometric-mean start between the frame-end and outer-end fan
     # scales of the adjacent east block, splitting the seam mismatch both ways
-    t_W = np.linspace(0.0, 1.0, int(round(1.0 / side_dt)) + 1)
+    # West wall: uniform while its corner spacing stays within the 1.2x
+    # seam-jump budget of the north/south walls' hold spacing; end-graded
+    # symmetric otherwise (the Y_HALF=20 confinement domain, where the side
+    # wall is 40 D against the 17 D top wall). The guard keeps the validated
+    # Y_HALF=10 grid BIT-IDENTICAL to the R11 configuration.
+    _L_top = float(np.linalg.norm(rc["nw"] - rc["ne"]))
+    _L_side = float(np.linalg.norm(rc["sw"] - rc["nw"]))
+    _d0_W = side_dt * _L_top / _L_side
+    if _d0_W < side_dt / 1.2:
+        # OUTER wall graded (corner spacing matches the north/south holds);
+        # INNER (frame) stays uniform -- the frame sides are equal length, so
+        # the frame-corner match needs uniformity while the wall-corner match
+        # needs grading, and a quarter's two ends may use different params
+        # (the east quarter always has).
+        t_W_out = _ramp_hold_sym(_d0_W, side_dt, 1.12)
+        t_W = np.linspace(0.0, 1.0, len(t_W_out))
+    else:
+        t_W = np.linspace(0.0, 1.0, int(round(1.0 / side_dt)) + 1)
+        t_W_out = t_W
     t_S = 1.0 - _ramp_hold(0.72 * de, side_dt, 1.12)[::-1]   # sw -> se: mirrored
 
     # E outer (the wake block's y lines): centreline-clustered tanh blended
@@ -130,7 +202,7 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
 
     quarters = (("E", "se", "ne", t_E, tE_out, (0, None)),
                 ("N", "ne", "nw", t_N, t_N, (1, -1)),
-                ("W", "nw", "sw", t_W, t_W, (0, None)),
+                ("W", "nw", "sw", t_W, t_W_out, (0, None)),
                 ("S", "sw", "se", t_S, t_S, (1, -1)))
 
     w_ring = _geometric_weights(first / (L1 - R_CYL), ring_ratio)
@@ -182,8 +254,14 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
         rb.faces[face_id(0, 0)] = "wall"                    # cylinder, no-slip
 
         W = np.empty((nrt, len(Ef)))
+        # LEGACY (Y_HALF = 10): pure geometric per column, exactly the R11
+        # validated configuration, preserved bit-identical. Wider domains use
+        # two-sided distributions: every column ends at wake_dx0, so the
+        # wake seam and the trap-trap seams all match by construction.
+        legacy = abs(Y_HALF - 10.0 * D) < 1e-12
         for jcol, L in enumerate(Lcol):
-            W[:, jcol] = _geometric_n(L, ring_last, nrt)
+            W[:, jcol] = (_geometric_n(L, ring_last, nrt) if legacy else
+                          _two_sided_n(L, ring_last, wake_dx0, nrt))
         Xt = Ef[None, :, 0] * (1 - W) + O[None, :, 0] * W
         Yt = Ef[None, :, 1] * (1 - W) + O[None, :, 1] * W
         # ALL traps keep their full radial extent: the trap-trap diagonal
@@ -212,6 +290,15 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
     wb.faces[face_id(0, 1)] = "wall"                        # Dong plane (role via BC module)
     wb.faces[face_id(1, 0)] = wb.faces[face_id(1, 1)] = "wall"   # slip laterals
 
+    # NOTE (2026-09-11, measured): interior Laplacian smoothing of the trap
+    # blocks was tried and REJECTED. The worst in-plane skew (0.83 / 34 deg,
+    # east trap outer corners) sits at PINNED corner nodes an interior
+    # smoother cannot move, and the pervasive ~0.69 (46 deg) along every
+    # diagonal seam is TOPOLOGICAL -- the ray directions are fixed by the
+    # decomposition. 30 Jacobi sweeps changed the worst skew by 0.001; 100
+    # sweeps degraded seam spacing to 2 validate() FAILs while the skew
+    # stayed 0.83. Non-orthogonality on this grid is handled where it can
+    # be: the implicit_cross pressure projection.
     order = ("E", "N", "W", "S")
     for k, name in enumerate(order):
         nxt = order[(k + 1) % 4]

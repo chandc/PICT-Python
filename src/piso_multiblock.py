@@ -889,32 +889,97 @@ class MultiBlockPISO:
         base = rhs[free] - (M_fD @ pD_val if M_fD is not None else 0.0)
         tol_dc = float(os.environ.get("PICT_CROSS_DC_TOL", "1e-3"))
         it_max = int(os.environ.get("PICT_CROSS_DC_ITERS", "6"))
-        v = np.zeros(M.shape[0])
-        if M_fD is not None:
-            v[pD] = pD_val
-        sol = None
-        for k in range(it_max):
-            if k == 0:
-                b_free = base
-            else:
-                pb = self._unflat(v)
-                dc = {}
-                for b in range(nb):
+
+        # Blocks whose cross metrics are IDENTICALLY zero (the tensor wake --
+        # ~45% of the cells) contribute nothing to the cross flux; evaluating
+        # them anyway was pure cost. Exact-math skip: the threshold admits
+        # only metric products at rounding level relative to the diagonal.
+        xb = getattr(self, "_cross_blocks", None)
+        if xb is None:
+            KEYS = (("xi_x", "xi_y", "xi_z"), ("eta_x", "eta_y", "eta_z"),
+                    ("zeta_x", "zeta_y", "zeta_z"))
+            xb = set()
+            for b in range(nb):
+                _, mb = d.block_metrics_cached(b)
+                diag = max(float(np.abs(sum(mb[KEYS[a][c]] ** 2 for c in range(3))).max())
+                           for a in range(3))
+                off = max(float(np.abs(sum(mb[KEYS[a1][c]] * mb[KEYS[a2][c]]
+                                           for c in range(3))).max())
+                          for a1 in range(3) for a2 in range(3) if a1 != a2)
+                if off > 1e-13 * diag:
+                    xb.add(b)
+            self._cross_blocks = xb
+
+        def cross_rhs(vfull):
+            pb = self._unflat(vfull)
+            dc = {}
+            for b in range(nb):
+                if b in xb:
                     Phi = d.pressure_face_fluxes(b, pb, coef[b], coef,
                                                  include_orth=False,
                                                  include_cross=True)
                     dc[b] = d.divergence(b, Phi, self.Js[b])
-                b_free = base + (Jg * self._flat(dc))[free]
-                if singular:
-                    b_free = b_free - b_free.mean()       # compatibility
-            sol_new = self._pcache.solve(M_ff, b_free, x0=sol,
-                                         symmetric=singular, rtol=self.tol,
-                                         maxiter=20000, singular=singular)
+                else:
+                    dc[b] = np.zeros(self.d.blocks[b].shape)
+            out = base + (Jg * self._flat(dc))[free]
+            if singular:
+                out = out - out.mean()                    # compatibility
+            return out
+
+        v = np.zeros(M.shape[0])
+        if M_fD is not None:
+            v[pD] = pD_val
+        # SEED the lagged cross term with the previous STEP's converged
+        # pressure FOR THE SAME SLOT. The step makes picard_iters x
+        # corrector_steps of these solves and consecutive calls solve
+        # DIFFERENT systems (|p| 6.3e3 vs 1.1e3 for the two correctors), so a
+        # shared seed is useless -- but the same slot one step earlier is
+        # nearly identical (measured |p| 6.256e3 -> 6.257e3). With the right
+        # seed the first sweep starts at the converged answer and DC exits
+        # immediately; the sweeps were 24 inner pressure solves per step and
+        # 65% of R11's runtime.
+        nslots = max(1, self.picard_iters) * max(1, self.corrector_steps)
+        self._dc_call = getattr(self, "_dc_call", -1) + 1
+        slot = self._dc_call % nslots
+        seeds = self._dc_seeds = getattr(self, "_dc_seeds", {})
+        seed = seeds.get(slot)
+        b_free = cross_rhs(seed) if seed is not None else base
+        sol0 = None
+        if seed is not None:
+            # baseline and warm start from the seed, so a solve that lands on
+            # it is recognised as converged on the FIRST sweep
+            v[free] = seed[free]
+            sol0 = np.array(seed[free], copy=True)
+
+        # Intermediate sweeps solve LOOSELY (standard inexact outer
+        # iteration); the one final solve below is at full tolerance on the
+        # latest lagged operator, so the returned pressure meets self.tol
+        # regardless of how sloppy the journey was.
+        loose = max(self.tol, float(os.environ.get("PICT_CROSS_DC_INNER",
+                                                   "1e-4")))
+        if getattr(self, "_pcache_dc", None) is None:
+            self._pcache_dc = SolveCache(backend=self._pcache.backend,
+                                         precond=self._pcache.precond,
+                                         petsc_pc=self._pcache.petsc_pc)
+        sol = sol0
+        for k in range(it_max):
+            sol = self._pcache_dc.solve(M_ff, b_free, x0=sol,
+                                        symmetric=singular, rtol=loose,
+                                        maxiter=20000, singular=singular)
             prev = v[free].copy()
-            v[free] = sol_new
-            sol = sol_new
+            v[free] = sol
             self.cross_dc_iters = k + 1
-            if k > 0 and np.linalg.norm(v[free] - prev) <= \
+            if np.linalg.norm(v[free] - prev) <= \
                     tol_dc * max(np.linalg.norm(v[free]), 1e-300):
                 break
+            b_free = cross_rhs(v)
+        # final: full tolerance, REUSING the last sweep's RHS -- a one-iterate
+        # older cross lag (same order as the sweep truncation itself), zero
+        # extra cross evaluations, and a warm start that already solves this
+        # system to `loose`, so it is a ~10 ms polish, not a 46 ms solve.
+        sol = self._pcache.solve(M_ff, b_free, x0=sol,
+                                 symmetric=singular, rtol=self.tol,
+                                 maxiter=20000, singular=singular)
+        v[free] = sol
+        seeds[slot] = v.copy()
         return sol

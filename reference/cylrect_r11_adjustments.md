@@ -150,3 +150,55 @@ u = 1.0000 exactly (was 1.4077 at the same t), inboard halo 1.19 -> 1.03,
 trajectory elsewhere unchanged. R11's published St/C_D/C_L are unaffected (the
 defect was static, 10 D from the body); future runs also get a physical far-field
 metric floor.
+
+## Post-campaign work (2026-09-11): speed, confinement check, smoothing verdict
+
+**1. Deferred-correction pressure solve made 34% faster (2.197 -> 1.453 s/step at the
+step-500 benchmark), physics bit-comparable** (v_probe matches R11 to 6 digits; 20-step
+A/B field diff at the solver-tolerance floor: velocity 6e-6, pressure 4e-4). R11 spent
+65% of its runtime in 24 full-tolerance inner pressure solves per step. Three changes in
+`_solve_cross_dc`:
+- **Exact-math block skip**: cross-flux evaluation omitted for blocks whose cross
+  metrics are identically zero (threshold 1e-13 relative) -- the tensor wake block,
+  ~45% of the cells.
+- **Slot-keyed seeding**: the lagged cross term starts from the previous STEP's
+  converged pressure FOR THE SAME (picard, corrector) slot. Consecutive calls solve
+  different systems (|p| 6.3e3 vs 1.1e3 across the two correctors -- a shared seed is
+  useless, measured), but the same slot one step apart is nearly identical.
+- **Loose sweeps + reused-RHS polish**: intermediate sweeps solve to
+  PICT_CROSS_DC_INNER (1e-4) in a second SolveCache; ONE final full-tolerance solve
+  REUSES the last sweep's RHS (a one-iterate-older cross lag, the same order as the
+  sweep truncation itself), so it warm-starts as a ~10 ms polish with zero extra cross
+  evaluations. First attempt recomputed the RHS for the final solve and was NET SLOWER
+  than R11 (2.633 s/step): three extra cross evaluations ate the entire loose-solve
+  saving. Measure, don't assume.
+Also measured: the DC fixed point converges slowly here (delta ratio ~0.4/sweep; the
+sheared-corner coupling is strong), so R11 was ALWAYS running 6 truncated sweeps --
+the new scheme keeps that accuracy contract and cuts its price.
+
+**2. Y_HALF=20 confinement grid** (`PICT_Y_HALF`, env; 221,212 cells, validate 0 FAIL,
+worst seam jump 1.63x = the Y10 warn level; Y10 stays BIT-IDENTICAL via explicit
+guards). Two grid-generation changes were forced by the 2:1 wall-length asymmetry:
+- `_ramp_hold_sym`: the west wall (40 D) meets the north/south walls (17 D); a uniform
+  parameterisation put a 2.35x cell-width jump at the shared corners (validate FAIL).
+  End-graded symmetric distribution matches the corner spacings; the frame end stays
+  uniform (a quarter's two ends may use different params -- the east quarter always
+  has).
+- `_two_sided_n`: east-trap columns span 6-20 D and pure geometric distributions end
+  anywhere between 0.1 and 0.8 against the wake block's single dx (3.8x seam FAIL).
+  Two-sided (Vinokur-style) distributions pin BOTH end spacings and absorb the length
+  in a mid-column bulge; every trap column now ends at wake_dx0 and the wake seam
+  matches by construction.
+Run: `cylrect_r12_y20_spark`, same protocol as R11. Expected verdict: St drops from
+0.1673 toward 0.164-0.165 if the confinement attribution is right.
+
+**3. Trapezoid corner smoothing: evaluated and REJECTED** (negative result, recorded in
+`cylinder_ring_grid.py`). Measurements that killed it: (a) min J = 6.1e-5 lives in the
+RING blocks' first wall layer on the diagonals -- that is wall RESOLUTION, not
+distortion, and the earlier "sheared corner cells" framing misattributed it; (b) the
+worst skew (0.83 / grid lines at 34 deg) sits at PINNED corner nodes an interior
+smoother cannot move, and the pervasive 0.69 (46 deg) along every diagonal seam is
+TOPOLOGICAL -- ray directions are fixed by the block decomposition; (c) 30 Jacobi
+sweeps on the trap outer halves changed the worst skew by 0.001; 100 sweeps degraded
+seam spacing to 2 validate FAILs with the skew unchanged. Non-orthogonality on this
+topology is handled where it can be: the implicit_cross projection.
