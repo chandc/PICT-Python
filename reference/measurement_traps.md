@@ -437,3 +437,51 @@ column in the driver log reinforced the wrong number.
 head -1 of a filter), and measure throughput by wall-clock arrival of progress markers, not
 by in-process averages that integrate over a dirty past.** Kill containers by exact ID; a
 timeout on `docker run` orphans, not stops.
+
+## 21. The fix that was never deployed
+
+R10's relaunch "with all three solver fixes" ground for two hours exactly like the
+run before it -- because the rsync to Spark had never carried the fixed files. The
+failure was then almost attributed to the fixes not working. The tell, found only
+after a py-spy stack sample and a binding diff: `md5sum` of the touched files on the
+two ends disagreed.
+
+**A remote failure indicts the fix only if the remote provably runs the fix. Checksum
+every touched file on both ends as part of the launch, not as a post-mortem.**
+
+## 22. A log that is alive and says nothing
+
+The same relaunch logged through a plain redirect without `-u`. Python block-buffers
+redirected stdout; the C library's own prints (unbuffered fd writes) got through. The
+result was the worst combination: a log whose mtime advanced and which contained the
+AmgX banner -- looking alive -- while every Python-side progress row sat in a buffer
+for two hours.
+
+**`python -u` for every containerised run. A log's liveness is proved by progress
+markers arriving, not by its timestamp.**
+
+## 23. Every readout the solver library offers can lie at once
+
+AMGX_solver_solve's return code reports API health, not convergence: a diverged solve
+returns rc 0 and garbage. The status handle knows about divergence but measures
+convergence RELATIVE TO THE INITIAL residual -- a good warm start makes the target
+sub-machine-precision, so exact solutions read "not converged". And the residual it
+monitors is the PRECONDITIONED one, so a broken preconditioner reads "converged" on a
+solution whose true residual is 1e9. All three lies were load-bearing in one week.
+
+**The only convergence statement worth trusting is one you compute yourself:
+||b - Ax|| <= rtol ||b||, one SpMV, in the caller, on every solve.**
+
+## 24. np.ascontiguousarray is not a copy
+
+The binding passed the caller's warm start straight to AMGX_vector_download through
+`np.ascontiguousarray`, which returns the SAME array when it is already contiguous
+float64. Every failed solve therefore overwrote the caller's x0 -- a slice of live
+solver state -- with divergence garbage, in place. One bad solve then poisoned every
+retry, every fresh solver object, and a full library re-initialisation, perfectly
+imitating permanent process corruption; a fresh process "fixed" it, deepening the
+illusion. Found only when a dump recorded |x0|=2e5 for a solve whose entry trace had
+just printed |x0|=2.29.
+
+**Any buffer a C library writes into must be an explicit `np.array(..., copy=True)`.
+`ascontiguousarray` is a cast that sometimes copies, never a guarantee.**
