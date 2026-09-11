@@ -61,3 +61,28 @@ faces).
 3. Split-equals-whole style check against the O-grid solution at Re = 100 base flow.
 4. Full shedding run: St vs 0.1643/0.164, C_D vs 1.27-1.33, far field clean at the flat
    outflow, NO junction striping anywhere (the point of the exercise).
+
+## R11 VERDICT (2026-09-10): VALIDATED
+
+Full shedding run (`cylrect_r11_spark`, 142,624 cells nz=4, dt=0.01, tol 1e-6, AmgX +
+implicit_cross deferred correction, 8000 settle + 30000 shed, 18 h at 2.17 s/step, ZERO
+solver incidents):
+
+- **St = 0.1673** over 21 saturated cycles t=[250,380] (zero-crossing; cycle scatter
+  <1e-4). Legacy O-grid measured 0.1643; canonical open-domain 0.164. The +1.8% is the
+  documented confined-domain shift for lateral freestream walls at +-10 D -- consistent
+  with the runner's own confined reference (C_D 1.33).
+- **C_D = 1.321** (window mean; spurious normal stress +0.0047 accounted). Literature
+  band 1.27-1.33.
+- **C_L rms = 0.23** (band 0.23-0.33).
+- **No junction striping anywhere** -- the point of the exercise. Vorticity contours
+  (figures/rect_vorticity_cylrect_r11_mid.png): the Karman street crosses the trapezoid->
+  wake handoff at x=7 invisibly and exits the flat Dong plane at x=30 without reflection.
+  Far-field metric pinned at 0.416 for the entire run (abort was 1.5); on the O-grid the
+  same metric rode the Dong-arc corner stripes.
+
+Two prerequisites found on the way (details: reference/measurement_traps.md and the
+c518e44 commit message): the orthogonal-only pressure projection is UNSTABLE on this
+grid's sheared trapezoid corners (field doubles per step from t~0.1; cured by
+PICT_IMPLICIT_CROSS=1 deferred correction at ~2x step cost), and the AmgX binding needed
+status/aliasing/true-residual hardening before any of the above could even be measured.
