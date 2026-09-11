@@ -169,9 +169,13 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
 
     # tangential parameters per side (0 -> 1 from start corner to end corner)
     t_E = np.linspace(0.0, 1.0, n_east)
-    t_N = _ramp_hold(0.72 * de, side_dt, 1.12)   # ne -> nw: fine at east corner;
     # 0.72*de: geometric-mean start between the frame-end and outer-end fan
-    # scales of the adjacent east block, splitting the seam mismatch both ways
+    # scales of the adjacent east block, splitting the seam mismatch both
+    # ways -- tuned at Y_HALF = 10. The outer-end scale tracks the east
+    # wall's height (2*Y_HALF), so the geometric mean carries sqrt(Y/10):
+    # without it Y_HALF = 7 put a 2.17x FAIL on the E<->N/S trap seams.
+    _ne_start = 0.72 * de * float(np.sqrt(Y_HALF / (10.0 * D)))
+    t_N = _ramp_hold(_ne_start, side_dt, 1.12)   # ne -> nw: fine at east corner
     # West wall: uniform while its corner spacing stays within the 1.2x
     # seam-jump budget of the north/south walls' hold spacing; end-graded
     # symmetric otherwise (the Y_HALF=20 confinement domain, where the side
@@ -191,7 +195,7 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
     else:
         t_W = np.linspace(0.0, 1.0, int(round(1.0 / side_dt)) + 1)
         t_W_out = t_W
-    t_S = 1.0 - _ramp_hold(0.72 * de, side_dt, 1.12)[::-1]   # sw -> se: mirrored
+    t_S = 1.0 - _ramp_hold(_ne_start, side_dt, 1.12)[::-1]   # sw -> se: mirrored
 
     # E outer (the wake block's y lines): centreline-clustered tanh blended
     # with uniform so corner spacing stays within the N/S grading's reach
@@ -254,11 +258,16 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
         rb.faces[face_id(0, 0)] = "wall"                    # cylinder, no-slip
 
         W = np.empty((nrt, len(Ef)))
-        # LEGACY (Y_HALF = 10): pure geometric per column, exactly the R11
-        # validated configuration, preserved bit-identical. Wider domains use
-        # two-sided distributions: every column ends at wake_dx0, so the
-        # wake seam and the trap-trap seams all match by construction.
-        legacy = abs(Y_HALF - 10.0 * D) < 1e-12
+        # Pure geometric per column for Y_HALF <= 10 (at 10 exactly the R11
+        # validated configuration, bit-identical; below 10 the fan is
+        # shallower and the spread only shrinks). Wider domains use two-sided
+        # distributions so every column ends at wake_dx0 -- which fixes the
+        # seam spreads but CANNOT fix the fan's corner-ray shear: at Y=20
+        # the max skew is 0.97 regardless (rays to (7, +-20) run 18 deg off
+        # the outer wall) and the flow blows up through any projection.
+        # Y_HALF beyond ~12 needs a slab-extension topology, not a better
+        # column distribution.
+        legacy = Y_HALF <= 10.0 * D + 1e-12
         for jcol, L in enumerate(Lcol):
             W[:, jcol] = (_geometric_n(L, ring_last, nrt) if legacy else
                           _two_sided_n(L, ring_last, wake_dx0, nrt))

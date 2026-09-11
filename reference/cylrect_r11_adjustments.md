@@ -202,3 +202,22 @@ TOPOLOGICAL -- ray directions are fixed by the block decomposition; (c) 30 Jacob
 sweeps on the trap outer halves changed the worst skew by 0.001; 100 sweeps degraded
 seam spacing to 2 validate FAILs with the skew unchanged. Non-orthogonality on this
 topology is handled where it can be: the implicit_cross projection.
+
+### Confinement-check pivot: Y20 is topologically out of reach; Y7 runs instead
+
+The Y_HALF=20 launch blew up from ~step 25 (east trapezoid first -- the R11
+instability signature) EVEN WITH implicit_cross. Root cause is geometric, not
+numerical: at Y=20 the east fan's corner rays to (7, +-20) run 18 degrees off the
+outer wall and the max skew reaches 0.97 (grid lines at 14 degrees), regardless of
+column distribution -- the cross coupling then dominates the orthogonal operator and
+no truncated deferred correction can hold it. The skew law is
+cos(90deg - arctan(Y_HALF/6)): the butterfly fan cannot healthily span a wall much
+taller than its handoff width. Y_HALF beyond ~12 needs a slab-extension topology
+(butterfly core at +-10 plus tensor slabs above/below), noted as future work.
+
+The confinement attribution is instead tested in the direction where geometry
+IMPROVES: **Y_HALF=7** (corner rays at 45 deg, max skew 0.82 < Y10's 0.83; grid 0
+FAILs after scaling the E<->N/S seam ramp start by sqrt(Y/10); 80-step probe
+monotone-stable). Literature blockage laws are monotone in D/(2Y), so two points --
+Y10 (St 0.1673) and Y7 (expected HIGHER) -- extrapolate to the open-domain St and
+test the same hypothesis as Y20 would have. Run: `cylrect_r12_y7_spark`.
