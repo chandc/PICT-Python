@@ -220,33 +220,41 @@ def main():
     # touches nothing the measurements see (7+ D from the body).
     from cylinder_ring_grid import X_HAND, X_IN, Y_HALF
     _csp = os.environ.get("PICT_CORNER_SPONGE")
+    csponge = None
     if _csp:
         sigc, rad = (float(x) for x in _csp.split(","))
         corners_xy = [(cx, cy) for cx in (X_HAND, -X_IN)
                       for cy in (Y_HALF, -Y_HALF)]
-        cs = []
+        csponge = []
         for blk in d.blocks:
             s = np.zeros(blk.shape)
             for cx, cy in corners_xy:
                 rr = np.sqrt((blk.x - cx) ** 2 + (blk.y - cy) ** 2)
                 xi = np.clip(1.0 - rr / (rad * D), 0.0, 1.0)
                 s = np.maximum(s, sigc * xi**3 * (10 - 15*xi + 6*xi*xi))
-            cs.append(s)
-        if sponge is None:
-            sponge = cs
-        else:
-            sponge = [np.maximum(a, b) for a, b in zip(sponge, cs)]
-        print(f"  corner sponge: sigma={sigc}, radius={rad} D at 4 junction "
-              f"corners", flush=True)
+            csponge.append(s)
+        # V AND W ONLY. The first version damped u toward freestream too, and
+        # since the physical state around the junction is a +6-12% confinement
+        # overspeed, the sponge rim continuously manufactured a shear layer
+        # that advected the length of the wake as a visible streak (measured:
+        # streak-zone |omega| doubled, 0.082 -> 0.161). The junction dipole
+        # lives in v, whose physical value there is ~0 -- damping v costs
+        # nothing physical; leaving u alone creates no rim shear.
+        print(f"  corner sponge (v,w only): sigma={sigc}, radius={rad} D at "
+              f"4 junction corners", flush=True)
 
     def apply_sponge():
-        if sponge is None:
-            return
-        for b in range(len(d.blocks)):
-            g = 1.0 / (1.0 + m.dt * sponge[b])
-            m.u[b][:] = 1.0 + (m.u[b] - 1.0) * g
-            m.v[b][:] *= g
-            m.w[b][:] *= g
+        if sponge is not None:
+            for b in range(len(d.blocks)):
+                g = 1.0 / (1.0 + m.dt * sponge[b])
+                m.u[b][:] = 1.0 + (m.u[b] - 1.0) * g
+                m.v[b][:] *= g
+                m.w[b][:] *= g
+        if csponge is not None:
+            for b in range(len(d.blocks)):
+                gc = 1.0 / (1.0 + m.dt * csponge[b])
+                m.v[b][:] *= gc
+                m.w[b][:] *= gc
 
     t0 = time.time()
     for i in range(1, settle + 1):

@@ -221,3 +221,15 @@ FAILs after scaling the E<->N/S seam ramp start by sqrt(Y/10); 80-step probe
 monotone-stable). Literature blockage laws are monotone in D/(2Y), so two points --
 Y10 (St 0.1673) and Y7 (expected HIGHER) -- extrapolate to the open-domain St and
 test the same hypothesis as Y20 would have. Run: `cylrect_r12_y7_spark`.
+
+### Corner sponge, second iteration: v and w ONLY
+
+The first corner sponge damped (u,v,w) toward freestream in 1.2 D discs at the four
+junction corners. It killed the dipole (0.29 -> 0.036) but MANUFACTURED a worse
+artifact: the physical state around the junction is a +6-12% confinement overspeed, so
+forcing u -> U at the disc created a permanent shear layer at the sponge rim that
+advected the length of the wake as visible vorticity streaks (streak-zone |omega|
+doubled, 0.082 -> 0.161 -- user-spotted in the contours). The dipole lives in v, whose
+physical value there is ~0; the overspeed lives in u. Damping ONLY v and w keeps the
+full dipole suppression (|v| 0.035) with NO rim streak (streak-zone |omega| 1e-4).
+A sponge must force toward a state the physics agrees with, component by component.
