@@ -114,3 +114,16 @@ C_L rms agrees with Norberg and every simulation listed. To close the confinemen
 rigorously: rerun with Y_HALF = 20 and expect St to drop toward 0.164-0.165.
 (Literature values as commonly cited; entries marked ~ are round numbers as originally
 reported.)
+
+## R12b CONFINEMENT VERDICT (2026-09-11): the +2% St was blockage, quantitatively
+
+Y_HALF=7 rerun (`cylrect_r12_y7_spark`, freestream laterals, same protocol, corner
+sponge v/w-only, 0.94 s/step, zero incidents): **St = 0.1695** (17 cycles, scatter
+<1e-4), **C_D = 1.339**, C_L rms 0.25. Against Y10's St 0.1673 / C_D 1.321: both rise
+with confinement in the direction and magnitude the blockage laws demand.
+Two-point extrapolation to the open domain: quadratic in beta = D/2Y gives
+**St_open = 0.1652**, linear 0.1621 -- bracketing the canonical 0.164. R11's +2%
+deviation is thereby attributed to lateral blockage, closing the last open question
+on the butterfly-grid validation. (Y20 was the original plan; topologically
+infeasible -- see the adjustments ledger -- and unnecessary: the blockage law is
+monotone, so approaching from the confined side tests the same hypothesis.)
