@@ -955,3 +955,89 @@ class MultiBlockDCChain(MultiBlockBCChain):
         if return_fields:
             return u, p_flux
         return (u ** 2).sum() if final_only else L
+
+
+class MultiBlockVecChain(MultiBlockBCChain):
+    """M1: the chain with a VECTOR velocity state -- (u, v, w) coupled by the
+    pressure projection.
+
+    Everything scalar in `MultiBlockBCChain` triples: three momentum solves
+    per step sharing ONE frozen matrix (exactly the production sharing -- the
+    convection-diffusion operator does not know which component it advects),
+    the flux divergence reads all three components through the (N, 3N)
+    `flux_divergence_matrix` that Stage 7.6 verified, and the correction uses
+    the per-axis cell-gradient operators. Cross-component sensitivity exists
+    ONLY through the pressure: a u-source bends v via phi, which is what the
+    v.2 gate exploits -- there is no other path, so a passing gate certifies
+    the projection coupling specifically.
+
+    Boundary values per component: walls 0; inlet (u = parabolic profile,
+    v = w = 0); outlet zero-gradient copy PER COMPONENT. Dong's pressure
+    reads the streamwise component, as in `MultiBlockDongChain`.
+    """
+
+    def __init__(self, domain, nu=0.05, dt=0.05, u_inlet=1.0):
+        super().__init__(domain, nu, dt, u_inlet=u_inlet)
+        self.G3 = [cell_gradient_matrix(domain, a) for a in range(3)]
+
+    def boundary_velocity_c(self, c_flat, comp, drop_outlet=False):
+        """Dirichlet values for ONE component, in `self.bnd` order."""
+        vals = torch.zeros(len(self.bnd), dtype=torch.float64)
+        if len(self.in_ids) and comp == 0:
+            pos = torch.as_tensor([self.pos_in_bnd[int(g)] for g in self.in_ids])
+            vals = vals.index_put((pos,), self.u_in_val)
+        if len(self.out_ids):
+            src = c_flat.detach() if drop_outlet else c_flat
+            nb = torch.index_select(src, 0, torch.as_tensor(self.out_nb))
+            pos = torch.as_tensor([self.pos_in_bnd[int(g)] for g in self.out_ids])
+            vals = vals.index_put((pos,), nb)
+        return vals
+
+    def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
+                detach_dong=False, drop_outlet=False, return_fields=False,
+                source_fn=None):
+        """`sources`: list of per-step torch tensors of shape (3N,) --
+        the three components' sources concatenated (u | v | w)."""
+        (Aidx, Ashape), Aval = self.A_pat
+        (Mfidx, Mfshape), Mfval = self.Mff_pat
+        Dall = to_torch_sparse(self.D_flux)
+        RCt = to_torch_sparse(self.RC)
+        MfD, Aib = to_torch_sparse(self.M_fD), to_torch_sparse(self.A_ib)
+        G3t = [to_torch_sparse(g) for g in self.G3]
+        keep = torch.as_tensor(~self.wall).double()
+        N = self.N
+        vel = [torch.as_tensor(self.u_init) * keep,
+               torch.zeros(N, dtype=torch.float64),
+               torch.zeros(N, dtype=torch.float64)]
+        vel_prev = [c.clone() for c in vel]
+        p_flux = torch.zeros(N, dtype=torch.float64)
+        Jt = torch.as_tensor(self.J_flat)
+        L = 0.0
+        for S in sources:
+            if source_fn is not None:
+                S = source_fn(torch.cat(vel))
+            stars = []
+            for comp in range(3):
+                c, c_prev = vel[comp], vel_prev[comp]
+                hist = c_prev.detach() if drop_history else c_prev
+                c_bnd = self.boundary_velocity_c(c, comp, drop_outlet=drop_outlet)
+                rhs = (Jt * (2.0 * c - 0.5 * hist) / self.dt
+                       + S[comp * N:(comp + 1) * N])[self.ii] - spmv(Aib, c_bnd)
+                c_int = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
+                stars.append(torch.zeros(N, dtype=torch.float64)
+                             .index_put((self.ii,), c_int))
+            pf = p_flux.detach() if drop_pflux else p_flux
+            p_dong = self.dong_pressure(stars[0], detach=detach_dong)
+            rhs_p = torch.index_select(spmv(Dall, torch.cat(stars)) - spmv(RCt, pf),
+                                       0, self.free_t) - spmv(MfD, p_dong)
+            phi_f = LinearSolve.apply(Mfval, rhs_p, (Mfidx, Mfshape), True, False)
+            phi = torch.zeros(N, dtype=torch.float64) \
+                .index_put((self.free_t,), phi_f).index_put((self.pD_t,), p_dong)
+            vel_prev = vel
+            vel = [(stars[a] - self.dt * spmv(G3t[a], phi)) * keep for a in range(3)]
+            p_flux = p_flux + phi
+            if not final_only:
+                L = L + sum((c ** 2).sum() for c in vel)
+        if return_fields:
+            return vel, p_flux
+        return sum((c ** 2).sum() for c in vel) if final_only else L
