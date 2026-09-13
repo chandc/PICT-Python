@@ -111,6 +111,45 @@ normalization), episode reward -62.48. Smoke (H=8, 15 iters):
    horizon. Overnight sweep running: H=8 vs H=80 (full-episode BPTT), 80
    iterations each, eval on held-out seeds vs the 3.3281 baseline.
 
+## M0 mid-flight (2026-09-13): the "non-reproduction" dissolved by forensics
+
+The H=8 policy arm FAILED reproduction: eval drag 3.746 (12.6% WORSE than
+uncontrolled) after 80 iterations. Before indicting anything, the reproducer
+was audited -- and the published artifacts settle it. The HF experiments
+dataset (safe-autonomous-systems/fluidgym-experiments) has a `D-MPC/
+CylinderJet2D-easy-v0/` folder with 10 seed dirs, each holding hydra configs
+and a per-step eval CSV. Findings, in decreasing order of importance:
+
+1. **We were reproducing the wrong algorithm.** Their gradient baseline is
+   `run_d-mpc`: receding-horizon differentiable MPC -- `horizon: 20,
+   n_iterations: 10, lr: 0.1, discount_factor: 0.999, rl_mode: sarl`. No
+   policy network, no training phase; actions come from 10 gradient steps on
+   the next-20-action sequence through the unrolled simulator at every
+   control step. Our clean-room H=8 trainer (MLP policy + truncated BPTT)
+   is a different method, so its failure to hit their number was never a
+   contradiction. The runner script is NOT in the public repo -- only the
+   hydra artifacts reveal what was run.
+2. **Their own artifacts do not support the headline number.** Across the
+   10 uploaded eval episodes: mean drag 3.2030 +/- 0.0082 = **3.76%**
+   reduction vs cd_ref (full episode); quasi-steady tails reach 4.2%, best
+   seed 4.9%, minimum instantaneous drag 5.2%. The paper's "approximately
+   8%" (fig. 5 caption family; D-MPC framed as "a proof of concept",
+   appendix D.3) is not reachable from any cut of the uploaded CSVs.
+3. **Environment parity is now cross-certified.** The env's reward reference
+   `_cd_ref` loads from the shipped domain statistics: 3.3281555 -- our
+   independently measured uncontrolled baseline was 3.3281 +/- 0.0004.
+   Five-digit agreement; we are running the same environment they did.
+4. **Our H=80 full-episode-BPTT policy arm already trains past their D-MPC
+   eval level**: training ep reward reached -3.4 by iteration 35 vs their
+   D-MPC eval -7.75 +/- 1.16 (eval on held-out seeds pending at sweep end).
+
+Exact-config reproduction queued on Spark (tools/fluidgym/dmpc_run.py:
+get_state/set_state receding-horizon loop with their four hyperparameters;
+the ONE unpublished knob is the optimizer -- Adam default, --opt sgd).
+Queue chain: H=80 arm -> FD gradient audit -> dmpc smoke (4 steps) -> full
+80-step episode, per-step CSV directly comparable to their seed-0 artifact
+(mean drag 3.1928, ep reward -7.60).
+
 ## Architecture: how the two stacks and the learning network interact
 
 ```mermaid
