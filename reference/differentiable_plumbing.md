@@ -65,7 +65,22 @@ PRODUCTION solver is Stage 7. The ladder, in order of value:
 6. **Identifiability restoration**: repeat the field recovery with loss at
    EVERY step and 3+ initial conditions -- cosine(S, S*) should climb toward
    1, confirming the non-uniqueness diagnosis experimentally.
-7. **Stage 7 proper**: adjoint (or tape) through the production step --
-   Rhie-Chow correctors, BDF2, and now the deferred-correction cross solve,
-   which post-dates the original Stage-7 plan and needs its own treatment
-   (frozen-operator adjoint of the DC fixed point is the natural first cut).
+7. **Stage 7: DONE (2026-09-12).** The original scope was already complete
+   (test_mb_adjoint_state.py, 9/9: FD through the p_flux-carrying chain
+   5.6e-11; the p_flux backward mangle detected; adjoint contracting at
+   0.913/step over 20 steps -- the plan ledger's "7.3 wiring left" was
+   stale). The post-R11 addition is Stage 7b (test_mb_adjoint_dc.py, 6/6):
+   `MultiBlockDCChain` differentiates the deferred-correction cross pressure
+   solve AS EXECUTED -- each truncated sweep is a LinearSolve chained with a
+   probe-assembled sparse cross operator. Gates: C linear and vanishing on
+   orthogonal domains (2.8e-12) and substantial under shear; the lagged
+   iteration contracts (0.19/sweep) to the assembled (M - C) solution
+   (1.1e-07); FD 4.8e-11 through 3 DC steps; the detached-cross mangle
+   detected (1.1e-03); C = 0 reduces the DC chain to the BC chain to
+   2.9e-16 while shear makes sweeps matter (1.8e-03); adjoint factor 1.004
+   over 20 steps. Gate lesson recorded in-file: contraction must be
+   measured on EARLY sweeps -- consecutive-step ratios at the roundoff
+   floor are noise, and the first gate version "failed" a converged
+   iteration. Remaining before Stage 10 on the production solver: the
+   corrector-loop reuse of Fb (the plan's within-step state note) and
+   Stage 9 checkpointing at butterfly scale.

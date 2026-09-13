@@ -376,7 +376,8 @@ comes with its own gate rather than being folded into Stage 6.
 
 ```
 Stage 6   two blocks that are one block   <- DONE, 16/16, test_mb_adjoint_seam.py
-Stage 7   persistent state                <- PART, 7/7 done; operators built, 7.3 wiring left
+Stage 7   persistent state                <- DONE, 9/9, test_mb_adjoint_state.py (7.3 incl.)
+Stage 7b  DC cross pressure solve          <- DONE, 6/6, test_mb_adjoint_dc.py (post-R11 scope)
 Stage 8   force objective in torch        <- DONE, 10/10, incl. a wall-bounded chain
 Stage 9   scale + checkpointing           <- PART, sparse operators done (3/3)
 Stage 10  a learning task                 <- the first thing that is not an instrument
