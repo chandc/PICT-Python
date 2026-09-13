@@ -69,3 +69,19 @@ C_D ~ 1.32, St ~ 0.167 at our confinement).
   M3  FluidGym env parity run: match DPC 7.2% at their horizon, then extend
       horizon at flat memory; report against their published curves.
   M4  the 3D/TCF frontier (their declared future work) if M3 lands.
+
+## M0 setup: DONE (2026-09-13) -- FluidGym runs and differentiates on the GB10
+
+Recipe (tools/fluidgym/Dockerfile, image `fluidgym:m0` on Spark): no aarch64
+wheel exists on PyPI, so source-build in `cuda:12.8.1-cudnn-devel` with torch
+2.9 cu128 aarch64 wheels and **TORCH_CUDA_ARCH_LIST="12.0"** -- nvcc 12.8
+rejects compute_121; same-major SASS compatibility runs sm_120 kernels on the
+sm_121 GB10 (the AmgX lesson, re-earned in miniature). Runtime deps installed
+explicitly (the source install skipped them). Smoke (tools/fluidgym/
+m0_smoke.py): env builds + resets (initial domain from HF hub), uncontrolled
+steps step, and differentiable mode returns d(reward)/d(action) = -1.845
+end-to-end. Actions must be torch CUDA tensors, not numpy.
+
+Next: the M0 experiment proper -- DPC at their horizon (reproduce ~7.2%),
+then 2-4x horizon with torch gradient checkpointing. Decision gate per the
+milestones above.
