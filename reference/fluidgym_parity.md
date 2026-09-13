@@ -110,3 +110,45 @@ normalization), episode reward -62.48. Smoke (H=8, 15 iters):
    constraint will not bind, shifting M0's question to gradient QUALITY vs
    horizon. Overnight sweep running: H=8 vs H=80 (full-episode BPTT), 80
    iterations each, eval on held-out seeds vs the 3.3281 baseline.
+
+## Architecture: how the two stacks and the learning network interact
+
+```mermaid
+flowchart LR
+    subgraph FG["FluidGym -- Spark GB10 (theirs)"]
+        ENV["CylinderJet2D env<br/>Re 100, jets +-90 deg"]
+        SOLV["PICT solver<br/>tape BPTT gradients"]
+        BWD["backward solves<br/>NON-CONVERGED (our finding)"]
+        ENV --> SOLV --> BWD
+    end
+    subgraph PP["PICT-Python -- Mac (ours)"]
+        PROD["production solver<br/>butterfly, validated St/C_D"]
+        ADJ["adjoint chains<br/>A^T lambda, FD-gated, memory-flat"]
+        GATE["residual gate<br/>|b - Ax| <= rtol |b|"]
+        PROD --> ADJ --> GATE
+    end
+    POL["policy network<br/>MLP: obs -> a(t)"]
+    POL -- "a(t)  [M0, live]" --> ENV
+    SOLV -- "grad r, tape  [M0, live]" --> POL
+    POL -. "a(t)  [M2, planned]" .-> PROD
+    ADJ -. "grad r, adjoint  [M2, planned]" .-> POL
+    GATE -- "FD gradient audit (2 episodes)" --> BWD
+    ENV -- "env spec extracted (done)" --> PROD
+```
+
+Reading it: the SOLID left circuit is the live M0 loop -- the policy drives
+FluidGym's jets and learns from THEIR tape gradients, which pass through
+backward solves we caught silently non-converging; the solid audit arrow is
+our residual-gate discipline applied across the stack boundary (a 1-D
+action makes the FD check cost two forward episodes). The DASHED right
+circuit is M2/M3: the same policy, the same mirrored environment spec, but
+gradients from our discrete adjoint -- FD-gated, memory-flat, residual-
+verified at every inner solve. The paper's thesis IS this picture: swap
+only the gradient machinery, keep the physics problem identical, and every
+arrow on the right side carries a certificate. Boundary facts that keep the
+diagram honest: our adjoint cannot be grafted onto their kernels (an
+adjoint is married to its discretization), and our gated chains freeze
+their operators (verification instruments, not shedding simulators) -- so
+the right circuit's production-grade closure is exactly the remaining
+Stage-7-full/M2 build, with the chains certifying each ingredient on the
+way.
