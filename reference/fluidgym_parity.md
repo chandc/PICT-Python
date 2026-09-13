@@ -85,3 +85,28 @@ end-to-end. Actions must be torch CUDA tensors, not numpy.
 Next: the M0 experiment proper -- DPC at their horizon (reproduce ~7.2%),
 then 2-4x horizon with torch gradient checkpointing. Decision gate per the
 milestones above.
+
+## M0 first light (2026-09-13): the smoke run's four findings
+
+DPC trainer written (tools/fluidgym/dpc_train.py -- truncated-BPTT policy
+mode + open-loop sequence mode; neither platform ships trainers, which is
+the field norm: HydroGym likewise ships environments + SB3 examples only,
+and its differentiable coverage is 4 of 60+ envs vs FluidGym's full suite).
+Uncontrolled baseline on CylinderJet2D-easy: drag 3.3281 +/- 0.0004 (their
+normalization), episode reward -62.48. Smoke (H=8, 15 iters):
+
+1. Learning works: training reward -62.5 -> -29.3 in 15 iterations.
+2. Eval regressed (drag 3.67) -- expected at 15 iters; the sweep decides.
+3. **Their backward linear solves DO NOT CONVERGE**: "Linear solve (BWD)
+   did not converge after 5000 iterations" / "CG residual rising ... using
+   best result" throughout training. The adjoint solves in PISOtorch_diff
+   hit caps and silently return best-effort iterates -- UNVERIFIED
+   gradients, the exact failure class the caller-side residual gate exists
+   for (and the same silent-degradation family as the AmgX status saga).
+   Front-page motivation for the verified-gradients framing, observed in
+   their own stack on the first training run.
+4. Cost/memory: 215 s/iteration (episode-bound, H-independent); peak memory
+   1.18 GiB at H=8 -- on the GB10's unified memory the horizon-MEMORY
+   constraint will not bind, shifting M0's question to gradient QUALITY vs
+   horizon. Overnight sweep running: H=8 vs H=80 (full-episode BPTT), 80
+   iterations each, eval on held-out seeds vs the 3.3281 baseline.
