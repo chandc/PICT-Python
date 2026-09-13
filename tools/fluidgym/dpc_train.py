@@ -24,6 +24,10 @@ p.add_argument("--mode", choices=("policy", "sequence", "baseline"), default="po
 p.add_argument("--horizon", type=int, default=8, help="env steps per BPTT window")
 p.add_argument("--iters", type=int, default=150)
 p.add_argument("--lr", type=float, default=3e-3)
+p.add_argument("--grad-clip", type=float, default=0.0,
+               help="max grad norm (their DPC config: 0.5); 0 disables")
+p.add_argument("--discount", type=float, default=1.0,
+               help="per-step reward discount (their DPC config: 0.999)")
 p.add_argument("--eval-episodes", type=int, default=3)
 p.add_argument("--seed", type=int, default=0)
 p.add_argument("--tag", default="dpc")
@@ -97,11 +101,13 @@ if a.mode == "policy":
         for t in range(80):
             act = act_fn(obs, t)
             obs, r, term, trunc, _ = env.step(act)
-            win_reward = win_reward + r
+            win_reward = win_reward + (a.discount ** t) * r
             ep_reward += float(r.detach())
             if (t + 1) % a.horizon == 0 or t == 79 or term or trunc:
                 opt.zero_grad()
                 (-win_reward).backward()
+                if a.grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(policy.parameters(), a.grad_clip)
                 opt.step()
                 env.detach()
                 # the local obs still references the freed window graph;
