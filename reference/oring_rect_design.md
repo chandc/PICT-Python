@@ -127,3 +127,25 @@ deviation is thereby attributed to lateral blockage, closing the last open quest
 on the butterfly-grid validation. (Y20 was the original plan; topologically
 infeasible -- see the adjustments ledger -- and unnecessary: the blockage law is
 monotone, so approaching from the confined side tests the same hypothesis.)
+
+## THE CLOSING TABLE (2026-09-13): the full confinement matrix
+
+Four complete 30k-step shedding campaigns, two lateral BCs x two domain widths,
+all on the butterfly topology with the implicit_cross projection, zero solver
+incidents in any run:
+
+| lateral BC | Y_HALF = 7 (beta = 1/14) | Y_HALF = 10 (beta = 1/20) | St_open (quad. in beta) |
+|---|---|---|---|
+| freestream | St 0.1695 / C_D 1.339 | St 0.1673 / C_D 1.321 | **0.1652** |
+| free-slip  | St 0.1690 / C_D 1.335 | St 0.1671 / C_D 1.320 | **0.1653** |
+
+Findings, each earned by a full run pair:
+1. **The blockage law is BC-insensitive at these widths**: freestream vs slip
+   differ by 0.1-0.3% in St and <0.4% in C_D at both widths -- the confinement
+   effect is the geometric flux constriction, not the wall condition enforcing it.
+2. **Two independent extrapolations agree to 4 digits**: St_open = 0.1652/0.1653
+   against the canonical 0.164 (+0.8%, inside the numerical scatter of the
+   literature table above). R11's +2% St anomaly is closed as quantified blockage.
+3. Period scatter < 1e-7 in every measurement window; the slip pair carries the
+   campaign's cleanest walls (residual: the 8-cell seam-junction speck at
+   (X_HAND, +-Y_HALF), |omega| ~ 1, addressed post-hoc by the corner filter).
