@@ -253,3 +253,23 @@ and the two lateral conditions have different blockage laws.
 R13 pair queued behind R12b on Spark (`~/r13_slip_pair.sh`): Y7-slip then Y10-slip,
 same protocol, tags `cylrect_r13_y{7,10}slip_spark` -- a matched confinement pair
 with publication-clean walls.
+
+### Blemish ledger: CLOSED (2026-09-13)
+
+Final state of every wall/corner artifact on the butterfly topology, each
+measured before and after its cure:
+
+| artifact | mechanism | cure | residual |
+|---|---|---|---|
+| frozen corner node u=1.41 | seam-endpoint unclaimed by wall_mask | pin + Dirichlet enrollment | 0 (exact) |
+| 2-cell v-dipole, 0.29 | junction truncation sharpened by the pin | corner sponge, v/w ONLY | 0.035 |
+| wake-length streaks | first sponge damped u against the overspeed | v/w-only sponge | omega 1e-4 |
+| wall shear sheet | freestream-Dirichlet laterals (physics) | PICT_LATERAL=slip | gone (du_wall 9e-4) |
+| 8-cell u-kink speck, omega 1.09 | seam-endpoint flux truncation in u | corner filter (local 3x3 blend) | 0 cells > 0.5, peak 0.44 |
+
+Verified end state (Y10-slip + sponge + filter, t=390): zero corner cells above
+half the far-field colour scale, C_D unchanged (1.3196), figure
+rect_vorticity_y10slip_clean.png. The two structural root fixes (curved seam
+rays; corner-aware pad ghosts) remain documented as future work but are no
+longer needed for clean production fields. Future runs: set
+PICT_CORNER_SPONGE=200,1.2 and PICT_CORNER_FILTER=0.5,0.8 from the start.
