@@ -273,3 +273,14 @@ rect_vorticity_y10slip_clean.png. The two structural root fixes (curved seam
 rays; corner-aware pad ghosts) remain documented as future work but are no
 longer needed for clean production fields. Future runs: set
 PICT_CORNER_SPONGE=200,1.2 and PICT_CORNER_FILTER=0.5,0.8 from the start.
+
+### Junction-dot root cause: cross-term hypothesis FALSIFIED (2026-09-13)
+
+Zeroing the DC cross-flux divergence in 0.35 D discs at the junctions
+(PICT_CROSS_CORNER_SKIP, kept as an env-gated diagnostic) leaves the standing
+dot unchanged (1.755 vs 1.75): the padded-geometry extrapolation in the cross
+term is NOT the source. Pad VALUES verified exact on a linear field. The
+forcing therefore lives in the momentum/RC flux evaluation at the seam
+endpoint; below the corner filter's ~0.3 steady floor the root cause remains
+open. Practical state: filter+sponge hold the dot at 0.32-0.44 (16-22% of the
+far-field colour scale) -- the faint tint visible in figures.

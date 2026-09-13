@@ -910,6 +910,34 @@ class MultiBlockPISO:
                     xb.add(b)
             self._cross_blocks = xb
 
+        # PICT_CROSS_CORNER_SKIP="x0,y0;x1,y1,...:radius": zero the cross-flux
+        # divergence inside small discs -- a DIAGNOSTIC for the standing
+        # junction vorticity dot: the cross flux's metrics come from
+        # padded_geometry, whose coordinates are EXTRAPOLATED at pad corners
+        # (the failure mode pressure_face_fluxes' own comment warns about),
+        # so the one cell where a seam ends on a domain boundary integrates
+        # an inconsistent cross stencil every step. Zeroing it there swaps
+        # that O(1) inconsistency for a bounded orthogonal-only truncation
+        # in the same cell. Off by default.
+        cmask = getattr(self, "_cross_corner_mask", None)
+        if cmask is None:
+            spec = os.environ.get("PICT_CROSS_CORNER_SKIP")
+            if spec:
+                pts_s, rad_s = spec.split(":")
+                pts = [tuple(float(x) for x in p.split(",")) for p in pts_s.split(";")]
+                rad = float(rad_s)
+                cmask = {}
+                for b in range(nb):
+                    blk = self.d.blocks[b]
+                    keepm = np.ones(blk.shape)
+                    for cx, cy in pts:
+                        rr = np.sqrt((blk.x - cx) ** 2 + (blk.y - cy) ** 2)
+                        keepm[rr < rad] = 0.0
+                    cmask[b] = keepm
+            else:
+                cmask = False
+            self._cross_corner_mask = cmask
+
         def cross_rhs(vfull):
             pb = self._unflat(vfull)
             dc = {}
@@ -919,6 +947,8 @@ class MultiBlockPISO:
                                                  include_orth=False,
                                                  include_cross=True)
                     dc[b] = d.divergence(b, Phi, self.Js[b])
+                    if cmask is not False:
+                        dc[b] = dc[b] * cmask[b]
                 else:
                     dc[b] = np.zeros(self.d.blocks[b].shape)
             out = base + (Jg * self._flat(dc))[free]
