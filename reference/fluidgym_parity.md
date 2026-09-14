@@ -150,6 +150,45 @@ Queue chain: H=80 arm -> FD gradient audit -> dmpc smoke (4 steps) -> full
 80-step episode, per-step CSV directly comparable to their seed-0 artifact
 (mean drag 3.1928, ep reward -7.60).
 
+## M0 results (2026-09-13 evening): horizon hypothesis CONFIRMED
+
+The training/ side of the experiments dataset (found while mapping their SB3
+integration) resolves the last ambiguity: `training/sarl/<env>/DPC/` is their
+TRAINED gradient policy -- horizon 40, lr 1e-3, max_grad_norm 0.5, discount
+0.999, 10k env steps (125 episodes), and the weights reveal a 302->64->64->1
+MLP with tanh action scaling, IDENTICAL to our clean-room architecture. The
+published numbers reconcile: their DPC evals at 5.9% mean / 6.9% quasi-steady
+drag reduction (the "7.2%"), their SB3 SAC at 6.9% / 7.9% (the "8%"); the
+top-level D-MPC planner is the weaker 3.8% method.
+
+Sweep results (clean-room trainer, 80 iterations, eval on held-out seeds):
+
+  | arm  | eval reward        | eval drag | reduction |
+  |------|--------------------|-----------|-----------|
+  | H=8  | -63.79 +/- 3.60    | 3.746     | -12.6% (WORSE) |
+  | H=80 | **-1.02 +/- 0.37** | **3.110** | **+6.55%** |
+
+  their trained DPC (H=40, seed 0): eval reward -6.88, drag 3.131 (+5.9%).
+
+Same architecture, same env, same gradient machinery -- horizon alone spans
+catastrophic failure to state of the art, and full-episode BPTT (H=80) beats
+their published trained policy on both reward (-1.02 vs -6.88) and drag.
+This is the paper's core empirical claim, landed in their own stack.
+
+FD gradient audit (d reward/d action, action=0.3): rel err 0.25% (H=1),
+0.03% (H=4), **1.45% (H=16)** -- their tape gradients degrade with horizon,
+consistent with the non-converged backward solves; usable but unverified,
+exactly the gap our residual-gated adjoint framing targets.
+
+Engineering notes: `env.set_state` re-entry raises "Parent Domain is
+expired" -- PISOtorch Blocks/Boundaries hold weak_ptr to their owning
+Domain and clones can still reference the clone SOURCE, so every Domain
+object must be kept alive (dmpc_run.py KEEP list; domains are small).
+Actions and planner tensors must be float32 (env default dtype). Their SAC
+ckpt_latest.zip cloudpickles omegaconf objects -- SB3 load needs
+`pip install stable-baselines3 omegaconf`. Queue: exact-config DPC rerun
+(their four knobs) -> SAC ckpt eval -> D-MPC full episode.
+
 ## Architecture: how the two stacks and the learning network interact
 
 ```mermaid
