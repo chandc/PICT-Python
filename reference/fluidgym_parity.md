@@ -236,6 +236,43 @@ ckpt_latest.zip cloudpickles omegaconf objects -- SB3 load needs
 `pip install stable-baselines3 omegaconf`. Queue: exact-config DPC rerun
 (their four knobs) -> SAC ckpt eval -> D-MPC full episode.
 
+## M0/M3 CLOSING TABLE (2026-09-14 morning): replication achieved
+
+All eval numbers are episode-mean drag on held-out seeds vs
+cd_ref = 3.3281555; "artifacts" = their published HF eval CSVs.
+
+  | controller                          | drag   | reduction | ep reward |
+  |-------------------------------------|--------|-----------|-----------|
+  | uncontrolled                        | 3.3281 | --        | -62.5     |
+  | D-MPC planner (their artifacts)     | 3.2030 | 3.76%     | -7.75     |
+  | our H=8 DPC (truncated BPTT)        | 3.7464 | -12.6%    | -63.8     |
+  | their DPC artifacts (H=40)          | 3.131  | 5.9%      | -6.88     |
+  | **our DPC, THEIR exact config**     | 3.1364 | 5.76%     | -3.44     |
+  | our H=80 DPC (full-episode BPTT)    | 3.1103 | 6.55%     | -1.02     |
+  | their SAC ckpt (OUR eval, 10 eps)   | 3.1065 | 6.66%     | +3.37     |
+  | their SAC artifacts                 | 3.0996 | 6.87%     | --        |
+
+Readings:
+1. **The replication is closed.** Their exact config in our clean-room
+   trainer lands 0.17% in drag from their published policy (3.1364 vs
+   3.131) with a BETTER episode reward (-3.44 vs -6.88 -- ours holds the
+   lift tighter, plausibly the pressure-sensor input). The training curve
+   tracks and edges past their published log
+   (figures/fluidgym_dpc_reward_progress.png).
+2. **The horizon hypothesis is CONFIRMED as M0's decision gate.** H=8
+   fails catastrophically; H=40 (theirs) plateaus at ~5.8-5.9%; H=80
+   closes the DPC-to-SAC gap entirely (3.1103 vs SAC's 3.1065 -- a
+   statistical tie). The "DPC < SAC" ordering in their paper is a
+   HORIZON artifact, not a property of simulator-gradient training.
+   The memory-flat verified-adjoint framing has its motivating result.
+3. **SAC checkpoint portability**: their SB3 model evaluated in our
+   container reproduces their artifacts to 0.2% (3.1065 vs 3.0996) --
+   the SB3 integration transfers cleanly (needs `pip install
+   stable-baselines3 omegaconf`).
+4. D-MPC exact-config episode mid-run (~585 s/control step: planning is
+   ~200x the actuation cost at deployment -- the quantified price of
+   skipping policy training).
+
 ## What the trained policy learned (2026-09-14)
 
 The controller is an MLP 453 -> 64 -> 64 -> 1 (tanh; output tanh-scaled to
