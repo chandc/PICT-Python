@@ -233,7 +233,7 @@ def main():
                 xi = np.clip(1.0 - rr / (rad * D), 0.0, 1.0)
                 s = np.maximum(s, sigc * xi**3 * (10 - 15*xi + 6*xi*xi))
             csponge.append(s)
-        # V AND W ONLY. The first version damped u toward freestream too, and
+        # V AND W ONLY (see below for the u story). The first version damped u toward freestream too, and
         # since the physical state around the junction is a +6-12% confinement
         # overspeed, the sponge rim continuously manufactured a shear layer
         # that advected the length of the wake as a visible streak (measured:
@@ -242,6 +242,45 @@ def main():
         # nothing physical; leaving u alone creates no rim shear.
         print(f"  corner sponge (v,w only): sigma={sigc}, radius={rad} D at "
               f"4 junction corners", flush=True)
+
+    # CORNER FILTER (opt-in, PICT_CORNER_FILTER="alpha,radius"): blend the
+    # velocity toward its own 3x3 NEIGHBOURHOOD AVERAGE inside small discs at
+    # the junction corners. Unlike damping toward a prescribed state (which
+    # manufactured rim shear when the state disagreed with the physics), a
+    # filter pushes toward the LOCAL field and can only remove node-scale
+    # content -- exactly the residual one-cell truncation speck (|omega| ~ 1,
+    # 8 cells total) the sponge cannot reach because it lives in u.
+    _cf = os.environ.get("PICT_CORNER_FILTER")
+    cfilter = None
+    if _cf:
+        alph, radf = (float(x) for x in _cf.split(","))
+        corners_xy = [(cx, cy) for cx in (X_HAND, -X_IN)
+                      for cy in (Y_HALF, -Y_HALF)]
+        cfilter = []
+        for blk in d.blocks:
+            s = np.zeros(blk.shape[:2])
+            for cx, cy in corners_xy:
+                rr = np.sqrt((blk.x[:, :, 0] - cx) ** 2
+                             + (blk.y[:, :, 0] - cy) ** 2)
+                xi = np.clip(1.0 - rr / (radf * D), 0.0, 1.0)
+                s = np.maximum(s, alph * xi**3 * (10 - 15*xi + 6*xi*xi))
+            cfilter.append(s[:, :, None] if s.any() else None)
+        print(f"  corner filter: alpha={alph}, radius={radf} D", flush=True)
+
+    def _box3(a):
+        p = np.pad(a, ((1, 1), (1, 1), (0, 0)), mode="edge")
+        return (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:]
+                + p[1:-1, 1:-1]) / 5.0
+
+    def apply_cfilter():
+        if cfilter is None:
+            return
+        for b in range(len(d.blocks)):
+            w = cfilter[b]
+            if w is None:
+                continue
+            for arr in (m.u[b], m.v[b], m.w[b]):
+                arr[:] = (1.0 - w) * arr + w * _box3(arr)
 
     # LAGGED DIRICHLET SLIP (see cylinder_rect_bc.apply): before each step,
     # the lateral wall rows' tangential bc is copied from the adjacent
@@ -282,6 +321,7 @@ def main():
         update_slip()
         m.step()
         apply_sponge()
+        apply_cfilter()
         hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
         if i % 500 == 0:
             report(i, settle, hist, t0, "settle")
@@ -321,6 +361,7 @@ def main():
         update_slip()
         m.step()
         apply_sponge()
+        apply_cfilter()
         hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
         mean.add(m)
         R = surface_force(d, body, m.u, m.v, m.w, m.p, m.nu)
