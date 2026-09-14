@@ -236,6 +236,44 @@ ckpt_latest.zip cloudpickles omegaconf objects -- SB3 load needs
 `pip install stable-baselines3 omegaconf`. Queue: exact-config DPC rerun
 (their four knobs) -> SAC ckpt eval -> D-MPC full episode.
 
+## What the trained policy learned (2026-09-14)
+
+The controller is an MLP 453 -> 64 -> 64 -> 1 (tanh; output tanh-scaled to
+the +-1 action bound; ~33k parameters): inputs are the 151 probes x
+(pressure, u, v) under dpc_train.py's sorted-key flattening -- NOTE our net
+also sees pressure, where FluidGym's own DPC net was velocity-only (302
+inputs). Probed via the zero-point linearized gain g = W3 W2 W1 mapped at
+the physical sensor positions (figures/fluidgym_h80_policy_gains.png,
+plot_utility/plot_fluidgym_policy_gains.py) and the action/lift traces
+(results/fluidgym_h80_fields.npz). Three findings:
+
+1. **Mode selectivity.** Every gain map is ANTISYMMETRIC in y (top sensors
+   opposite in sign to their bottom mirrors). The shedding instability is
+   the antisymmetric mode and the opposing jet pair is an antisymmetric
+   actuator: the network learned a matched filter that projects the
+   453-dim observation onto the shedding mode and ignores the symmetric
+   component entirely.
+2. **Where it looks.** v-gains concentrate on the inner sensor ring at the
+   separation points (top-5 all at r ~ 0.6, x ~ 0) -- the incipient
+   vortex; pressure gains peak in the far wake grid (x = 3.5-4.5) -- the
+   developed street's phase; u is used least (sum|gain| 1.02 vs ~2.2 for
+   the other channels), as the leading-order shedding signature in u is
+   symmetric.
+3. **Phase-lead opposition control.** The action is phase-locked to the
+   lift (corr 0.92) but LEADS it by ~2 t.u. (~1/3 of the shedding period):
+   it opposes the vortex that is FORMING, not the one already shed --
+   anticipation that full-episode BPTT buys, since each weight's gradient
+   carries its effect on drag many periods later. Once shedding is dead
+   the action decays toward zero: the stabilized symmetric state needs
+   only whisper-level corrections (see the a(t) trace in
+   figures/fluidgym_jet_vorticity_h80_basesub.png).
+
+Summary: the network converged to what control theory would prescribe --
+a mode-selective, phase-leading stabilizer of the antisymmetric wake
+instability -- from nothing but d(reward)/d(weights) through the solver.
+Flow-field effect: vortex street suppressed into two parallel shear
+layers, C_D 3.328 -> 3.107 (-6.7%), C_L rms 0.87 -> 0.42 on the eval seed.
+
 ## M2 started (2026-09-13 night): jet actuation certified on the butterfly
 
 The FluidGym actuator mirrored onto our stack: opposing +-90 deg jets,
