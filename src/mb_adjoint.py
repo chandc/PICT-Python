@@ -762,7 +762,7 @@ class MultiBlockBCChain(MultiBlockDongChain):
     or purely walled case.
     """
 
-    def __init__(self, domain, nu=0.05, dt=0.05, u_inlet=1.0):
+    def __init__(self, domain, nu=0.05, dt=0.05, u_inlet=1.0, uniform_inlet=False):
         super().__init__(domain, nu, dt)
         from src.multiblock import face_axis_side, face_slice
         wall_ids, in_ids, out_ids, out_nb = set(), set(), [], []
@@ -792,12 +792,19 @@ class MultiBlockBCChain(MultiBlockDongChain):
         self.in_ids = np.array(sorted(in_ids), dtype=int)
         self.out_ids = np.array(out_ids, dtype=int)
         self.out_nb = np.array(out_nb, dtype=int)
-        # a parabolic inlet in y, uniform in z -- data, not a solution
+        # a parabolic inlet in y, uniform in z -- data, not a solution. The
+        # parabola assumes y in [0, 1]; on a domain like the butterfly
+        # (y in +-Y_HALF) it produces O(100) inlet values, fine for gradient
+        # gates and useless for physics -- `uniform_inlet` gives u = u_inlet.
         yy = np.zeros(self.N)
         for b, blk in enumerate(domain.blocks):
             yy[domain.global_ids(b).ravel()] = blk.y.ravel()
-        self.u_in_val = torch.as_tensor(4.0 * u_inlet * yy[self.in_ids]
-                                        * (1.0 - yy[self.in_ids]))
+        if uniform_inlet:
+            self.u_in_val = torch.full((len(self.in_ids),), float(u_inlet),
+                                       dtype=torch.float64)
+        else:
+            self.u_in_val = torch.as_tensor(4.0 * u_inlet * yy[self.in_ids]
+                                            * (1.0 - yy[self.in_ids]))
         A = sparse.csr_matrix(domain.build_momentum_matrix(
             self.Js, self.ms, self.u0, self.u0, self.u0, nu, dt, bdf2=True))
         self.A_ib = A[self.interior][:, self.bnd].tocsr()
@@ -974,13 +981,40 @@ class MultiBlockVecChain(MultiBlockBCChain):
     Boundary values per component: walls 0; inlet (u = parabolic profile,
     v = w = 0); outlet zero-gradient copy PER COMPONENT. Dong's pressure
     reads the streamwise component, as in `MultiBlockDongChain`.
+
+    M2 adds JET ACTUATION (the FluidGym CylinderJet mirror): `jet_ids` are
+    wall nodes (global ids) carrying a Dirichlet velocity  a(t) * jet_uv[k]
+    instead of zero -- `jet_uv` is (K, 3), the per-node profile-weighted
+    unit velocity, geometry computed by the caller. The scalar a(t) enters
+    the momentum RHS through the same `A_ib` elimination as every other
+    Dirichlet value, so dL/da flows through the full solve. The state still
+    zeroes wall nodes (`keep`); a loss that reads wall values (the traction
+    integral) must scatter them back via `with_jets`.
     """
 
-    def __init__(self, domain, nu=0.05, dt=0.05, u_inlet=1.0):
-        super().__init__(domain, nu, dt, u_inlet=u_inlet)
+    def __init__(self, domain, nu=0.05, dt=0.05, u_inlet=1.0, uniform_inlet=False,
+                 jet_ids=None, jet_uv=None, cross_sweeps=0):
+        super().__init__(domain, nu, dt, u_inlet=u_inlet, uniform_inlet=uniform_inlet)
         self.G3 = [cell_gradient_matrix(domain, a) for a in range(3)]
+        # DC cross sweeps in the pressure stage (the 7b pattern): on sheared
+        # corners the orthogonal-only projection is UNSTABLE (the butterfly
+        # grows ~12x/step at dt=0.01, jets or no jets -- the same pathology
+        # production cured with implicit_cross). cross_sweeps=0 keeps the
+        # orthogonal chain bit-identical for the M1 duct gates.
+        self.cross_sweeps = cross_sweeps
+        self.Cx = (cross_divergence_matrix(domain, self.Js, self.J_flat)
+                   if cross_sweeps > 0 else None)
+        if jet_ids is not None and len(jet_ids):
+            missing = set(int(g) for g in jet_ids) - set(self.pos_in_bnd)
+            assert not missing, f"jet nodes not on Dirichlet boundary: {sorted(missing)[:5]}"
+            self.jet_ids = torch.as_tensor(np.asarray(jet_ids, dtype=int))
+            self.jet_pos = torch.as_tensor(
+                [self.pos_in_bnd[int(g)] for g in jet_ids])
+            self.jet_uv = torch.as_tensor(np.asarray(jet_uv, dtype=float))
+        else:
+            self.jet_ids = None
 
-    def boundary_velocity_c(self, c_flat, comp, drop_outlet=False):
+    def boundary_velocity_c(self, c_flat, comp, drop_outlet=False, jet_a=None):
         """Dirichlet values for ONE component, in `self.bnd` order."""
         vals = torch.zeros(len(self.bnd), dtype=torch.float64)
         if len(self.in_ids) and comp == 0:
@@ -991,13 +1025,27 @@ class MultiBlockVecChain(MultiBlockBCChain):
             nb = torch.index_select(src, 0, torch.as_tensor(self.out_nb))
             pos = torch.as_tensor([self.pos_in_bnd[int(g)] for g in self.out_ids])
             vals = vals.index_put((pos,), nb)
+        if jet_a is not None and self.jet_ids is not None:
+            vals = vals.index_put((self.jet_pos,), jet_a * self.jet_uv[:, comp],
+                                  accumulate=True)
         return vals
+
+    def with_jets(self, c_flat, comp, jet_a):
+        """`c_flat` with the jet Dirichlet values scattered in (state zeroes
+        walls; the traction integral needs the actual boundary velocity)."""
+        if jet_a is None or self.jet_ids is None:
+            return c_flat
+        return c_flat.index_put((self.jet_ids,), jet_a * self.jet_uv[:, comp])
 
     def rollout(self, sources, drop_history=False, final_only=False, drop_pflux=False,
                 detach_dong=False, drop_outlet=False, return_fields=False,
-                source_fn=None):
+                source_fn=None, jet_a=None, detach_cross=False):
         """`sources`: list of per-step torch tensors of shape (3N,) --
-        the three components' sources concatenated (u | v | w)."""
+        the three components' sources concatenated (u | v | w).
+        `jet_a`: scalar tensor (constant actuation) or per-step list."""
+        jet_seq = (jet_a if isinstance(jet_a, (list, tuple))
+                   else [jet_a] * len(sources))
+        Ct = to_torch_sparse(self.Cx) if self.Cx is not None else None
         (Aidx, Ashape), Aval = self.A_pat
         (Mfidx, Mfshape), Mfval = self.Mff_pat
         Dall = to_torch_sparse(self.D_flux)
@@ -1013,14 +1061,15 @@ class MultiBlockVecChain(MultiBlockBCChain):
         p_flux = torch.zeros(N, dtype=torch.float64)
         Jt = torch.as_tensor(self.J_flat)
         L = 0.0
-        for S in sources:
+        for S, ja in zip(sources, jet_seq):
             if source_fn is not None:
                 S = source_fn(torch.cat(vel))
             stars = []
             for comp in range(3):
                 c, c_prev = vel[comp], vel_prev[comp]
                 hist = c_prev.detach() if drop_history else c_prev
-                c_bnd = self.boundary_velocity_c(c, comp, drop_outlet=drop_outlet)
+                c_bnd = self.boundary_velocity_c(c, comp, drop_outlet=drop_outlet,
+                                                 jet_a=ja)
                 rhs = (Jt * (2.0 * c - 0.5 * hist) / self.dt
                        + S[comp * N:(comp + 1) * N])[self.ii] - spmv(Aib, c_bnd)
                 c_int = LinearSolve.apply(Aval, rhs, (Aidx, Ashape), False, False)
@@ -1031,8 +1080,18 @@ class MultiBlockVecChain(MultiBlockBCChain):
             rhs_p = torch.index_select(spmv(Dall, torch.cat(stars)) - spmv(RCt, pf),
                                        0, self.free_t) - spmv(MfD, p_dong)
             phi_f = LinearSolve.apply(Mfval, rhs_p, (Mfidx, Mfshape), True, False)
-            phi = torch.zeros(N, dtype=torch.float64) \
-                .index_put((self.free_t,), phi_f).index_put((self.pD_t,), p_dong)
+
+            def full_phi(pfree):
+                return torch.zeros(N, dtype=torch.float64) \
+                    .index_put((self.free_t,), pfree).index_put((self.pD_t,), p_dong)
+
+            for _ in range(self.cross_sweeps):
+                lag = full_phi(phi_f)
+                cr = spmv(Ct, lag.detach() if detach_cross else lag)
+                phi_f = LinearSolve.apply(
+                    Mfval, rhs_p + torch.index_select(cr, 0, self.free_t),
+                    (Mfidx, Mfshape), True, False)
+            phi = full_phi(phi_f)
             vel_prev = vel
             vel = [(stars[a] - self.dt * spmv(G3t[a], phi)) * keep for a in range(3)]
             p_flux = p_flux + phi
