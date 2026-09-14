@@ -189,6 +189,30 @@ ckpt_latest.zip cloudpickles omegaconf objects -- SB3 load needs
 `pip install stable-baselines3 omegaconf`. Queue: exact-config DPC rerun
 (their four knobs) -> SAC ckpt eval -> D-MPC full episode.
 
+## M2 started (2026-09-13 night): jet actuation certified on the butterfly
+
+The FluidGym actuator mirrored onto our stack: opposing +-90 deg jets,
+10 deg half-width, parabolic profile, one scalar a (top blows / bottom
+sucks -- mass-conserving). Jets enter `MultiBlockVecChain` as
+profile-weighted Dirichlet values on body wall nodes through the same A_ib
+elimination as every Dirichlet value; `with_jets` scatters the boundary
+values back for traction losses. Gates (test_mb_adjoint_jet, 6/6):
+vector FD on the butterfly (the M1 certificate transplanted to production
+topology), **dC_D/da FD-exact at 5e-5 through the Stage 8 traction**,
+jet -> wake seam transport FD-exact, liveness mangles, gate-window
+boundedness. Commit dc3798c.
+
+Measured NON-gate, the session's honest negative: the frozen-coefficient
+surrogate chain is UNSTABLE on the butterfly beyond ~5 steps at dt = 0.01
+(~12x/step, scalar and vector identically, seated in the near-body layer
+at a ring-quarter seam). Dominant driver: the accumulating p_flux
+Rhie-Chow feedback (RC = 0 cuts growth to ~1.3x/step); falsified remedies:
+DC cross sweeps in the chain's pressure stage, a physical uniform-flow
+frozen operator, uniform inlet. Consequence: the gradient certificates
+stand (gates run inside the stable window), and M2's open-loop optimal
+a(t) experiment moves to the production solver's adjoint -- the same
+boundary the architecture diagram already draws.
+
 ## Architecture: how the two stacks and the learning network interact
 
 ```mermaid
