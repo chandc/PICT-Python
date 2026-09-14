@@ -41,16 +41,34 @@ env = fluidgym.make("CylinderJet2D-easy-v0", differentiable=True)
 obs, info = env.reset(seed=a.seed)
 
 rows = []
-plan = torch.zeros(a.horizon, device=dev, dtype=torch.float64)
+plan = torch.zeros(a.horizon, device=dev, dtype=torch.float32)
 t_start = time.time()
 
+# PISOtorch Blocks/Boundaries weak_ptr their owning Domain, and cloned objects
+# can still reference the CLONE SOURCE -- letting any Domain be GC'd raises
+# "Parent Domain is expired" on a later restore/step.  Hold them all; the 2D
+# domains are small and the GB10's unified memory is not.
+KEEP = []
+
+
+def snapshot(env):
+    s = env.get_state()
+    KEEP.extend([s.domain, env._domain])
+    return s
+
+
+def restore(env, s):
+    env.set_state(s)
+    KEEP.append(env._domain)
+
+
 for t in range(a.control_steps):
-    st = env.get_state()
+    st = snapshot(env)
     theta = plan.clone().requires_grad_(True)
     opt = (torch.optim.Adam if a.opt == "adam" else torch.optim.SGD)([theta], lr=a.lr)
     for _ in range(a.n_iterations):
-        env.set_state(st)
-        R = torch.zeros((), device=dev, dtype=torch.float64)
+        restore(env, st)
+        R = torch.zeros((), device=dev, dtype=torch.float32)
         for h in range(a.horizon):
             act = torch.clamp(theta[h], -1.0, 1.0).reshape(1)
             _, r, term, trunc, _ = env.step(act)
@@ -61,7 +79,7 @@ for t in range(a.control_steps):
         (-R).backward()
         opt.step()
     # execute the first planned action from the true state
-    env.set_state(st)
+    restore(env, st)
     with torch.no_grad():
         act = torch.clamp(theta[0].detach(), -1.0, 1.0).reshape(1)
         _, r, term, trunc, inf = env.step(act)

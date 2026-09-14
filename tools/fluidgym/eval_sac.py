@@ -9,7 +9,8 @@ deterministic episodes gives us their model-free reference WITHOUT retraining
 cd_ref 3.3281555), last-40 3.0650 (-7.91%).
 
   docker run --rm --gpus all -v $HOME/fluidgym_m0:/w -w /w fluidgym:m0 \
-      bash -c "pip install -q stable-baselines3 && python3 -u eval_sac.py"
+      bash -c "pip install -q stable-baselines3 omegaconf && python3 -u eval_sac.py"
+(their checkpoint's cloudpickle payload imports omegaconf -- hydra artifacts)
 """
 import argparse
 
