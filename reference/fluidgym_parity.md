@@ -70,6 +70,53 @@ C_D ~ 1.32, St ~ 0.167 at our confinement).
       horizon at flat memory; report against their published curves.
   M4  the 3D/TCF frontier (their declared future work) if M3 lands.
 
+## The reward function, and how each approach consumes it
+
+All CylinderJet2D results in this program -- theirs and ours -- optimise the
+same per-control-step reward (fluidgym cylinder_env_base.py:769):
+
+    r_t = C_D,ref - <C_D>_t - 1.0 * |<C_L>|_t
+
+where <.>_t averages over the 0.25 t.u. (25 solver steps) one action spans,
+and the terms are:
+
+- **C_D,ref = 3.3281555**: the mean UNCONTROLLED drag, loaded from the
+  shipped domain statistics (`_metrics_stats["drag"].mean`; the value our
+  own baseline reproduced to five digits). A constant: it carries no
+  gradient and cannot change any optimum -- it only centres the scale so
+  "no drag improvement" reads as 0 and genuine reduction reads positive.
+- **-<C_D>**: the objective proper.
+- **-1.0 * |<C_L>|**: the lift penalty, and it is load-bearing. Without it
+  the optimiser cheats: strong asymmetric blowing trims drag while
+  generating a large oscillating side force. Uncontrolled shedding swings
+  C_L to +-1.2, so this term DOMINATES the uncontrolled reward (~ -0.78
+  per step, hence episode reward ~ -62 for doing nothing); suppressing the
+  vortex street improves both terms at once, which is why good controllers
+  approach ~-1 rather than 0. Weight 1.0 in every difficulty tier.
+
+Episode return = sum over 80 control steps. One number, four consumers:
+
+| approach | what the reward is to it | where the gradient comes from |
+|---|---|---|
+| SAC / PPO (SB3) | a sampled scalar per step, stored in the replay buffer / rollout batch | estimated statistically from returns (policy gradient / soft Q targets); nothing needs to be differentiable, gamma = 0.99 inside the algorithm |
+| DPC (trained policy, theirs and our dpc_train.py) | the training loss itself: L = -sum_t gamma^t r_t over a BPTT window (their config gamma = 0.999, H = 40) | backprop THROUGH the solver: r_t is a differentiable function of the fields (traction integral in torch), so dL/d(weights) flows fields -> reward -> policy via the tape |
+| D-MPC (planner, their run_d-mpc / our dmpc_run.py) | the planning objective: discounted sum over the 20-step lookahead, re-optimised at every control step (10 gradient iterations, lr 0.1) | same tape gradients as DPC, but w.r.t. the raw ACTION sequence -- no network, no training; the reward is consumed at deployment time |
+| our M2 chain (adjoint side) | the same quantity built from OUR fields: Stage 8 `coefficients()` gives C_D, C_L as differentiable torch scalars from the traction integral, so r = C_D,ref - C_D - |C_L| composes directly | discrete adjoint through the vector chain (LinearSolve backward = A^T solves), FD-gated; j.2 certifies dC_D/da at 5e-5 on the butterfly |
+
+Two integration details that matter when comparing numbers:
+
+1. **The window average is part of the reward's definition.** <C_D>_t is a
+   mean over 25 solver steps, so a controller is scored on the drag it
+   holds BETWEEN decisions, not at decision instants -- and for the
+   gradient methods each r_t backpropagates through all 25 solver steps
+   inside its window. Our M2 mirror must average the same way when we
+   report parity numbers.
+2. **Discounting differs by consumer.** SB3's gamma = 0.99 lives inside the
+   RL algorithm; the DPC/D-MPC configs use gamma = 0.999 applied to the
+   summed loss; our chain losses so far are undiscounted (gates are
+   horizon-3). gamma^80 = 0.92 -- a small but real difference to hold fixed
+   in like-for-like comparisons.
+
 ## M0 setup: DONE (2026-09-13) -- FluidGym runs and differentiates on the GB10
 
 Recipe (tools/fluidgym/Dockerfile, image `fluidgym:m0` on Spark): no aarch64
