@@ -348,6 +348,100 @@ def main():
           + "  ".join(f"{f} {v:.1e}" for f, v in worst.items())
           + f"  ({t_prod:.0f}s prod / {t_torch:.0f}s torch)")
 
+    # ================================================================== 9.3
+    # Gradient gates ON THE PRODUCTION STEP. DC sweep count pinned (a
+    # data-dependent early exit would put a kink between the FD probes);
+    # Picard runs its full 2 sweeps at these tolerances.
+    os.environ["PICT_CROSS_DC_TOL"] = "0"
+    os.environ["PICT_CROSS_DC_ITERS"] = "3"
+    st0 = tps.state_from_solver()          # developed state, 4 steps in
+    wake_w = torch.as_tensor(rng.standard_normal(N))
+
+    def rollout_L(du, src=None, **kw):
+        st = tps._clone(st0)
+        st["u"] = st["u"] + du
+        st = tps.step(st, src=src, **kw)
+        return (wake_w * st["u"]).sum() + (st["p"] ** 2).sum() * 1e-3
+
+    du = torch.zeros(N, dtype=torch.float64, requires_grad=True)
+    t0 = time.time()
+    L0 = rollout_L(du)
+    L0.backward()
+    g_state = du.grad.detach().numpy().copy()
+    print(f"  9.3 forward+backward: {time.time()-t0:.0f}s", flush=True)
+    # FD on interior entries only (Dirichlet nodes are re-imposed each step)
+    g_int = np.zeros(N)
+    g_int[tps.interior] = g_state[tps.interior]
+    ks = np.argsort(-np.abs(g_int))[:2]
+    h5, worst = 1e-5, 0.0
+    with torch.no_grad():
+        for k in ks:
+            e = torch.zeros(N, dtype=torch.float64)
+            e[k] = h5
+            fd = (float(rollout_L(e)) - float(rollout_L(-e))) / (2 * h5)
+            worst = max(worst, abs(g_state[k] - fd) / max(abs(fd), 1e-300))
+    check(worst < 1e-4,
+          f"9.3a dL/d(state) through the PRODUCTION step vs FD: "
+          f"worst rel {worst:.2e}")
+
+    src0 = [torch.zeros(N, dtype=torch.float64, requires_grad=True)
+            for _ in range(3)]
+    L = rollout_L(torch.zeros(N, dtype=torch.float64), src=src0)
+    L.backward()
+    g_src = src0[0].grad.detach().numpy().copy()
+    k = int(np.argmax(np.abs(g_src)))
+    with torch.no_grad():
+        e = torch.zeros(N, dtype=torch.float64)
+        e[k] = h5
+        zero3 = [torch.zeros(N, dtype=torch.float64) for _ in range(3)]
+        Lp = float(rollout_L(torch.zeros(N, dtype=torch.float64),
+                             src=[e, zero3[1], zero3[2]]))
+        Lm = float(rollout_L(torch.zeros(N, dtype=torch.float64),
+                             src=[-e, zero3[1], zero3[2]]))
+        fd = (Lp - Lm) / (2 * h5)
+    rel = abs(g_src[k] - fd) / max(abs(fd), 1e-300)
+    check(rel < 1e-4,
+          f"9.3b dL/d(source) (production velocity_source hook) vs FD: "
+          f"rel {rel:.2e}")
+
+    # the assembly mangle: the cut path must CHANGE the gradient measurably
+    du2 = torch.zeros(N, dtype=torch.float64, requires_grad=True)
+    rollout_L(du2, detach_assembly=True).backward()
+    gm = du2.grad.detach().numpy()
+    change = np.abs(gm - g_state).max() / max(np.abs(g_state).max(), 1e-300)
+    check(change > 1e-6, f"9.3c path live: detach_assembly (the path the "
+                         f"chains never had): grad change {change:.2e}")
+
+    # the Dong path is IDENTICALLY INERT in forward-flow states: with
+    # dong_copy = 1.0 the boundary velocity IS the interior velocity (the
+    # viscous term nu(un - un_i)/dn vanishes structurally) and healthy
+    # outflow saturates tanh to 1.0 exactly in float64 (theta = 0, killing
+    # the |u|^2 term AND its derivative). pv == 0 == production here -- the
+    # 6.9 lesson again: the probe must EXERCISE the path. Manufacture
+    # backflow at the outlet, then detaching must change the gradient.
+    xf_all = np.zeros(N)
+    for b in range(nb):
+        xf_all[d.global_ids(b).ravel()] = d.blocks[b].x.ravel()
+    near_out = torch.as_tensor(np.where(xf_all > 27.0)[0])
+    flip = torch.ones(N, dtype=torch.float64)
+    flip[near_out] = -1.0
+
+    def rollout_bf(du_, **kw):
+        st = tps._clone(st0)
+        st["u"] = st["u"] * flip + du_
+        st = tps.step(st, **kw)
+        return (wake_w * st["u"]).sum() + (st["p"] ** 2).sum() * 1e-3
+
+    g_bf = {}
+    for name, kw in (("normal", {}), ("detach", dict(detach_dong=True))):
+        du3 = torch.zeros(N, dtype=torch.float64, requires_grad=True)
+        rollout_bf(du3, **kw).backward()
+        g_bf[name] = du3.grad.detach().numpy()
+    change = (np.abs(g_bf["detach"] - g_bf["normal"]).max()
+              / max(np.abs(g_bf["normal"]).max(), 1e-300))
+    check(change > 1e-9, f"9.3c path live: detach_dong under manufactured "
+                         f"outlet backflow: grad change {change:.2e}")
+
     print(f"\n  {PASS}/{PASS + FAIL} checks passed", flush=True)
     sys.exit(1 if FAIL else 0)
 

@@ -228,15 +228,22 @@ class TorchProductionStep:
                     [c.clone() for c in v] if isinstance(v, list) else v.clone())
                 for k, v in st.items()}
 
-    def step(self, st):
+    def step(self, st, src=None, detach_assembly=False, detach_dong=False):
         """One production step on torch state; returns the new state dict.
-        Picard restore/early-exit mirror _step_impl (inf-norm test)."""
+        Picard restore/early-exit mirror _step_impl (inf-norm test).
+        `src`: optional per-component momentum sources (3 global tensors),
+        production's velocity_source. `detach_assembly` freezes the
+        gradient path THROUGH matrix assembly and the derived coefficient
+        (the frozen-chain semantics -- the 9.3 mangle); `detach_dong` cuts
+        the Dong-pressure path."""
         picard_state = self._clone(st)
         convect = None
         for pk in range(self.picard):
             if pk > 0:
                 st = self._clone(picard_state)
-            out = self._step_once(st, convect)
+            out = self._step_once(st, convect, src=src,
+                                  detach_assembly=detach_assembly,
+                                  detach_dong=detach_dong)
             new_convect = (out["u"], out["v"], out["w"])
             if convect is not None:
                 scale = max(max(float(c.abs().max()) for c in new_convect), 1e-30)
@@ -249,12 +256,15 @@ class TorchProductionStep:
             st = out
         return st
 
-    def _step_once(self, st, convect):
+    def _step_once(self, st, convect, src=None, detach_assembly=False,
+                   detach_dong=False):
         N, nb, dt = self.N, self.nb, self.dt
         if self.dong:
             self._update_outflow(st)
         cvec = (torch.cat([st["u"], st["v"], st["w"]]) if convect is None
                 else torch.cat(list(convect)))
+        if detach_assembly:
+            cvec = cvec.detach()
         Avals = self.tasm.vals(cvec)
         bdf2 = st["u_prev"] is not None
 
@@ -268,7 +278,7 @@ class TorchProductionStep:
                 trans = (2.0 * phi_n - 0.5 * st["u_prev"][k]) / dt
             else:
                 trans = phi_n / dt
-            base = self.Jg * (trans - gp[k])
+            base = self.Jg * (trans - gp[k] + (src[k] if src is not None else 0.0))
             x = phi_n
             cur = phi_n
             for _dc in range(self.mom_dc):
@@ -297,7 +307,12 @@ class TorchProductionStep:
         coef = self.Jg / rowsum
 
         Mvals = self.tda.vals(coef)
-        pD_val = self.dong_pressure(st) if self.dong else None
+        if self.dong:
+            dst = ({k: (v.detach() if torch.is_tensor(v) else v)
+                    for k, v in st.items()} if detach_dong else st)
+            pD_val = self.dong_pressure(dst)
+        else:
+            pD_val = None
 
         phi_tot = torch.zeros(N, dtype=torch.float64)
         div_star = None

@@ -280,10 +280,24 @@ class TorchFluxKernels:
             self._cg = {}
         if b not in self._cg:
             Jp, mp, plo, phi_ = self.d.padded_geometry(b, 2)
+            # SANITIZED GHOSTS: extrapolated pad corners can hold J = 0 and
+            # nonfinite metrics (measured: 48 entries on the E-trapezoid at
+            # width 2). They never reach the core FORWARD (the 9.2 bit-level
+            # gates prove it), but torch's backward walks the FULL padded
+            # arrays and 0/0 there manufactures NaN grads. Substitute inert
+            # values at exactly those entries; the equivalence gates
+            # re-verify the forward is untouched.
+            Jp = np.where(np.abs(Jp) > 1e-300, Jp, 1.0)
             Jt = torch.as_tensor(Jp)
-            g12 = torch.as_tensor(sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz"))
-            g13 = torch.as_tensor(sum(mp[f"xi_{c}"] * mp[f"zeta_{c}"] for c in "xyz"))
-            g23 = torch.as_tensor(sum(mp[f"eta_{c}"] * mp[f"zeta_{c}"] for c in "xyz"))
+            g12 = torch.as_tensor(np.nan_to_num(
+                sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz"),
+                nan=0.0, posinf=0.0, neginf=0.0))
+            g13 = torch.as_tensor(np.nan_to_num(
+                sum(mp[f"xi_{c}"] * mp[f"zeta_{c}"] for c in "xyz"),
+                nan=0.0, posinf=0.0, neginf=0.0))
+            g23 = torch.as_tensor(np.nan_to_num(
+                sum(mp[f"eta_{c}"] * mp[f"zeta_{c}"] for c in "xyz"),
+                nan=0.0, posinf=0.0, neginf=0.0))
             pad2 = PadMap(self.d, b, 2)
             self._cg[b] = (Jt, g12, g13, g23, plo, pad2)
         return self._cg[b]
@@ -480,9 +494,13 @@ class TorchPressureFlux:
             self.pg = []
             for b in range(nb):
                 Jp, mp, glo, ghi = d.padded_geometry(b, 1)
-                self.pg.append((torch.as_tensor(Jp),
-                                {k: torch.as_tensor(v) for k, v in mp.items()},
-                                glo, ghi))
+                # sanitized ghosts -- see TorchFluxKernels._cross_geom
+                self.pg.append((torch.as_tensor(
+                    np.where(np.isfinite(Jp), Jp, 0.0)),
+                    {k: torch.as_tensor(np.nan_to_num(
+                        v, nan=0.0, posinf=0.0, neginf=0.0))
+                     for k, v in mp.items()},
+                    glo, ghi))
 
     def _jg_global(self, coef, axis):
         """coefs * J * g as ONE global field (association preserved)."""
