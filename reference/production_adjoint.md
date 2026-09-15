@@ -63,8 +63,25 @@ cell within S^2 of the entry's row or column. T is cached per
   BIT-IDENTICAL to production on all 9 butterfly blocks (0.00e+00, seams
   included, axis-aligned branch); gradient through pad -> flux ->
   divergence FD-exact at 3e-11. src/prod_adjoint.py TorchFluxKernels.
-- NEXT (9.2b): pressure_face_fluxes port (orth + cross + rhie_chow;
-  bilinear in (p, coef)) and cross_diffusion, same recipe; then the
-  assembled step vs m.step() (9.2d). Butterfly uses the axis-aligned
-  seam branch of face_fluxes; only that branch is ported (the other
-  raises).
+- 9.2b GATED 4/4: pressure_face_fluxes in torch, machine-exact (9e-18 ..
+  1.7e-16) in all three step call patterns; bilinear d/dp, d/dcoef
+  FD-exact.
+- 9.2c GATED 3/3: cross_diffusion machine-exact; M(coef) linear
+  sensitivity (10 colors) with FD-exact gradient.
+- 9.2d GATED 2/2 -- THE MILESTONE: TorchProductionStep (src/prod_step.py)
+  is field-for-field equivalent to m.step() at u 3e-9 / p 5e-9 (both
+  sides tightened to ~1e-11 solves; production env-var DC semantics,
+  Picard inf-norm exit, Dong copy, persistent flux). The gate CAUGHT a
+  real landmine on first run: the chains' cell_gradient_matrix differs
+  O(1) from d.gradient on the butterfly; production_gradient_ops now
+  probes the genuine operator (probe_cell_operator, reach-2 coloring for
+  edge_order=2 stencils). The step contains ZERO re-derived operators --
+  every linear map is probed from the production code it mirrors.
+  Timing: 52 s/torch step vs 17 s production at tight tolerances (coarse
+  butterfly, Mac).
+- NEXT (9.3): gradient gates on the step -- FD vs adjoint through 1-3
+  steps with assembly in the graph; the detach-assembly mangle. Then 9.4
+  (R11-restart rollout; the M2 chain instability must be absent) and 9.5
+  (objectives + HydroGym/FluidGym differentiable wiring). Butterfly uses
+  the axis-aligned seam branch of face_fluxes; only that branch is ported
+  (the other raises).
