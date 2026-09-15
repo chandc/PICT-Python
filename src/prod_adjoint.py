@@ -370,6 +370,71 @@ class DiffusionAssembly:
         return vals
 
 
+def probe_cell_operator(domain, apply_fn, S, reach=2):
+    """Probe a LINEAR cell-field -> cell-field production operator into an
+    exact global sparse matrix. `apply_fn(x_global) -> y_global`; influence
+    distance <= `reach` (np.gradient edge_order=2 stencils see dist 2 at
+    unpadded boundaries), colored at 2*reach separation, attributed via the
+    dist<=reach neighbourhood; VERIFIED by the caller's gate on random
+    fields."""
+    N = S.shape[0]
+    Sr = S.copy()
+    for _ in range(reach - 1):
+        Sr = ((Sr @ S) > 0).astype(bool)
+    Sconf = ((Sr @ Sr) > 0).astype(bool)
+    colors = -np.ones(N, dtype=int)
+    for c in range(N):
+        nbv = colors[Sconf.indices[Sconf.indptr[c]:Sconf.indptr[c + 1]]]
+        used = set(nbv[nbv >= 0].tolist())
+        k = 0
+        while k in used:
+            k += 1
+        colors[c] = k
+    Sc = Sr.tocsc()
+    rows, cols, vals = [], [], []
+    for k in range(colors.max() + 1):
+        batch = np.where(colors == k)[0]
+        x = np.zeros(N)
+        x[batch] = 1.0
+        y = apply_fn(x)
+        nz = np.nonzero(y)[0]
+        sub = Sc[:, batch].tocoo()
+        nearest = -np.ones(N, dtype=int)
+        nearest[sub.row] = batch[sub.col]
+        cell = nearest[nz]
+        if np.any(cell < 0):
+            raise AssertionError("cell-operator probe attribution failed")
+        rows.extend(nz.tolist())
+        cols.extend(cell.tolist())
+        vals.extend(y[nz].tolist())
+    return sparse.csr_matrix((vals, (rows, cols)), shape=(N, N))
+
+
+def production_gradient_ops(domain):
+    """d.gradient probed into three exact (N, N) matrices -- the PRODUCTION
+    cell gradient, which differs O(1) from the chains' cell_gradient_matrix
+    on the butterfly (measured; the chains' operator was consistent with the
+    chain family, not with the step)."""
+    N = domain.n_cells
+    nb = len(domain.blocks)
+    gids = [domain.global_ids(b) for b in range(nb)]
+
+    def apply_axis(a):
+        def go(x):
+            fd = {b: x[gids[b]] for b in range(nb)}
+            y = np.zeros(N)
+            for b in range(nb):
+                y[gids[b].ravel()] = domain.gradient(b, fd)[a].ravel()
+            return y
+        return go
+
+    ones = [domain.block_metrics_cached(b)[0] for b in range(nb)]
+    ms = [domain.block_metrics_cached(b)[1] for b in range(nb)]
+    M = sparse.csr_matrix(domain.build_diffusion_matrix(ones, ms))
+    S = ((abs(M) + abs(M).T + sparse.identity(N)) > 0).astype(bool).tocsr()
+    return [probe_cell_operator(domain, apply_axis(a), S) for a in range(3)]
+
+
 class TorchDiffusionAssembly:
     def __init__(self, da: DiffusionAssembly):
         Tm = da.Tm.tocoo()

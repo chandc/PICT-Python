@@ -281,6 +281,73 @@ def main():
     rel = abs(g[k] - fd) / max(abs(fd), 1e-300)
     check(rel < 1e-9, f"9.2c d(M vals)/d(coef) autograd vs FD: rel {rel:.2e}")
 
+    # ================================================================== 9.2d
+    # THE DECISIVE GATE: one full torch production step vs m.step(),
+    # field for field, from an identical warmed-up state. Both sides run
+    # with the DC pressure iteration tightened so the lag truncation is
+    # below the linear-solve tolerances being compared.
+    os.environ["PICT_CROSS_DC_TOL"] = "1e-11"
+    os.environ["PICT_CROSS_DC_ITERS"] = "60"
+    # production's DC INNER solves default to 1e-4 (warm-started, so the
+    # consecutive-iterate exit test can fire at loose-solve accuracy) and
+    # its outer tolerances to 1e-9; tighten so the comparison floor is the
+    # solves, not the iteration truncation
+    os.environ["PICT_CROSS_DC_INNER"] = "1e-11"
+    os.environ["PICT_MOM_TOL"] = "1e-12"
+    from cylinder_rect_bc import U_INF, apply as apply_bc
+    from cylinder_ring_grid import D as DIAM
+    from src.piso_multiblock import MultiBlockPISO
+    from src.prod_step import TorchProductionStep
+
+    m = MultiBlockPISO(d, NU, DT, 2, 1e-11, time_scheme="bdf2",
+                       scheme="rotational", picard_iters=2, rhie_chow=True,
+                       persistent_flux=True, ddt_corr=False,
+                       implicit_cross=True, linear_backend="scipy")
+    for b in range(nb):
+        m.u[b][:] = U_INF
+        m.v[b][:] = 0.0
+        m.w[b][:] = 0.0
+    apply_bc(m, d)
+    t0 = time.time()
+    for _ in range(3):
+        m.step()                                  # warm-up: u_prev, p_flux live
+    print(f"  9.2d warm-up: 3 production steps ({time.time()-t0:.0f}s)",
+          flush=True)
+
+    tps = TorchProductionStep(m)
+    # the probed production gradient must reproduce d.gradient exactly
+    from src.mb_adjoint import spmv as _spmv
+    pr = torch.as_tensor(rng.standard_normal(N))
+    prd = {b: pr.numpy()[d.global_ids(b)] for b in range(nb)}
+    wg = 0.0
+    for b in range(nb):
+        ref = d.gradient(b, prd)
+        for a in range(3):
+            got = _spmv(tps.G3[a], pr).numpy()[d.global_ids(b)]
+            wg = max(wg, np.abs(got - ref[a]).max()
+                     / max(np.abs(ref[a]).max(), 1e-300))
+    check(wg < 1e-13, f"9.2d probed production gradient == d.gradient: "
+                      f"worst rel {wg:.2e}")
+    st = tps.state_from_solver()
+    t0 = time.time()
+    m.step()
+    t_prod = time.time() - t0
+    t0 = time.time()
+    with torch.no_grad():
+        st2 = tps.step(st)
+    t_torch = time.time() - t0
+    worst = {}
+    for f, ref in (("u", m.u), ("v", m.v), ("w", m.w), ("p", m.p),
+                   ("p_flux", m.p_flux)):
+        r = m._flat(ref)
+        g = st2[f].numpy()
+        worst[f] = np.abs(g - r).max() / max(np.abs(r).max(), 1e-300)
+    wmax = max(worst.values())
+    check(wmax < 1e-5,
+          f"9.2d torch production step == m.step(): "
+          + "  ".join(f"{f} {v:.1e}" for f, v in worst.items())
+          + f"  ({t_prod:.0f}s prod / {t_torch:.0f}s torch)")
+
     print(f"\n  {PASS}/{PASS + FAIL} checks passed", flush=True)
     sys.exit(1 if FAIL else 0)
 
