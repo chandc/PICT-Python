@@ -79,9 +79,20 @@ cell within S^2 of the entry's row or column. T is cached per
   every linear map is probed from the production code it mirrors.
   Timing: 52 s/torch step vs 17 s production at tight tolerances (coarse
   butterfly, Mac).
-- NEXT (9.3): gradient gates on the step -- FD vs adjoint through 1-3
-  steps with assembly in the graph; the detach-assembly mangle. Then 9.4
-  (R11-restart rollout; the M2 chain instability must be absent) and 9.5
-  (objectives + HydroGym/FluidGym differentiable wiring). Butterfly uses
-  the axis-aligned seam branch of face_fluxes; only that branch is ported
-  (the other raises).
+- 9.3 GATED 4/4 (suite 20/20): dL/d(state) FD-exact at 7e-7 and
+  dL/d(source) at 8e-5 through the full production step; detach_assembly
+  mangle LIVE at 5e-4 (the through-assembly path measured at last). Two
+  earned findings: torch's backward walks the FULL padded arrays, so
+  numpy-inert ghost corners (J = 0 / nonfinite metrics, E-trapezoid)
+  manufacture NaN grads via 0*inf -- geometry constants sanitized, the
+  9.2 bit-level gates re-verify the forward untouched; and production's
+  Dong pressure is IDENTICALLY inert in forward-flow states (copy BC
+  zeroes the viscous term structurally, saturated tanh zeroes theta and
+  its derivative), so the liveness probe manufactures outlet backflow
+  (grad change 3e-3 once exercised). DC sweep count pinned during FD
+  probes (a data-dependent exit puts a kink between probes).
+- NEXT (9.4): multi-step rollout from the R11 restart -- bounded, tracks
+  the production trajectory; the M2 chain instability must be ABSENT.
+  Then 9.5 (objectives + HydroGym/FluidGym differentiable wiring).
+  Butterfly uses the axis-aligned seam branch of face_fluxes; only that
+  branch is ported (the other raises).
