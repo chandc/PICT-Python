@@ -179,6 +179,66 @@ def main():
     check(rel < 1e-7, f"9.2a gradient through pad -> flux -> divergence: "
                       f"FD rel {rel:.2e}")
 
+    # ================================================================== 9.2b
+    from src.multiblock import face_axis_side
+    from src.prod_adjoint import TorchPressureFlux
+    # stamp pressure_pinned exactly as _step_impl does (dong outflow faces)
+    dong_faces = [(bb, fid) for (bb, fid), role in classify(d).items()
+                  if role == "outlet"]
+    d.pressure_pinned = frozenset(
+        (bb,) + face_axis_side(fid) for bb, fid in dong_faces)
+    pf = TorchPressureFlux(d, fk, with_cross=True)
+    pg = torch.as_tensor(rng.standard_normal(N))
+    cg = torch.as_tensor(0.5 + 0.1 * rng.random(N))       # positive coefficient
+    pd_ = {b: pg.numpy()[d.global_ids(b)] for b in range(nb)}
+    cd_ = {b: cg.numpy()[d.global_ids(b)] for b in range(nb)}
+    worst = {"rc": 0.0, "corr": 0.0, "cross": 0.0}
+    for b in range(nb):
+        for tag, kw in (("rc", dict(include_orth=True, include_cross=False,
+                                    rhie_chow=True)),
+                        ("corr", dict(include_orth=True, include_cross=True)),
+                        ("cross", dict(include_orth=False, include_cross=True))):
+            ref = d.pressure_face_fluxes(b, pd_, cd_[b], cd_, **kw)
+            with torch.no_grad():
+                got = pf(b, pg, cg, **kw)
+            for a in range(3):
+                sc = max(np.abs(ref[a]).max(), 1e-300)
+                worst[tag] = max(worst[tag],
+                                 np.abs(got[a].numpy() - ref[a]).max() / sc)
+    for tag, label in (("rc", "rhie_chow dissipation"),
+                       ("corr", "orth + cross correction"),
+                       ("cross", "cross only")):
+        check(worst[tag] < 1e-13,
+              f"9.2b torch pressure_face_fluxes [{label}]: worst rel {worst[tag]:.2e}")
+
+    # bilinear gradient: d/dp and d/dcoef of a flux functional, FD-checked
+    wsum = [[torch.as_tensor(rng.standard_normal(
+        [s + (1 if a == ax else 0) for ax, s in enumerate(d.blocks[b].shape)]))
+        for a in range(3)] for b in range(nb)]
+
+    def flux_L(pt, ct):
+        return sum((pf(b, pt, ct, include_orth=True, include_cross=True,
+                       rhie_chow=True)[a] * wsum[b][a]).sum()
+                   for b in range(nb) for a in range(3))
+
+    pt = pg.clone().requires_grad_(True)
+    ct = cg.clone().requires_grad_(True)
+    flux_L(pt, ct).backward()
+    h3, worst_g = 1e-5, 0.0
+    for var, grad in ((pt, pt.grad), (ct, ct.grad)):
+        g = grad.detach().numpy()
+        k = int(np.argmax(np.abs(g)))
+        with torch.no_grad():
+            vp, vm = var.detach().clone(), var.detach().clone()
+            vp[k] += h3
+            vm[k] -= h3
+            args = ((vp, cg) if var is pt else (pg, vp),
+                    (vm, cg) if var is pt else (pg, vm))
+            fd = (float(flux_L(*args[0])) - float(flux_L(*args[1]))) / (2 * h3)
+        worst_g = max(worst_g, abs(g[k] - fd) / max(abs(fd), 1e-300))
+    check(worst_g < 1e-6,
+          f"9.2b bilinear gradients d/dp and d/dcoef vs FD: worst rel {worst_g:.2e}")
+
     print(f"\n  {PASS}/{PASS + FAIL} checks passed", flush=True)
     sys.exit(1 if FAIL else 0)
 

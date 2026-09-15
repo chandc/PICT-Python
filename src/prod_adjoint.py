@@ -274,3 +274,132 @@ class TorchFluxKernels:
             out = out + (F[axis][_sl(axis, slice(1, None))]
                          - F[axis][_sl(axis, slice(0, -1))]) / self.h[b][axis]
         return out / self.J[b]
+
+
+def _tgrad(t, h, axis):
+    """np.gradient(edge_order=2) in torch: central interior, one-sided edges."""
+    n = t.shape[axis]
+    mid = (t[_sl(axis, slice(2, None))] - t[_sl(axis, slice(0, -2))]) / (2 * h)
+    lo = (-3.0 * t[_sl(axis, slice(0, 1))] + 4.0 * t[_sl(axis, slice(1, 2))]
+          - t[_sl(axis, slice(2, 3))]) / (2 * h)
+    hi = (3.0 * t[_sl(axis, slice(n - 1, n))] - 4.0 * t[_sl(axis, slice(n - 2, n - 1))]
+          + t[_sl(axis, slice(n - 3, n - 2))]) / (2 * h)
+    return torch.cat([lo, mid, hi], dim=axis)
+
+
+class TorchPressureFlux:
+    """Stage 9.2b: `pressure_face_fluxes` in torch -- the one BILINEAR kernel
+    (p and the velocity-dependent coefficient both vary). Mirrors the
+    production arithmetic including the width-2 Rhie-Chow wide gradient and
+    its BC-aware boundary overrides (PICT_RC_BOUNDARY semantics, reading
+    `d.pressure_pinned` exactly as the step does). Gated bit-level against
+    the numpy original in test_prod_adjoint.py 9.2b."""
+
+    _KEYS = (("xi_x", "xi_y", "xi_z"), ("eta_x", "eta_y", "eta_z"),
+             ("zeta_x", "zeta_y", "zeta_z"))
+
+    def __init__(self, d, fk: "TorchFluxKernels", with_cross=True):
+        self.d, self.fk = d, fk
+        nb, self.N = fk.nb, fk.N
+        self.pads2 = [PadMap(d, b, 2) for b in range(nb)]
+        # static geometric factor g_ab = sum_c m[a_c]^2 per block/axis (own metrics)
+        self.g = [[torch.as_tensor(sum(
+            d.block_metrics_cached(b)[1][k] ** 2 for k in self._KEYS[a]))
+            for a in range(3)] for b in range(nb)]
+        if with_cross:
+            self.pg = []
+            for b in range(nb):
+                Jp, mp, glo, ghi = d.padded_geometry(b, 1)
+                self.pg.append((torch.as_tensor(Jp),
+                                {k: torch.as_tensor(v) for k, v in mp.items()},
+                                glo, ghi))
+
+    def _jg_global(self, coef, axis):
+        """coefs * J * g as ONE global field (association preserved)."""
+        fk = self.fk
+        g = torch.zeros(self.N, dtype=torch.float64)
+        for b in range(fk.nb):
+            cb = torch.take(coef, fk.gid[b]).reshape(fk.shapes[b])
+            g = g.index_put((fk.gid[b],),
+                            (cb * fk.J[b] * self.g[b][axis]).reshape(-1))
+        return g
+
+    def __call__(self, b, p, coef, include_orth=True, include_cross=False,
+                 rhie_chow=False):
+        d, fk = self.d, self.fk
+        blk_shape, hb = fk.shapes[b], fk.h[b]
+        pad1 = fk.pads[b]
+        pp = pad1.apply(p)
+        plo = pad1.lo
+        if rhie_chow:
+            pad2 = self.pads2[b]
+            pp2 = pad2.apply(p)
+            lo2, hi2 = pad2.lo, pad2.hi
+            off = tuple(lo2[a] - plo[a] for a in range(3))
+        if include_cross:
+            Jp, mp, glo, ghi = self.pg[b]
+            cc = pad1.apply(coef)
+            dp = [_tgrad(pp, hb[a], a) for a in range(3)]
+
+            def g_off(a1, a2):
+                return sum(mp[self._KEYS[a1][c]] * mp[self._KEYS[a2][c]]
+                           for c in range(3))
+
+        mode = os.environ.get("PICT_RC_BOUNDARY", "auto")
+        pinned = (frozenset() if mode == "ghost"
+                  else getattr(d, "pressure_pinned", frozenset()))
+        out = []
+        for axis in range(3):
+            Jg_pad = pad1.apply(self._jg_global(coef, axis))
+            lo, hi = pad1.lo, pad1.hi
+            n = blk_shape[axis]
+            if include_cross:
+                cross_cell = sum(cc * Jp * g_off(axis, o) * dp[o]
+                                 for o in range(3) if o != axis)
+            if rhie_chow:
+                g2 = _tgrad(pp2, hb[axis], axis)
+                for side, absent in ((0, lo2[axis] == 0), (1, hi2[axis] == 0)):
+                    if not absent or mode == "legacy" or (b, axis, side) in pinned:
+                        continue
+                    nax = pp2.shape[axis]
+                    sb = _sl(axis, slice(nax - 1, nax) if side else slice(0, 1))
+                    sn = _sl(axis, slice(nax - 2, nax - 1) if side else slice(1, 2))
+                    dd = (pp2[sb] - pp2[sn]) if side else (pp2[sn] - pp2[sb])
+                    g2 = torch.cat(
+                        [g2[_sl(axis, slice(0, nax - 1))], 0.5 * dd / hb[axis]]
+                        if side else
+                        [0.5 * dd / hb[axis], g2[_sl(axis, slice(1, None))]],
+                        dim=axis)
+                sl2 = tuple(slice(off[a], off[a] + pp.shape[a]) for a in range(3))
+                dpw = g2[sl2]
+
+            core = [slice(lo[a], lo[a] + blk_shape[a]) for a in range(3)]
+            ccore = ([slice(glo[a], glo[a] + blk_shape[a]) for a in range(3)]
+                     if include_cross else None)
+            k0 = 0 if lo[axis] > 0 else 1
+            k1 = n if hi[axis] > 0 else n - 1
+            cnt = k1 - k0 + 1
+            s1 = list(core); s1[axis] = slice(lo[axis] + k0 - 1, lo[axis] + k0 - 1 + cnt)
+            s2 = list(core); s2[axis] = slice(lo[axis] + k0, lo[axis] + k0 + cnt)
+            val = torch.zeros([cnt if a == axis else blk_shape[a] for a in range(3)],
+                              dtype=torch.float64)
+            if include_orth:
+                cf = 0.5 * (Jg_pad[tuple(s1)] + Jg_pad[tuple(s2)])
+                val = val + cf * (pp[tuple(s2)] - pp[tuple(s1)]) / hb[axis]
+                if rhie_chow:
+                    val = val - 0.5 * (Jg_pad[tuple(s1)] * dpw[tuple(s1)]
+                                       + Jg_pad[tuple(s2)] * dpw[tuple(s2)])
+            if include_cross:
+                c1 = list(ccore); c1[axis] = slice(glo[axis] + k0 - 1,
+                                                   glo[axis] + k0 - 1 + cnt)
+                c2 = list(ccore); c2[axis] = slice(glo[axis] + k0,
+                                                   glo[axis] + k0 + cnt)
+                val = val + 0.5 * (cross_cell[tuple(c1)] + cross_cell[tuple(c2)])
+            pieces = [val]
+            zshape = [1 if a == axis else blk_shape[a] for a in range(3)]
+            if lo[axis] == 0:
+                pieces.insert(0, torch.zeros(zshape, dtype=torch.float64))
+            if hi[axis] == 0:
+                pieces.append(torch.zeros(zshape, dtype=torch.float64))
+            out.append(torch.cat(pieces, dim=axis))
+        return out
