@@ -54,13 +54,28 @@ rationale and the FluidGym-vs-HydroGym assessment: fluidgym_parity.md.
    integral: forces use `check_wall=False` and the spurious viscous-normal
    share is tracked separately (`_spurious_normal`).
 
+## Shedding validated through the env (validate_hydrogym_shedding.py)
+
+No settle run was needed: the R11 final checkpoint
+(results/fields/cylrect_r11_final.npz, t = 380, full restart state) loads
+straight through `make_env(mesh="production", restart=...)` -- the grid
+fingerprint and config both match the backend defaults. 1800 uncontrolled
+env steps (~3 shedding periods, ~4.7 s/step on the Mac):
+
+  St     0.1673  vs R11 0.1673   (0.00%)
+  C_D    1.3216  vs R11 1.321    (0.05%, whole-period mean)
+  C_L rms drift 0.08% first-to-last period (restart is lossless)
+
+The campaign physics round-trips through HydroGym's API exactly. Trace in
+results/hydrogym_shedding_validation.npz.
+
 ## Status / next
 
-- Non-differentiable backend DONE (this doc). SB3 baselines can train
-  against `make_env` as-is.
-- Shedding-regime episodes need a settled restart: settle on the
-  production mesh with run_cylinder_rect, then `make_env(mesh="production",
-  restart=<npz>)`. Coarse-mesh restarts for cheap RL experiments TBD.
+- Non-differentiable backend DONE and PHYSICS-VALIDATED (above). SB3
+  baselines can train against `make_env(mesh="production",
+  restart="results/fields/cylrect_r11_final.npz")` as-is; budget
+  ~4.7 s/solver step on the Mac. Coarse-mesh restarts for cheap RL
+  experiments TBD.
 - Differentiable mode = the production-adjoint build (Stage 9/10); the
   interface has no gradient slot (their differentiable envs are JAX
   end-to-end), so gradients will be exposed as a PICT extension -- the
