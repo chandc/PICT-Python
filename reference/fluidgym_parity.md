@@ -269,9 +269,17 @@ Readings:
    container reproduces their artifacts to 0.2% (3.1065 vs 3.0996) --
    the SB3 integration transfers cleanly (needs `pip install
    stable-baselines3 omegaconf`).
-4. D-MPC exact-config episode mid-run (~585 s/control step: planning is
-   ~200x the actuation cost at deployment -- the quantified price of
-   skipping policy training).
+4. D-MPC exact-config episode: KILLED after a hard hang. 11 of 80 control
+   steps completed cleanly (~585 s/step -- planning is ~200x a policy's
+   deployment cost; drag 3.26-3.30, small actions, consistent with their
+   artifacts' weak 3.8% controller), then the process blocked in the
+   CUDA/PISOtorch layer at t=11 and stayed asleep for 20+ h (state S,
+   GPU 0%, VmRSS 25 MB -- a never-returning solve/sync in the
+   get_state/set_state restore loop, NOT memory pressure; the cumulative
+   %CPU average read 21% and meant nothing, trap 20). Their published
+   artifacts (3.2030 mean drag over 10 seeds) remain the D-MPC number of
+   record; a self-measured rerun would need a sliding-window KEEP list and
+   a per-step watchdog, and is not currently worth 13 h of the GB10.
 
 ## What the trained policy learned (2026-09-14)
 
