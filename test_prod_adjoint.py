@@ -239,6 +239,48 @@ def main():
     check(worst_g < 1e-6,
           f"9.2b bilinear gradients d/dp and d/dcoef vs FD: worst rel {worst_g:.2e}")
 
+    # ================================================================== 9.2c
+    from src.prod_adjoint import DiffusionAssembly, TorchDiffusionAssembly
+    # cross_diffusion port vs production
+    worst_cd = 0.0
+    xf = torch.as_tensor(rng.standard_normal(N))
+    fdic = {b: xf.numpy()[d.global_ids(b)] for b in range(nb)}
+    for b in range(nb):
+        ref = d.cross_diffusion(b, fdic)
+        with torch.no_grad():
+            got = fk.cross_diffusion(b, xf).numpy()
+        worst_cd = max(worst_cd, np.abs(got - ref).max()
+                       / max(np.abs(ref).max(), 1e-300))
+    check(worst_cd < 1e-13,
+          f"9.2c torch cross_diffusion == production, all blocks: "
+          f"worst rel {worst_cd:.2e}")
+
+    # M(coef) sensitivity: linearity + gradient through the coefficient
+    da = DiffusionAssembly(d)
+    worst_m = 0.0
+    for _ in range(2):
+        cvec = 0.5 + 0.2 * rng.random(N)
+        ref = da._values(cvec)
+        worst_m = max(worst_m, np.abs(da.Tm @ cvec - ref).max()
+                      / np.abs(ref).max())
+    check(worst_m < 1e-12,
+          f"9.2c M(coef) linear sensitivity ({da.ncolors} colors): "
+          f"worst rel {worst_m:.2e}")
+
+    tda = TorchDiffusionAssembly(da)
+    ct2 = torch.tensor(0.5 + 0.2 * rng.random(N), requires_grad=True)
+    wm = torch.as_tensor(rng.standard_normal(len(da.idx[0])))
+    (tda.vals(ct2) * wm).sum().backward()
+    g = ct2.grad.detach().numpy()
+    k = int(np.argmax(np.abs(g)))
+    h4 = 1e-4
+    cp, cm = ct2.detach().numpy().copy(), ct2.detach().numpy().copy()
+    cp[k] += h4
+    cm[k] -= h4
+    fd = (float((da.Tm @ cp) @ wm.numpy()) - float((da.Tm @ cm) @ wm.numpy())) / (2 * h4)
+    rel = abs(g[k] - fd) / max(abs(fd), 1e-300)
+    check(rel < 1e-9, f"9.2c d(M vals)/d(coef) autograd vs FD: rel {rel:.2e}")
+
     print(f"\n  {PASS}/{PASS + FAIL} checks passed", flush=True)
     sys.exit(1 if FAIL else 0)
 

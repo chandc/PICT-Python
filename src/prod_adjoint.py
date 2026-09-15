@@ -275,6 +275,111 @@ class TorchFluxKernels:
                          - F[axis][_sl(axis, slice(0, -1))]) / self.h[b][axis]
         return out / self.J[b]
 
+    def _cross_geom(self, b):
+        if not hasattr(self, "_cg"):
+            self._cg = {}
+        if b not in self._cg:
+            Jp, mp, plo, phi_ = self.d.padded_geometry(b, 2)
+            Jt = torch.as_tensor(Jp)
+            g12 = torch.as_tensor(sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz"))
+            g13 = torch.as_tensor(sum(mp[f"xi_{c}"] * mp[f"zeta_{c}"] for c in "xyz"))
+            g23 = torch.as_tensor(sum(mp[f"eta_{c}"] * mp[f"zeta_{c}"] for c in "xyz"))
+            pad2 = PadMap(self.d, b, 2)
+            self._cg[b] = (Jt, g12, g13, g23, plo, pad2)
+        return self._cg[b]
+
+    def cross_diffusion(self, b, x):
+        """Momentum cross-diffusion for block b from a GLOBAL flat tensor,
+        mirroring d.cross_diffusion (width-2 pad, six edge_order=2 gradients)."""
+        Jt, g12, g13, g23, plo, pad2 = self._cross_geom(b)
+        pf = pad2.apply(x)
+        h = self.h[b]
+        dd = [_tgrad(pf, h[a], a) for a in range(3)]
+        fx = Jt * (g12 * dd[1] + g13 * dd[2])
+        fe = Jt * (g12 * dd[0] + g23 * dd[2])
+        fz = Jt * (g13 * dd[0] + g23 * dd[1])
+        cd = (_tgrad(fx, h[0], 0) + _tgrad(fe, h[1], 1) + _tgrad(fz, h[2], 2)) / Jt
+        core = tuple(slice(plo[a], plo[a] + self.shapes[b][a]) for a in range(3))
+        return cd[core]
+
+
+class DiffusionAssembly:
+    """Stage 9.2c: build_diffusion_matrix(coefs) is LINEAR in the coefficient
+    field with influence distance <= 1 (each face averages its two cells'
+    coef), so its sensitivity Tm (nnz x N) needs only an S^2-colored probe
+    (~a dozen assemblies). vals(coef) = Tm @ coef exactly; the linearity is
+    gated, not assumed."""
+
+    def __init__(self, domain):
+        self.d = domain
+        self.N = domain.n_cells
+        nb = len(domain.blocks)
+        self.Js = [domain.block_metrics_cached(b)[0] for b in range(nb)]
+        self.ms = [domain.block_metrics_cached(b)[1] for b in range(nb)]
+        self.gids = [domain.global_ids(b) for b in range(nb)]
+
+        (rows, cols), shape, v1 = _canonical(self._build(np.ones(self.N)))
+        self.idx, self.shape = (rows, cols), shape
+        S = sparse.csr_matrix((np.ones(len(rows), bool), (rows, cols)), shape=shape)
+        S = ((S + S.T + sparse.identity(self.N, dtype=bool)) > 0).astype(bool)
+        S2 = ((S @ S) > 0).astype(bool)
+        colors = -np.ones(self.N, dtype=int)
+        for c in range(self.N):
+            nbv = colors[S2.indices[S2.indptr[c]:S2.indptr[c + 1]]]
+            used = set(nbv[nbv >= 0].tolist())
+            k = 0
+            while k in used:
+                k += 1
+            colors[c] = k
+        self.ncolors = colors.max() + 1
+        Trows, Tcols, Tvals = [], [], []
+        Sc = S.tocsc()
+        for k in range(self.ncolors):
+            batch = np.where(colors == k)[0]
+            x = np.zeros(self.N)
+            x[batch] = 1.0
+            dv = self._values(x)
+            nz = np.nonzero(dv)[0]
+            # a DIAGONAL entry depends on the coef of every neighbour (the
+            # face average feeds both diagonals), so attribute via the
+            # dist<=1 neighbourhood; S^2 coloring makes that cell unique
+            sub = Sc[:, batch].tocoo()
+            nearest = -np.ones(self.N, dtype=int)
+            nearest[sub.row] = batch[sub.col]
+            cell = nearest[rows[nz]]
+            miss = cell < 0
+            cell[miss] = nearest[cols[nz[miss]]]
+            if np.any(cell < 0):
+                raise AssertionError("diffusion probe attribution failed")
+            Trows.extend(nz.tolist())
+            Tcols.extend(cell.tolist())
+            Tvals.extend(dv[nz].tolist())
+        self.Tm = sparse.csr_matrix((Tvals, (Trows, Tcols)),
+                                    shape=(len(v1), self.N))
+
+    def _build(self, coef):
+        coefs = [coef[self.gids[b]] for b in range(len(self.d.blocks))]
+        return sparse.csr_matrix(
+            self.d.build_diffusion_matrix(self.Js, self.ms, coefs=coefs))
+
+    def _values(self, coef):
+        (rows, cols), _, vals = _canonical(self._build(coef))
+        if not (np.array_equal(rows, self.idx[0])
+                and np.array_equal(cols, self.idx[1])):
+            raise AssertionError("diffusion pattern changed with the coefficient")
+        return vals
+
+
+class TorchDiffusionAssembly:
+    def __init__(self, da: DiffusionAssembly):
+        Tm = da.Tm.tocoo()
+        self.Tm = torch.sparse_coo_tensor(
+            np.vstack([Tm.row, Tm.col]), Tm.data, Tm.shape).coalesce()
+        self.idx, self.shape = da.idx, da.shape
+
+    def vals(self, coef):
+        return torch.sparse.mm(self.Tm, coef.reshape(-1, 1)).reshape(-1)
+
 
 def _tgrad(t, h, axis):
     """np.gradient(edge_order=2) in torch: central interior, one-sided edges."""
