@@ -113,9 +113,25 @@ cell within S^2 of the entry's row or column. T is cached per
   timing: NO speedup from x0 on the coarse mesh -- unpreconditioned
   BiCGStab at 1e-13 is conditioning-dominated; preconditioning is the
   real lever.
-- REMAINING 9.5: step-wise adjoint replay (memory-flat long windows);
-  policy-in-the-loop trainer on the step (dpc_train pattern with our
-  sensors/reward); differentiable mode wiring into hydrogym_pict and the
-  FluidGym M3 parity runs; preconditioned solves for production-scale
-  training. Butterfly uses the axis-aligned seam branch of face_fluxes;
+- 9.5 REPLAY GATED 4/4 (test_prod_replay.py): replay == tape at 1.3e-9;
+  MEASURED memory tape 581 MB vs replay 180 MB on 3 steps (~190 MB/step
+  tape growth vs flat -- an H=80 window: ~15 GB vs ~200 MB), compute
+  1.5x. replay_policy_grad: full-BPTT policy gradients at one step's
+  graph (action computed on the leaf state inside each replayed step).
+- 9.5 TRAINER LANDED (prod_dpc_train.py): FluidGym probe layout on
+  butterfly nodes, 453-obs MLP -> jet scalar, discounted -C_D-|C_L|.
+  Selftest: 33k policy-weight grads replay-vs-tape at 7.6e-12. SMOKE
+  TRAINING RUN: window loss 4.942 -> 4.745 -> 4.664 over 3 Adam
+  iterations (~920 s/iter, Mac, coarse mesh) -- the first network
+  trained end-to-end on the production solver with certified gradients.
+- FINDING: the coarse gate mesh does NOT sustain shedding at Re 100
+  (Spark 12k-step kick run: probe amplitude flat at ~0.02 for 60 t.u.;
+  subcritical resolution). Coarse-mesh training = plumbing-true but
+  steady-wake physics; the physics-grade M3 campaign needs a shedding
+  mesh: intermediate ~40-60k cells (viability test = next Spark job) or
+  the production mesh with preconditioned solves.
+- REMAINING 9.5: intermediate-mesh selection; preconditioning;
+  differentiable-mode wiring into hydrogym_pict and the FluidGym M3
+  parity env. SB3 SAC baseline on our backend is TRAINING on Spark
+  (HydroGym convention) as the model-free arm. Butterfly uses the axis-aligned seam branch of face_fluxes;
   only that branch is ported (the other raises).
