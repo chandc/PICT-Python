@@ -100,10 +100,22 @@ cell within S^2 of the entry's row or column. T is cached per
   campaign scale. Probing scaled (68 colors, 28 s on 143k cells); cost
   ~470 s/torch step from COLD 1e-13 solves -- warm-started LinearSolve
   is the first 9.5 optimization.
-- NEXT (9.5): jet/rotary actuation into the step's boundary arrays
-  (M2's certified geometry), dC_D/da and policy gradients over rollouts
-  (Stage 8 objectives on the step's fields), step-wise adjoint replay
-  for memory-flat long windows, warm-started solves; wire as the
-  differentiable mode of hydrogym_pict and the FluidGym M3 parity runs.
-  Butterfly uses the axis-aligned seam branch of face_fluxes; only that
-  branch is ported (the other raises).
+- 9.5 FIRST INCREMENT GATED (test_prod_objective.py 4/4; regression
+  20/20 + vec 6/6): M2's jet actuator drives the step's boundary state
+  (register_jets/apply_jets; the correctors' bc re-imposition keeps a in
+  the graph). **dC_D/d(jet a) through 2 PRODUCTION steps FD-exact at
+  3.9e-7; jet -> wake at 1.7e-6** -- the M2 certificates, re-earned on
+  the production algorithm. Warm-start plumbing (LinearSolve x0,
+  slot-keyed seeds) proven answer-neutral (o.1: 5.1e-9) and HARDENED:
+  cold-retry when a seeded solve fails (a stale cross-state seed drove
+  BiCGStab into unrescuable breakdown), clear_seeds() hygiene, FD probes
+  always cold (mutating seeds made probes nondeterministic). Honest
+  timing: NO speedup from x0 on the coarse mesh -- unpreconditioned
+  BiCGStab at 1e-13 is conditioning-dominated; preconditioning is the
+  real lever.
+- REMAINING 9.5: step-wise adjoint replay (memory-flat long windows);
+  policy-in-the-loop trainer on the step (dpc_train pattern with our
+  sensors/reward); differentiable mode wiring into hydrogym_pict and the
+  FluidGym M3 parity runs; preconditioned solves for production-scale
+  training. Butterfly uses the axis-aligned seam branch of face_fluxes;
+  only that branch is ported (the other raises).
