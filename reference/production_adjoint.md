@@ -91,8 +91,19 @@ cell within S^2 of the entry's row or column. T is cached per
   its derivative), so the liveness probe manufactures outlet backflow
   (grad change 3e-3 once exercised). DC sweep count pinned during FD
   probes (a data-dependent exit puts a kink between probes).
-- NEXT (9.4): multi-step rollout from the R11 restart -- bounded, tracks
-  the production trajectory; the M2 chain instability must be ABSENT.
-  Then 9.5 (objectives + HydroGym/FluidGym differentiable wiring).
+- 9.4 GATED 3/3 (test_prod_rollout.py): 30 steps of developed shedding
+  from the R11 restart on the PRODUCTION mesh (142,624 cells). max|u|
+  1.3187 -> 1.3243 -- bounded, the M2 frozen-chain instability ABSENT;
+  divergence from m.step()'s trajectory 3.9e-7 -> 1.2e-6, growing
+  LINEARLY (div(30)/div(15) = 1.6): tolerance-seeded drift, not error.
+  The differentiable step is stable AND is the production trajectory at
+  campaign scale. Probing scaled (68 colors, 28 s on 143k cells); cost
+  ~470 s/torch step from COLD 1e-13 solves -- warm-started LinearSolve
+  is the first 9.5 optimization.
+- NEXT (9.5): jet/rotary actuation into the step's boundary arrays
+  (M2's certified geometry), dC_D/da and policy gradients over rollouts
+  (Stage 8 objectives on the step's fields), step-wise adjoint replay
+  for memory-flat long windows, warm-started solves; wire as the
+  differentiable mode of hydrogym_pict and the FluidGym M3 parity runs.
   Butterfly uses the axis-aligned seam branch of face_fluxes; only that
   branch is ported (the other raises).
