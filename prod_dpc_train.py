@@ -92,6 +92,7 @@ class Harness:
                      for b in range(nb)}
         self.shapes = {b: d.blocks[b].shape for b in range(nb)}
         self.span = float(d.blocks[0].period[2])
+        self.cd_log = []
         # FluidGym's physical probes -> nearest butterfly nodes (z = 0)
         P = sensor_positions()
         xs = np.concatenate([d.blocks[b].x[:, :, 0].ravel() for b in range(nb)])
@@ -120,6 +121,7 @@ class Harness:
 
     def step_loss(self, st, k):
         cd, cl = self.forces(st)
+        self.cd_log.append(float(cd))
         return (GAMMA ** k) * (cd + torch.abs(cl))
 
 
@@ -141,12 +143,16 @@ def main():
     p.add_argument("--iters", type=int, default=3)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--amax", type=float, default=1.0)
+    p.add_argument("--init", default=None, help="warm-start policy state dict")
     p.add_argument("--tag", default="prod_dpc")
     a = p.parse_args()
 
     d, m, tps, body_faces = build(a.restart if a.train else None)
     hz = Harness(d, tps, body_faces)
     policy = make_policy()
+    if getattr(a, "init", None) and os.path.exists(a.init):
+        policy.load_state_dict(torch.load(a.init))
+        print(f"  policy warm-started from {a.init}", flush=True)
 
     def policy_action(st):
         return a.amax * torch.tanh(policy(hz.obs(st))).reshape(())
@@ -189,15 +195,17 @@ def main():
             t0 = time.time()
             tps.clear_seeds()
             opt.zero_grad()
+            hz.cd_log = []
             L = replay_policy_grad(tps, st0, policy_action, a.ctrl_steps,
                                    a.substeps, hz.step_loss)
             torch.nn.utils.clip_grad_norm_(policy.parameters(), 0.5)
             opt.step()
-            hist.append(L)
-            print(f"  it {it:3d}  window loss {L:9.4f}  "
+            cd_fwd = float(np.mean(hz.cd_log[:a.ctrl_steps]))  # forward pass only
+            hist.append((L, cd_fwd))
+            print(f"  it {it:3d}  window loss {L:9.4f}  mean C_D {cd_fwd:.5f}  "
                   f"({time.time()-t0:.0f}s)", flush=True)
-        torch.save(policy.state_dict(), f"results/{a.tag}_policy.pt")
-        np.save(f"results/{a.tag}_curve.npy", np.array(hist))
+            torch.save(policy.state_dict(), f"results/{a.tag}_policy.pt")
+            np.save(f"results/{a.tag}_curve.npy", np.array(hist))
         print(f"  saved results/{a.tag}_policy.pt, {a.tag}_curve.npy",
               flush=True)
 
