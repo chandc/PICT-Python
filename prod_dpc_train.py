@@ -50,9 +50,16 @@ NU, DT = 0.01, 0.01
 GAMMA = 0.999
 
 
-def build(restart=None):
-    d, idx = ring_rect_domain(n_east=33, side_dt=0.08, nz=2, wake_dx=0.4,
-                              wake_hold=8.0, wake_ratio=1.10)
+MESHES = {
+    "coarse": dict(n_east=33, side_dt=0.08, nz=2, wake_dx=0.4,
+                   wake_hold=8.0, wake_ratio=1.10),   # steady wake (subcritical)
+    "mid": dict(n_east=49, side_dt=0.055, nz=2, wake_dx=0.28,
+                wake_hold=8.0, wake_ratio=1.08),      # SHEDS (sigma ~ 0.046)
+}
+
+
+def build(restart=None, mesh="coarse"):
+    d, idx = ring_rect_domain(**MESHES[mesh])
     kindmap = {"inlet": "inflow", "outlet": "outflow",
                "lateral": "wall", "body": "wall"}
     roles = classify(d)
@@ -138,6 +145,7 @@ def main():
     p.add_argument("--selftest", action="store_true")
     p.add_argument("--train", action="store_true")
     p.add_argument("--restart", default="results/fields/coarse_dev.npz")
+    p.add_argument("--mesh", choices=("coarse", "mid"), default="coarse")
     p.add_argument("--ctrl-steps", type=int, default=4)
     p.add_argument("--substeps", type=int, default=3)
     p.add_argument("--iters", type=int, default=3)
@@ -147,7 +155,7 @@ def main():
     p.add_argument("--tag", default="prod_dpc")
     a = p.parse_args()
 
-    d, m, tps, body_faces = build(a.restart if a.train else None)
+    d, m, tps, body_faces = build(a.restart if a.train else None, mesh=a.mesh)
     hz = Harness(d, tps, body_faces)
     policy = make_policy()
     if getattr(a, "init", None) and os.path.exists(a.init):
