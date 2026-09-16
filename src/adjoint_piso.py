@@ -30,7 +30,7 @@ TOL = 1e-13
 ADJOINT_NORMS = []
 
 
-def _solve(A, b, symmetric, transpose=False):
+def _solve(A, b, symmetric, transpose=False, x0=None):
     """
     Solve, with a fallback for BiCGStab breakdown.
 
@@ -47,13 +47,20 @@ def _solve(A, b, symmetric, transpose=False):
         return np.zeros_like(b)
     op = A.T if transpose else A
     if symmetric:                       # M^T == M, so `transpose` is a no-op here by design
-        x, info = spl.cg(op, b, rtol=TOL, maxiter=50000)
+        x, info = spl.cg(op, b, rtol=TOL, maxiter=50000, x0=x0)
         if info != 0:
             raise RuntimeError(f"symmetric solve failed, info={info}")
         return x
-    x, info = spl.bicgstab(op, b, rtol=TOL, maxiter=50000)
+    x, info = spl.bicgstab(op, b, rtol=TOL, maxiter=50000, x0=x0)
     if info != 0:
         x, info = spl.lgmres(op, b, rtol=TOL, maxiter=5000)      # breakdown fallback
+    if info != 0 and x0 is not None:
+        # A stale warm start (e.g. from a different flow state) can drive
+        # BiCGStab into breakdown territory the fallback cannot rescue.
+        # The seed is an optimization, never load-bearing: retry COLD.
+        x, info = spl.bicgstab(op, b, rtol=TOL, maxiter=50000)
+        if info != 0:
+            x, info = spl.lgmres(op, b, rtol=TOL, maxiter=5000)
     if info != 0:
         raise RuntimeError(f"non-symmetric solve failed after fallback, info={info}")
     return x
@@ -67,13 +74,19 @@ class LinearSolve(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, A_val, b, A_pattern, symmetric, singular):
+    def forward(ctx, A_val, b, A_pattern, symmetric, singular, x0=None):
+        # `x0` (optional, DETACHED) warm-starts the forward Krylov solve.
+        # It changes the iterate path only -- the converged answer at TOL is
+        # the same, which the Stage 9 equivalence gates re-verify -- and it
+        # is what makes production-scale rollouts affordable (the cold-solve
+        # cost measured in 9.4).
         idx, shape = A_pattern
         A = sparse.csr_matrix((A_val.detach().numpy(), idx), shape=shape)
         bn = b.detach().numpy().copy()
         if singular:
             bn -= bn.mean()                     # compatibility with N(M) = span{1}
-        x = _solve(A, bn, symmetric)
+        x = _solve(A, bn, symmetric,
+                   x0=None if x0 is None else np.asarray(x0, dtype=float))
         if singular:
             x -= x.mean()                       # pin the constant, identically in both passes
         ctx.save_for_backward(A_val, torch.as_tensor(x))
@@ -100,7 +113,9 @@ class LinearSolve(torch.autograd.Function):
             # -lambda x^T restricted to the sparsity pattern -- never formed densely
             rows, cols = idx
             grad_A = torch.as_tensor(-lam[rows] * x.detach().numpy()[cols])
-        return grad_A, torch.as_tensor(lam), None, None, None
+        # as many grads as the caller passed args (x0 is optional)
+        grads = [grad_A, torch.as_tensor(lam), None, None, None, None]
+        return tuple(grads[:len(ctx.needs_input_grad)])
 
 
 def csr_pattern(A):

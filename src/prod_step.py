@@ -145,6 +145,9 @@ class TorchProductionStep:
                 n=[torch.as_tensor(sg * c / nrm).reshape(-1) for c in (nx, ny, nz)],
                 dn=torch.as_tensor(dn.ravel())))
         self.dong_delta = m.dong_delta
+        # warm-start seeds for the forward Krylov solves, keyed by call slot
+        # (production's slot-seed trick; iterate path only, answer at TOL)
+        self._seeds = {}
         # unique-node selection, mirroring _dong_nodes' np.unique(first)
         allg = np.concatenate([g["gid"].numpy() for g in self.dong]) if self.dong \
             else np.empty(0, dtype=int)
@@ -222,6 +225,40 @@ class TorchProductionStep:
         return self.Jg * out
 
     # ------------------------------------------------------------ the step
+    def register_jets(self, jet_ids, jet_uv):
+        """M2's actuator on the production step: profile-weighted Dirichlet
+        velocities a * jet_uv at body wall nodes (jet_ids global, must lie
+        in the Dirichlet set). apply_jets writes them into the state's bc
+        arrays -- the correctors re-impose bc each sweep, so the actuation
+        persists through the step and a stays in the graph."""
+        ids = np.asarray(jet_ids, dtype=np.int64)
+        missing = np.setdiff1d(ids, self.bnd)
+        if missing.size:
+            raise AssertionError(f"jet nodes not in the Dirichlet set: {missing[:5]}")
+        self.jet_ids = torch.as_tensor(ids)
+        self.jet_uv = torch.as_tensor(np.asarray(jet_uv, dtype=float))
+
+    def apply_jets(self, st, a):
+        st = dict(st)
+        for c, (f, fb) in enumerate((("u", "ubc"), ("v", "vbc"), ("w", "wbc"))):
+            val = a * self.jet_uv[:, c]
+            st[fb] = st[fb].index_put((self.jet_ids,), val)
+            st[f] = st[f].index_put((self.jet_ids,), val)
+        return st
+
+    def clear_seeds(self):
+        """Drop warm-start seeds. Call when jumping to an unrelated state
+        (a stale seed is at best useless, at worst a BiCGStab breakdown),
+        and before FD probes (mutating seeds make probes nondeterministic
+        at the solver-tolerance level)."""
+        self._seeds = {}
+
+    def _lsolve(self, vals, rhs, pattern, sym, sing, key):
+        x0 = self._seeds.get(key)
+        sol = LinearSolve.apply(vals, rhs, pattern, sym, sing, x0)
+        self._seeds[key] = sol.detach().numpy().copy()
+        return sol
+
     @staticmethod
     def _clone(st):
         return {k: (None if v is None else
@@ -241,6 +278,7 @@ class TorchProductionStep:
         for pk in range(self.picard):
             if pk > 0:
                 st = self._clone(picard_state)
+            self._pk = pk
             out = self._step_once(st, convect, src=src,
                                   detach_assembly=detach_assembly,
                                   detach_dong=detach_dong)
@@ -291,9 +329,10 @@ class TorchProductionStep:
                 elim = _spmv_entries(self.ib_rows, self.ib_cols,
                                      torch.take(Avals, self.e_ib), phi_b,
                                      len(self.interior))
-                xi = LinearSolve.apply(torch.take(Avals, self.e_ii),
-                                       torch.take(rhs, self.int_t) - elim,
-                                       self.patt_ii, False, False)
+                xi = self._lsolve(torch.take(Avals, self.e_ii),
+                                  torch.take(rhs, self.int_t) - elim,
+                                  self.patt_ii, False, False,
+                                  ("mom", getattr(self, "_pk", 0), k, _dc))
                 x = torch.zeros(N, dtype=torch.float64) \
                     .index_put((self.int_t,), xi) \
                     .index_put((self.bnd_t,), phi_b)
@@ -350,8 +389,9 @@ class TorchProductionStep:
             sol = None
             prev = None
             for _k in range(it_max):
-                sol = LinearSolve.apply(Mff_vals, b_free, self.patt_ff,
-                                        False, False)
+                sol = self._lsolve(Mff_vals, b_free, self.patt_ff,
+                                   False, False,
+                                   ("dc", getattr(self, "_pk", 0), corr, _k))
                 if prev is not None:
                     if float((sol - prev).norm()) <= \
                             tol_dc * max(float(sol.norm()), 1e-300):
@@ -360,7 +400,8 @@ class TorchProductionStep:
                 prev = sol
                 b_free = base_free + torch.take(
                     self.cross_div(full_p(sol), coef), self.free_t)
-            sol = LinearSolve.apply(Mff_vals, b_free, self.patt_ff, False, False)
+            sol = self._lsolve(Mff_vals, b_free, self.patt_ff, False, False,
+                               ("dcf", getattr(self, "_pk", 0), corr))
             pp = full_p(sol)
 
             gpp = [spmv(self.G3[a], pp) for a in range(3)]

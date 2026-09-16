@@ -358,6 +358,7 @@ def main():
     wake_w = torch.as_tensor(rng.standard_normal(N))
 
     def rollout_L(du, src=None, **kw):
+        tps.clear_seeds()               # deterministic, state-matched solves
         st = tps._clone(st0)
         st["u"] = st["u"] + du
         st = tps.step(st, src=src, **kw)
@@ -427,6 +428,7 @@ def main():
     flip[near_out] = -1.0
 
     def rollout_bf(du_, **kw):
+        tps.clear_seeds()
         st = tps._clone(st0)
         st["u"] = st["u"] * flip + du_
         st = tps.step(st, **kw)
