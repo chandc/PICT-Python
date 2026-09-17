@@ -36,9 +36,12 @@ from hydrogym_pict.core_shim import ActuatorBase, PDEBase
 RE = 100.0
 
 MESHES = {
-    # the Stage 6.9 / M2 gate build: ~21k cells, minutes-scale episodes
+    # the Stage 6.9 / M2 gate build: ~21k cells -- STEADY wake (subcritical)
     "coarse": dict(n_east=33, side_dt=0.08, nz=2, wake_dx=0.4,
                    wake_hold=8.0, wake_ratio=1.10),
+    # 30,594 cells, SHEDS (sigma ~ 0.046; C_D 1.3167, St 0.1656 measured)
+    "mid": dict(n_east=49, side_dt=0.055, nz=2, wake_dx=0.28,
+                wake_hold=8.0, wake_ratio=1.08),
     # the R11 campaign build (nz=4): the validated physics, hours-scale
     "production": dict(nz=4),
 }
