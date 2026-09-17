@@ -58,7 +58,7 @@ MESHES = {
 }
 
 
-def build(restart=None, mesh="coarse"):
+def build(restart=None, mesh="coarse", dt=0.01, picard=2, momdc=2, tol=1e-8):
     d, idx = ring_rect_domain(**MESHES[mesh])
     kindmap = {"inlet": "inflow", "outlet": "outflow",
                "lateral": "wall", "body": "wall"}
@@ -66,10 +66,11 @@ def build(restart=None, mesh="coarse"):
     body_faces = [(b, f) for (b, f), r in roles.items() if r == "body"]
     for (b, f), r in roles.items():
         d.blocks[b].faces[f] = kindmap[r]
-    m = MultiBlockPISO(d, NU, DT, 2, 1e-8, time_scheme="bdf2",
-                       scheme="rotational", picard_iters=2, rhie_chow=True,
+    m = MultiBlockPISO(d, NU, dt, 2, tol, time_scheme="bdf2",
+                       scheme="rotational", picard_iters=picard, rhie_chow=True,
                        persistent_flux=True, ddt_corr=False,
                        implicit_cross=True, linear_backend="scipy")
+    m.momentum_dc_iters = momdc
     for b in range(len(d.blocks)):
         m.u[b][:] = U_INF
         m.v[b][:] = 0.0
@@ -152,10 +153,16 @@ def main():
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--amax", type=float, default=1.0)
     p.add_argument("--init", default=None, help="warm-start policy state dict")
+    p.add_argument("--dt", type=float, default=0.01)
+    p.add_argument("--picard", type=int, default=2)
+    p.add_argument("--momdc", type=int, default=2)
+    p.add_argument("--tol", type=float, default=1e-8)
     p.add_argument("--tag", default="prod_dpc")
     a = p.parse_args()
 
-    d, m, tps, body_faces = build(a.restart if a.train else None, mesh=a.mesh)
+    d, m, tps, body_faces = build(a.restart if a.train else None, mesh=a.mesh,
+                                  dt=a.dt, picard=a.picard, momdc=a.momdc,
+                                  tol=a.tol)
     hz = Harness(d, tps, body_faces)
     policy = make_policy()
     if getattr(a, "init", None) and os.path.exists(a.init):
