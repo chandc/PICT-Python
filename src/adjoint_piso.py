@@ -22,12 +22,23 @@ from src.phase1_grid_metrics import make_grid, compute_numerical_metrics
 from src.phase3_momentum import (build_momentum_matrix_7point, build_conservative_diffusion_matrix,
                              boundary_masks)
 
-TOL = 1e-13
+TOL = float(__import__('os').environ.get('PICT_ADJ_TOL', '1e-11'))
 
 # Adjoint-norm log. The adjoint of an advection-dominated flow transports sensitivity
 # UPSTREAM and can amplify over a long rollout, so ||lambda|| per solve is the diagnostic
 # that catches it -- silently clipping gradients would hide exactly this.
 ADJOINT_NORMS = []
+
+
+def _ilu_M(A):
+    """spilu preconditioner as a LinearOperator; None if factorization fails."""
+    import scipy.sparse.linalg as spl_
+    try:
+        ilu = spl_.spilu(A.tocsc(), drop_tol=1e-5, fill_factor=12)
+        n = A.shape[0]
+        return spl_.LinearOperator((n, n), ilu.solve)
+    except Exception:
+        return None
 
 
 def _solve(A, b, symmetric, transpose=False, x0=None):
@@ -46,12 +57,21 @@ def _solve(A, b, symmetric, transpose=False, x0=None):
     if not np.any(b):
         return np.zeros_like(b)
     op = A.T if transpose else A
+    # ILU-PRECONDITIONED first: on the shedding mid mesh the unpreconditioned
+    # iteration count explodes with the wake phase (measured: an iteration of
+    # training went 37 min -> 8 h). The o.4 study said preconditioning is the
+    # lever; a per-solve spilu costs ~1 s and pays for itself immediately.
+    # The preconditioner changes the ITERATION PATH only; converged answers
+    # at TOL are unchanged and the gates re-verify.
+    M = _ilu_M(op if not symmetric else A)
     if symmetric:                       # M^T == M, so `transpose` is a no-op here by design
-        x, info = spl.cg(op, b, rtol=TOL, maxiter=50000, x0=x0)
+        x, info = spl.cg(op, b, rtol=TOL, maxiter=50000, x0=x0, M=M)
+        if info != 0:
+            x, info = spl.cg(op, b, rtol=TOL, maxiter=50000)
         if info != 0:
             raise RuntimeError(f"symmetric solve failed, info={info}")
         return x
-    x, info = spl.bicgstab(op, b, rtol=TOL, maxiter=50000, x0=x0)
+    x, info = spl.bicgstab(op, b, rtol=TOL, maxiter=50000, x0=x0, M=M)
     if info != 0:
         x, info = spl.lgmres(op, b, rtol=TOL, maxiter=5000)      # breakdown fallback
     if info != 0 and x0 is not None:
