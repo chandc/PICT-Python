@@ -48,6 +48,7 @@ from test_mb_adjoint_jet import jet_geometry
 
 NU, DT = 0.01, 0.01
 GAMMA = 0.999
+LIFT_W = [1.0]          # |C_L| weight in the reward; --lift-weight sets it
 
 
 MESHES = {
@@ -130,7 +131,7 @@ class Harness:
     def step_loss(self, st, k):
         cd, cl = self.forces(st)
         self.cd_log.append(float(cd))
-        return (GAMMA ** k) * (cd + torch.abs(cl))
+        return (GAMMA ** k) * (cd + LIFT_W[0] * torch.abs(cl))
 
 
 def make_policy(nin=453, hidden=64, seed=0):
@@ -157,9 +158,11 @@ def main():
     p.add_argument("--picard", type=int, default=2)
     p.add_argument("--momdc", type=int, default=2)
     p.add_argument("--tol", type=float, default=1e-8)
+    p.add_argument("--lift-weight", type=float, default=1.0)
     p.add_argument("--tag", default="prod_dpc")
     a = p.parse_args()
 
+    LIFT_W[0] = a.lift_weight
     d, m, tps, body_faces = build(a.restart if a.train else None, mesh=a.mesh,
                                   dt=a.dt, picard=a.picard, momdc=a.momdc,
                                   tol=a.tol)
@@ -217,8 +220,10 @@ def main():
             opt.step()
             cd_fwd = float(np.mean(hz.cd_log[:a.ctrl_steps]))  # forward pass only
             hist.append((L, cd_fwd))
+            import resource
+            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**30
             print(f"  it {it:3d}  window loss {L:9.4f}  mean C_D {cd_fwd:.5f}  "
-                  f"({time.time()-t0:.0f}s)", flush=True)
+                  f"({time.time()-t0:.0f}s, rss {rss:.1f} GB)", flush=True)
             torch.save(policy.state_dict(), f"results/{a.tag}_policy.pt")
             np.save(f"results/{a.tag}_curve.npy", np.array(hist))
         print(f"  saved results/{a.tag}_policy.pt, {a.tag}_curve.npy",
