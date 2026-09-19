@@ -51,8 +51,32 @@ ST_REF = 0.164          # circular cylinder at Re = 100
 CD_REF = 1.33
 
 
-def build(dt, tol, nz, nblk, backend):
-    d, _idx = ring_rect_domain(nz=nz)          # nblk kept for CLI compatibility
+def _mpi():
+    """(rank, size), 0/1 when not under mpirun."""
+    try:
+        from mpi4py import MPI
+        return MPI.COMM_WORLD.rank, MPI.COMM_WORLD.size
+    except Exception:
+        return 0, 1
+
+
+def build(dt, tol, nz, nblk, backend, side_dt=0.025):
+    # side_dt drives the N/S tangential spacing, and therefore how many points land inside
+    # HydroGym's 10-degree jet. The default 0.025 gives THREE -- too few to represent a cosine.
+    # 0.008 gives eleven. See reference/hydrogym_jet_cylinder_plan.md G1.
+    d, _idx = ring_rect_domain(nz=nz, side_dt=side_dt)   # nblk kept for CLI compatibility
+    # DISTRIBUTE WHEN RUN UNDER mpirun. Without this the runner has no MPI wiring at all, so
+    # `mpirun -n 8` would launch EIGHT INDEPENDENT COPIES of the same simulation -- each doing
+    # the full work and all writing the same files. It would look like it ran.
+    if _mpi()[1] > 1:
+        from src.comm_mpi import MPIComm
+        d.comm = MPIComm(d)
+        # AND PREPARE THE GEOMETRY. Attaching the comm is not enough: the distributed metrics
+        # are built collectively here, and without it rowsum comes out zero on the first
+        # pressure solve -- "divide by zero in coef_g = Jg / rowsum", which reads like the
+        # ddt_corr divergence signature and is not. The serial path reaches prepare_geometry
+        # lazily; the distributed one must be told, because the call is COLLECTIVE.
+        d.prepare_geometry()
     # PICT_IMPLICIT_CROSS=1: solve the FULL non-orthogonal pressure operator.
     # The orthogonal-only default is fine on near-orthogonal grids, but on the
     # butterfly grid's sheared trapezoid corners the dropped cross-flux leaves
@@ -89,6 +113,18 @@ def kick(m, d, amp):
 
 
 def main():
+    # ONLY RANK 0 WRITES OR PRINTS. checkpoint.save is not collective -- it has no rank or comm
+    # awareness and simply serialises solver state, which every rank holds in full under the
+    # replicated-state design -- so silencing the others cannot deadlock. Eight ranks writing
+    # the same .npz concurrently can corrupt it, which in a 26-hour run would be discovered at
+    # the end.
+    _rank, _size = _mpi()
+    if _rank != 0:
+        import sys as _sys
+        _sys.stdout = open(os.devnull, "w")
+        checkpoint.save = lambda *a, **k: None
+        np.save = lambda *a, **k: None
+
     p = argparse.ArgumentParser()
     p.add_argument("--tol", type=float, default=DEFAULT_TOL,
                    help="linear solver tolerance; 1e-4 suppresses shedding entirely")
@@ -102,6 +138,8 @@ def main():
     p.add_argument("--steps", type=int, default=30000, help="steps after the kick")
     p.add_argument("--dt", type=float, default=0.01)
     p.add_argument("--nz", type=int, default=4)
+    p.add_argument("--side-dt", type=float, default=0.025,
+                   help="N/S tangential spacing; 0.008 resolves a 10-deg jet with 11 points")
     p.add_argument("--nblk", type=int, default=16,
                    help="azimuthal blocks; sets how finely the far-field "
                         "outflow arc can be cut (16 -> |theta| <= 21.8 deg)")
@@ -111,7 +149,7 @@ def main():
     p.add_argument("--tag", default=None)
     a = p.parse_args()
 
-    d, m = build(a.dt, a.tol, a.nz, a.nblk, a.backend)
+    d, m = build(a.dt, a.tol, a.nz, a.nblk, a.backend, a.side_dt)
     tag = a.tag or f"cylrect_Re{RE:.0f}_tol{a.tol:.0e}_n{d.n_cells}"
     os.makedirs("results/fields", exist_ok=True)
 

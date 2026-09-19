@@ -163,7 +163,33 @@ class MultiBlockPISO:
         # and pressure operators have different ones -- sharing would thrash the cache and
         # rebuild a preconditioner every call, which is exactly what the cache exists to avoid.
         # It also keeps their iteration counts separately attributable, which Gate 4 needs.
-        self._mcache = SolveCache(backend=linear_backend,
+        _env = __import__("os").environ
+        # THE MOMENTUM SYSTEM DOES NOT GO TO AmgX, and this is measured, not a precaution.
+        # On the jet-resolved cylinder (130,592 cells), per-step bucket times:
+        #
+        #     system     scipy      AmgX        verdict
+        #     pressure   2.816 s    0.182 s     15x -- this is what the GPU is for
+        #     momentum   0.125 s    0.149 s     AmgX is SLOWER
+        #
+        # AmgX offers nothing on the momentum operator: it is diagonally dominant from the
+        # time-derivative term and converges in ~1 iteration on the CPU. The shootout said the
+        # same ("momentum wants Jacobi, 1 iteration, 0.014 s").
+        #
+        # And it is the ONLY system that fails. Every AMGX REJECT carries rtol=1e-09 -- the
+        # momentum tolerance -- with a true residual of 7.1e+06 against |b| = 2.97e+03, i.e.
+        # BiCGStab breaking down rather than converging slowly, then 500 wasted iterations
+        # before the guard rejects it. The pressure system at 1e-6 never fails.
+        #
+        # Ruled out first, each by its own run: the preconditioner (BLOCK_JACOBI and
+        # MULTICOLOR_DILU give an identical failure count), the convergence criterion
+        # (RELATIVE_INI_CORE vs RELATIVE_MAX, identical), the mode constant, the config files,
+        # and drift rebuilds. The count was identical under every one, which is what finally
+        # said the variable was not in the config.
+        #
+        # PICT_MOM_BACKEND overrides if a future operator ever justifies the GPU here.
+        _mom_backend = _env.get("PICT_MOM_BACKEND") or (
+            "scipy" if linear_backend == "amgx" else linear_backend)
+        self._mcache = SolveCache(backend=_mom_backend,
                                   precond=preconditioner,
                                   distribute=distribute_momentum,
                                   # JACOBI HERE TOO, for the same partition-independence
