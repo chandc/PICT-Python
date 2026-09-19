@@ -189,6 +189,22 @@ handoff included. **This gate may legitimately conclude the GPU is not the right
 30k-cell arena** -- that is a result, not a failure, and it is cheaper to find here than after
 a training campaign.
 
+### G5b -- The training environment is READY, and the interpreter is not the default
+
+Verified, not assumed (`reference/amgx_momentum_fix.md`): AmgX and torch-CUDA coexist in one
+process on the GB10 -- 40 AmgX solves between two successful torch GPU matmuls, with
+`REJECT`/`unhealthy`/`RECONSTRUCT`/`FULL RESET` all zero.
+
+**Run G6 under `/usr/bin/python3`, not `python3`.** The PATH interpreter in `pict-amgx:1.0`
+(`/opt/cpn/bin/python3`) has numpy and scipy but NO torch; `/usr/bin/python3` has
+torch 2.10 + numpy 2.1 + scipy 1.16 + CUDA. The PATH default fails as an ImportError seconds
+into a job rather than at submission.
+
+`mpi4py` is absent from that interpreter and this does not matter: the discrete adjoint has NO
+MPI path (Gate 7 of the DD plan, unstarted), so G6 is serial whatever we do. That is also why
+AmgX matters here far more than it did for the baseline -- serially it is **4.7x** over scipy
+(2.400 against 11.285 s/step), not the 3% it was worth when the baseline could use 8 ranks.
+
 ### G6 -- Training, and the comparison that is the actual benchmark
 DPC through the discrete adjoint against SAC on the IDENTICAL env (same `FlowEnv`, same reward
 `-dt*C_D`, same MAX_CONTROL, same mesh). That is the comparison HydroGym exists to support.

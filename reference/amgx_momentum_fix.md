@@ -54,12 +54,28 @@ what finally said the variable was not in the config.**
    did not survive the image build. The library lives on the HOST at `~/amgx/libamgxsh.so` and
    must be mounted (`-v $HOME/amgx:/amgx -e AMGX_LIB=/amgx/libamgxsh.so`). The build that
    produced the original shootout numbers is gone; the host copy is AmgX 2.5.0, Sep 2026.
-2. **The image has TWO Pythons.** `/opt/cpn/bin/python3` is on PATH and has numpy 2.4.6 /
-   scipy 1.16.3 but NO torch; `/usr/bin/python3` has torch 2.10.0a0+nv25.11 but not our stack.
-   AmgX is loaded by `ctypes` from a `.so`, so it is interpreter-agnostic -- nothing prevents
-   AmgX and torch sharing the GPU in one process. **But the training loop needs numpy, scipy AND
-   torch in ONE interpreter, and no interpreter in this image has all three.** That is the next
-   blocker for G6, and it is a packaging fix, not a code fix.
+2. **The image has TWO Pythons, and the one on PATH is the wrong one.**
+
+   | | `/opt/cpn/bin/python3` (on PATH) | `/usr/bin/python3` |
+   |---|---|---|
+   | python | 3.13 | 3.12.3 |
+   | torch | **absent** | **2.10.0a0+nv25.11** |
+   | numpy | 2.4.6 | 2.1.0 |
+   | scipy | 1.16.3 | **1.16.3** |
+   | CUDA | -- | **True, NVIDIA GB10** |
+   | mpi4py | present | absent |
+
+   **`/usr/bin/python3` has the entire training stack: torch + numpy + scipy + working CUDA.**
+   An earlier note here said no interpreter had all three; that was wrong -- it was written after
+   checking `import torch` under the PATH interpreter and never checking numpy/scipy under the
+   other one. There is no packaging blocker.
+
+   The only gap is `mpi4py`, which does not matter: the discrete adjoint has NO MPI path (that is
+   Gate 7 of the DD plan, unstarted), so any training loop is serial regardless.
+
+   **Invoke `/usr/bin/python3` explicitly.** The PATH default silently gives the torch-less
+   interpreter, and the failure is an ImportError several seconds into a job rather than at
+   submission.
 
 ## And a note on how long this took
 
@@ -67,3 +83,44 @@ Five wrong diagnoses preceded the right one, and the log line that identified it
 `AMGX REJECT ... rtol=1e-09` -- was present in the FIRST failing run. The fallback prints the
 failing system, its tolerance and its config precisely so this does not require guesswork. Grep
 the log before forming a hypothesis.
+
+
+---
+
+# AmgX and PyTorch on the same GPU: VERIFIED to coexist
+
+The training loop needs AmgX (forward pressure solve) and torch-CUDA (policy, and the adjoint
+graph) alive in one process on one device. They are, and it was tested rather than assumed:
+under `/usr/bin/python3`, torch reports CUDA available on the GB10, a GPU matmul succeeds, 40
+AmgX solves run with the production configuration, and **a second GPU matmul still returns
+correctly afterwards**. AmgX is loaded through `ctypes` from a `.so`, so it is interpreter-
+agnostic; both simply hold CUDA contexts on the same device.
+
+    torch 2.10.0a0+nv25.11  cuda_available=True   device: NVIDIA GB10
+    torch GPU matmul OK, trace=5.0656e+03
+    pressure backend=amgx  momentum backend=scipy
+    AMGX REJECT 0 | unhealthy 0 | RECONSTRUCT 0 | FULL RESET 0
+    torch GPU still OK AFTER 40 AmgX solves: 2.9745e+03
+
+## PyTorch is NOT a scipy replacement, and does not need to be
+
+What this solver uses from scipy is `scipy.sparse.linalg`: `splu`, `spilu`, `cg`, `bicgstab`.
+PyTorch has sparse TENSORS (`torch.sparse`, CSR/COO, sparse-dense matmul) but **no Krylov solver
+suite and no incomplete factorisation**. `torch.sparse.spsolve` is a direct solve via cuDSS, not
+a preconditioned iterative solver; `torch.linalg.solve` is dense-only. Hand-writing CG over
+`torch.sparse` is straightforward for the SYMMETRIC pressure operator; reproducing `spilu` is
+not. Since one interpreter carries both libraries, the question is moot.
+
+## `Mode not found` is cosmetic, and here is why it misled for so long
+
+It appears **exactly 8 times** regardless of step count (40, 60, 80), of preconditioner, of
+convergence criterion, and of whether any solve failed. It is AmgX C-layer teardown noise.
+
+It also **cannot be captured by redirecting `sys.stderr`**: AmgX writes to fd 2 directly, so a
+`contextlib.redirect_stderr` into a StringIO counts zero while the terminal shows eight. An
+earlier claim here -- that the message vanished along with the solve failures -- came from
+exactly that mistake.
+
+The lasting lesson is the grep, not the message: `AMGX REJECT`/`unhealthy` are REAL failures and
+`Mode not found` is NOT, and counting them together made a working fix look like a failed one
+twice. Grep them separately.
