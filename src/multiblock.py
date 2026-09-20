@@ -735,6 +735,18 @@ class Domain:
             self._aas = ok
         return self._aas
 
+    def _seam_frames_expressible(self):
+        """True when every connection's frame change is a pure axis permutation plus signs.
+
+        That is all seam_axis_map/seam_axis_signs can encode, and it covers every connection
+        this code can build -- `axes` is a permutation and `flips` a sign pair by construction.
+        Kept as an explicit predicate so the own-metric path states its precondition rather
+        than relying on _axis_aligned_seams' much stronger one.
+        """
+        if getattr(self, "_sfe", None) is None:
+            self._sfe = all(sorted(tuple(c.axes)) == [0, 1] for c in self.connections)
+        return self._sfe
+
     def face_fluxes(self, b, us, vs, ws):
         """
         Face fluxes for block b with CONNECTED and PERIODIC faces resolved from real neighbour
@@ -759,15 +771,39 @@ class Domain:
         """
         from src.phase5_fluxes import contravariant_components
         blk = self.blocks[b]
-        if self._axis_aligned_seams():
+        # THE OWN-METRIC PATH IS THE ONE THAT CONSERVES MASS ACROSS A SEAM. Both blocks average
+        # the SAME padded contravariant components there, so the seam flux is identical computed
+        # from either side -- measured exactly 0.000e+00 on the butterfly. The padded-geometry
+        # fallback below recomputes each block's metrics independently and they do not agree at
+        # the seam: the SAME butterfly grid forced down it measures 5.0e-01. So the fallback is
+        # for geometry the own-metric path cannot express, never a matter of taste.
+        #
+        # A permuted, flipped or axis-ROTATING seam used to disqualify the own-metric path,
+        # because block B's component along axis `a` is then a different physical direction from
+        # block A's. That is recoverable: seam_axis_map says WHICH of the neighbour's components
+        # corresponds, and seam_axis_signs says with what sign. Only DIRECT neighbours matter --
+        # the face loop below indexes the CORE tangential range, so corner ghosts of JU are
+        # never read.
+        if self._axis_aligned_seams() or self._seam_frames_expressible():
             comps = {}
             for bb in range(len(self.blocks)):
                 Jb, mb = self.block_metrics_cached(bb)
                 comps[bb] = contravariant_components(us[bb], vs[bb], ws[bb], Jb, mb)
+            amap = self.seam_axis_map(b)
+            asgn = self.seam_axis_signs(b)
             JU, lo, hi = [], None, None
             for axis in range(3):
-                arr, lo, hi = self.pad_field(
-                    b, {bb: comps[bb][axis] for bb in range(len(self.blocks))}, 1)
+                # identity for every like-axis unflipped seam, so those grids keep the same
+                # arrays and the same arithmetic, bitwise
+                src = {}
+                for bb in range(len(self.blocks)):
+                    if bb in amap:
+                        a2 = amap[bb][axis]
+                        sg = asgn[bb][axis]
+                        src[bb] = comps[bb][a2] if sg > 0 else -comps[bb][a2]
+                    else:
+                        src[bb] = comps[bb][axis]
+                arr, lo, hi = self.pad_field(b, src, 1)
                 JU.append(arr)
         else:
             Jp, mp, lo, hi = self.padded_geometry(b, 1)
@@ -1011,6 +1047,38 @@ class Domain:
             for i in range(2):
                 m[tm[i]] = to[perm[i]]
             out[other] = tuple(m)
+        cache[b] = out
+        return out
+
+    def seam_axis_signs(self, b):
+        """{neighbour: (s0, s1, s2)} -- sign the neighbour's mapped component carries here.
+
+        A contravariant component J*U^a is tied to the DIRECTION of computational axis a. Across
+        a seam the two blocks' normal axes always run the same physical way (Connection forbids
+        an upper-to-upper join, which is exactly the case that would reverse it), so the normal
+        component keeps its sign. A TANGENTIAL axis reversed by `flips` runs the other way, and
+        its component changes sign. Pair this with seam_axis_map and a neighbour's components
+        can be re-expressed in this block's frame.
+        """
+        cache = self._sas_cache = getattr(self, "_sas_cache", {})
+        if b in cache:
+            return cache[b]
+        out = {}
+        for c in self.connections:
+            if c.ba == b:
+                other, fme, foth, perm = c.bb, c.fa, c.fb, tuple(c.axes)
+            elif c.bb == b:
+                other, fme, foth = c.ba, c.fb, c.fa
+                perm = tuple(np.argsort(c.axes))
+            else:
+                continue
+            am = face_axis_side(fme)[0]
+            tm = [a for a in range(3) if a != am]
+            sg = [1.0, 1.0, 1.0]
+            sg[am] = 1.0
+            for i in range(2):
+                sg[tm[i]] = -1.0 if c.flips[perm[i] if c.ba != b else i] else 1.0
+            out[other] = tuple(sg)
         cache[b] = out
         return out
 
