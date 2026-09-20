@@ -30,11 +30,7 @@ def lsq_gradient(mesh, weight="inv_dist2"):
     difference vector leaves the 2x2 normal matrix singular.
     """
     nc, nf = mesh.ncell, mesh.nface
-    bidx = np.full(nf, -1, dtype=np.int64)
-    bf = np.flatnonzero(mesh.boundary)
-    bidx[bf] = np.arange(len(bf))
-    mesh.bface_index = bidx
-    mesh.bfaces = bf
+    bidx, bf = mesh.bface_index, mesh.bfaces
 
     d = mesh.dcc                                   # owner -> neighbour (or -> face centre)
     dd = (d * d).sum(axis=1)
@@ -189,6 +185,89 @@ def laplacian(mesh, gamma_f, bkind, bval=None):
             # The flux out of the owner through a Dirichlet face is coef*(phi_b - phi_P). The
             # -coef*phi_P half sits in the matrix diagonal, so the RHS carries +coef*phi_b.
             np.add.at(out, o[bd], coef[bd] * bvalues[mesh.bface_index[bd]])
+        return out
+
+    return A, rhs_fn
+
+
+def convection(mesh, flux_f, bkind, scheme="upwind"):
+    """Volume-integrated  sum_f F_f phi_f  as (A, rhs_fn), with F_f the face volumetric flux.
+
+    `flux_f` is the face flux already dotted with the area vector and signed OUT of the owner,
+    which is exactly what the Rhie-Chow interpolation produces.
+
+    IMPLICIT UPWIND, DEFERRED CENTRAL. The matrix carries first-order upwind, which is
+    unconditionally bounded and keeps the system diagonally dominant; `rhs_fn` returns the
+    central-minus-upwind difference so the converged answer is second order. Putting central
+    directly in the matrix would be second order too, and would also let a cell coefficient go
+    negative and the iteration diverge on a skewed mesh.
+
+    A boundary face is again just a face with one owner. On INFLOW (F_f < 0) the far side is the
+    prescribed boundary value, so it belongs on the right-hand side. On OUTFLOW the face takes
+    the owner's value, which is the matrix diagonal -- and that, not a special outlet condition,
+    is what makes a convective outlet behave.
+    """
+    nc = mesh.ncell
+    i = mesh.interior
+    b = mesh.boundary
+    o, n = mesh.owner, mesh.neigh
+    F = flux_f
+
+    pos = F >= 0.0                      # flux out of the owner: upwind value is the owner's
+    rows, cols, vals = [], [], []
+
+    # interior, owner is upwind
+    s = i & pos
+    rows += [o[s], n[s]]; cols += [o[s], o[s]]; vals += [F[s], -F[s]]
+    # interior, neighbour is upwind
+    s = i & ~pos
+    rows += [o[s], n[s]]; cols += [n[s], n[s]]; vals += [F[s], -F[s]]
+    # boundary outflow: owner's own value
+    s = b & pos
+    rows += [o[s]]; cols += [o[s]]; vals += [F[s]]
+
+    A = sp.coo_matrix((np.concatenate(vals),
+                       (np.concatenate(rows), np.concatenate(cols))), shape=(nc, nc)).tocsr()
+
+    binflow = np.flatnonzero(b & ~pos)
+    boutflow = np.flatnonzero(b & pos)
+
+    def rhs_fn(phi, phi_b=None, grad_phi=None):
+        out = np.zeros(nc)
+        # Boundary inflow carries the prescribed value. `A @ phi + rhs` IS the operator, so the
+        # face's own contribution F_f * phi_b enters with its own sign -- not negated as though
+        # it were being moved across an equals sign.
+        if phi_b is not None and len(binflow):
+            np.add.at(out, o[binflow], F[binflow] * phi_b[mesh.bface_index[binflow]])
+        # Boundary OUTFLOW takes the owner's cell value, which sits at the centroid rather than
+        # on the face; extrapolate along the gradient for the same reason as the interior
+        # skewness correction.
+        if grad_phi is not None and len(boutflow):
+            dx = mesh.fcentre[boutflow] - mesh.centroid[o[boutflow]]
+            np.add.at(out, o[boutflow],
+                      F[boutflow] * (grad_phi[o[boutflow]] * dx).sum(axis=1))
+        if scheme == "upwind":
+            return out
+        # deferred correction: central minus upwind, interior faces only
+        up = np.where(pos[i], phi[o[i]], phi[n[i]])
+        w = mesh.wf[i]
+        ce = w * phi[o[i]] + (1.0 - w) * phi[n[i]]
+        # SKEWNESS CORRECTION. Linear interpolation with weight w is exact at the point where
+        # the line joining the two centroids crosses the face -- but the flux integral needs
+        # the value at the face CENTROID, and on a triangulation those are different points.
+        # Without this the scheme is not even exact for a LINEAR field: measured 1.19 against
+        # an exact 1.82, and present at perturb=0 too, so it is not a skewed-mesh effect that
+        # a nice mesh hides. Correcting by grad_f . (x_face - x_interp) restores exactness.
+        if grad_phi is not None:
+            xin = (w[:, None] * mesh.centroid[o[i]]
+                   + (1.0 - w)[:, None] * mesh.centroid[n[i]])
+            gf = w[:, None] * grad_phi[o[i]] + (1.0 - w)[:, None] * grad_phi[n[i]]
+            ce = ce + (gf * (mesh.fcentre[i] - xin)).sum(axis=1)
+        # owner gets +F*phi_f and the matrix already supplied +F*upwind, so the balance is
+        # +F*(central - upwind); the neighbour gets the negative of the same thing.
+        corr = F[i] * (ce - up)
+        np.add.at(out, o[i], corr)
+        np.add.at(out, n[i], -corr)
         return out
 
     return A, rhs_fn

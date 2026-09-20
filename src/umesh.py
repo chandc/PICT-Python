@@ -193,6 +193,13 @@ class Mesh:
     def _tag_boundaries(self, edges, edge_tag):
         """Attach the Gmsh physical tag to each boundary face."""
         self.btag = np.zeros(self.nface, dtype=np.int64)
+        # Boundary indexing belongs to the MESH. It used to be created as a side effect of
+        # building the gradient, so any operator constructed first crashed on a mesh that
+        # happened not to have one yet.
+        self.bfaces = np.flatnonzero(self.boundary)
+        self.bface_index = np.full(self.nface, -1, dtype=np.int64)
+        self.bface_index[self.bfaces] = np.arange(len(self.bfaces))
+        self.nbface = len(self.bfaces)
         if edges is None or len(edges) == 0:
             return
         key = {}
