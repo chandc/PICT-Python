@@ -73,12 +73,21 @@ def apply(m, d, kind="dong"):
     step (v stays 0). Discretely du/dn = 0, v = 0 -- no wall shear sheet,
     and the seam-endpoint corner columns follow the interior instead of
     clamping freestream against the confinement overspeed (the visible
-    "dot" at (X_HAND, +-Y_HALF) under the freestream laterals). Freestream
-    remains the default: it is what R11/R12 measured, and the two lateral
-    conditions are DIFFERENT physical configurations with different
-    blockage laws."""
+    "dot" at (X_HAND, +-Y_HALF) under the freestream laterals).
+
+    SLIP IS NOW THE DEFAULT, because it is what HydroGym specifies. Its cylinder env sets
+    `DirichletBC(V.sub(1), Constant(0.0), FREESTREAM)  # Symmetry BCs` -- the y-component ONLY,
+    with u left free -- and the full-vector version, `DirichletBC(V, U_inf, FREESTREAM)`, sits
+    COMMENTED OUT on the line directly above it in their source. We were running the line they
+    discarded: measured u = 1.0000 and v = 0.00000 pinned on every lateral face. Pinning u
+    forbids the blockage acceleration that beta = 0.10 demands -- continuity alone wants ~11%
+    speed-up in the gap -- so it stiffens the confinement and inflates drag.
+
+    The two lateral conditions are DIFFERENT physical configurations with different blockage
+    laws, so this changes the numbers: R11/R12 were measured under freestream and are not
+    comparable across the switch. PICT_LATERAL=freestream restores the old behaviour."""
     import os as _os
-    slip = _os.environ.get("PICT_LATERAL", "freestream") == "slip"
+    slip = _os.environ.get("PICT_LATERAL", "slip") == "slip"
     roles = classify(d)
     outflow = []
     m.slip_faces = []

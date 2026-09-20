@@ -60,11 +60,18 @@ def _mpi():
         return 0, 1
 
 
-def build(dt, tol, nz, nblk, backend, side_dt=0.025):
+def build(dt, tol, nz, nblk, backend, side_dt=0.025, grid="ring"):
     # side_dt drives the N/S tangential spacing, and therefore how many points land inside
     # HydroGym's 10-degree jet. The default 0.025 gives THREE -- too few to represent a cosine.
     # 0.008 gives eleven. See reference/hydrogym_jet_cylinder_plan.md G1.
-    d, _idx = ring_rect_domain(nz=nz, side_dt=side_dt)   # nblk kept for CLI compatibility
+    if grid == "cart":
+        # The Cartesian-background grid: 4 O-ring + 4 transition + 8 rectangular blocks, 85% of
+        # cells in the rectangles. `side_dt` does not apply -- its azimuthal resolution is set
+        # from HydroGym's measured 0.0280 arc directly.
+        from cylinder_cart_grid import cart_ring_domain
+        d, _idx = cart_ring_domain(nz=nz)
+    else:
+        d, _idx = ring_rect_domain(nz=nz, side_dt=side_dt)   # nblk kept for CLI compatibility
     # DISTRIBUTE WHEN RUN UNDER mpirun. Without this the runner has no MPI wiring at all, so
     # `mpirun -n 8` would launch EIGHT INDEPENDENT COPIES of the same simulation -- each doing
     # the full work and all writing the same files. It would look like it ran.
@@ -85,7 +92,8 @@ def build(dt, tol, nz, nblk, backend, side_dt=0.025):
     # exact -- measured with the R11 growth probe.
     m = MultiBlockPISO(d, U_INF * D / RE, dt, 2, tol, time_scheme="bdf2", scheme="rotational",
                        picard_iters=2, rhie_chow=True, persistent_flux=True, ddt_corr=False,
-                       implicit_cross=bool(int(os.environ.get("PICT_IMPLICIT_CROSS", "0"))),
+                       implicit_cross=bool(int(os.environ.get(
+                           "PICT_IMPLICIT_CROSS", "1" if grid == "cart" else "0"))),
                        linear_backend=backend)
     for b in range(len(d.blocks)):
         m.u[b][:] = U_INF
@@ -144,12 +152,24 @@ def main():
                    help="azimuthal blocks; sets how finely the far-field "
                         "outflow arc can be cut (16 -> |theta| <= 21.8 deg)")
     p.add_argument("--kick", type=float, default=0.01, help="fraction of U")
+    p.add_argument("--grid", choices=("ring", "cart"), default="ring",
+                   help="ring = 9-block butterfly; cart = 16-block Cartesian background")
+    # DT RAMP. St ~ 0.166 at Re 100, so the shedding period is ~6 convective units and dt=0.01
+    # is 600 steps per cycle -- far more than BDF2 needs. dt=0.02 (300/cycle) is the measured
+    # ceiling on the cart grid: 0.04 fails immediately from an ESTABLISHED flow, not just from
+    # the impulsive start, because the deferred-correction loop's contraction goes as skew x dt.
+    # The cold start still needs the small step, so run `--ramp-at` steps at `--dt` and then
+    # switch. BDF2 here uses uniform-dt coefficients, so the switch costs one BDF1 step.
+    p.add_argument("--dt2", type=float, default=None,
+                   help="switch to this dt after --ramp-at steps (BDF1 for one step)")
+    p.add_argument("--ramp-at", type=int, default=100,
+                   help="step at which to switch to --dt2")
     p.add_argument("--backend", default="scipy")
     p.add_argument("--restart", default=None)
     p.add_argument("--tag", default=None)
     a = p.parse_args()
 
-    d, m = build(a.dt, a.tol, a.nz, a.nblk, a.backend, a.side_dt)
+    d, m = build(a.dt, a.tol, a.nz, a.nblk, a.backend, a.side_dt, a.grid)
     tag = a.tag or f"cylrect_Re{RE:.0f}_tol{a.tol:.0e}_n{d.n_cells}"
     os.makedirs("results/fields", exist_ok=True)
 
@@ -356,6 +376,10 @@ def main():
 
     t0 = time.time()
     for i in range(1, settle + 1):
+        if a.dt2 and m.nstep == a.ramp_at and abs(m.dt - a.dt2) > 1e-15:
+            m.dt = a.dt2
+            m.u_prev = None            # u_prev came from the old dt: one BDF1 step to restart
+            print(f"  dt ramp at step {m.nstep}: {a.dt} -> {a.dt2}", flush=True)
         update_slip()
         m.step()
         apply_sponge()
