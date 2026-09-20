@@ -113,6 +113,24 @@ flips the sign and reports a stable flow. The structured solver's own study reco
 **T5 before T6/T7.** Stokes has no convection, so if it passes and Poiseuille fails, the fault is
 convection; if Stokes fails, nothing downstream is worth debugging.
 
+## Work items not yet started
+
+* **Periodic faces in `umesh.py`** — PREREQUISITE FOR T8. Orr–Sommerfeld needs the domain
+  periodic in x over `[0, 2pi]`. Periodicity means pairing two boundary faces into an interior
+  one: matching them by their tangential coordinate modulo the period, setting `neigh` to the
+  partner's owner, and carrying the period shift in `dcc` so the cell-to-cell vector does not
+  jump backwards across the seam. Far cheaper than the structured seam machinery -- no
+  orientations, no ghost padding, no ownership -- but it is a real change to the connectivity
+  builder and to `audit()`, not a boundary-condition flag.
+  The structured code's own scar is worth borrowing: its periodic path had to shift coordinates
+  by one period or "the ghost coordinates jump backwards across the seam, collapsing the
+  Jacobian there".
+* **Face-based jet application** — the profile is written and verified analytically
+  (`cylinder_rect_bc.jet_amplitude`); it needs porting onto cylinder boundary faces.
+* **MPI** — deferred. On the structured code MPI measured NEGATIVE at this problem size
+  (1 rank 4.58 s/step, 8 ranks 9.72 s/step) because the implicit solves gather to rank 0.
+  Revisit only if the cell count grows by an order of magnitude.
+
 ## Standing notes
 
 * The solver is cell-centred FV; HydroGym is Taylor–Hood P2–P1. Same mesh, same BCs, different
