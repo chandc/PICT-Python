@@ -134,3 +134,61 @@ def face_interp(mesh, phi, phi_b=None):
     b = mesh.boundary
     f[b] = phi[mesh.owner[b]] if phi_b is None else phi_b[mesh.bface_index[b]]
     return f
+
+
+# ---------------------------------------------------------------------------------------------
+# Boundary condition kinds. A boundary face is just a face with one owner, so a BC is a rule for
+# what sits on the far side of it -- no ghost cells, no padding, no seam ownership.
+DIRICHLET, NEUMANN = 0, 1
+
+
+def laplacian(mesh, gamma_f, bkind, bval=None):
+    """Volume-integrated Laplacian  sum_f gamma_f S_f . grad(phi)  as (A, rhs_fn).
+
+    `A @ phi` is the IMPLICIT orthogonal part, built on E_f so the stencil is two-point and the
+    matrix stays diagonally dominant. The remainder, gamma_f T_f . grad(phi)_f, is NOT in the
+    matrix -- it depends on the cell gradients, which depend on phi -- and is returned by
+    `rhs_fn(grad_phi)` for deferred correction.
+
+    `bkind` is per boundary face: DIRICHLET (value pinned, contributes to the matrix diagonal and
+    the right-hand side) or NEUMANN (zero normal gradient, contributes nothing to either -- the
+    face flux is simply zero, which is what a symmetry plane and a zero-gradient outlet both
+    want for the quantity they do not pin).
+    """
+    nc = mesh.ncell
+    i = mesh.interior
+    b = mesh.boundary
+    coef = gamma_f * mesh.ef_over_d * mesh.span          # per face, the two-point coefficient
+
+    o, n = mesh.owner, mesh.neigh
+    rows = [o[i], n[i], o[i], n[i]]
+    cols = [n[i], o[i], o[i], n[i]]
+    vals = [coef[i], coef[i], -coef[i], -coef[i]]
+
+    bi = mesh.bface_index[b]
+    dir_mask = bkind[bi] == DIRICHLET
+    bd = np.flatnonzero(b)[dir_mask]
+    rows.append(o[bd]); cols.append(o[bd]); vals.append(-coef[bd])
+
+    A = sp.coo_matrix((np.concatenate(vals),
+                       (np.concatenate(rows), np.concatenate(cols))), shape=(nc, nc)).tocsr()
+
+    def rhs_fn(grad_phi, bvalues=None):
+        """Deferred non-orthogonal correction plus the Dirichlet boundary contribution."""
+        out = np.zeros(nc)
+        # non-orthogonal part, gamma T_f . grad_f, with grad_f a face interpolation of the
+        # cell gradients. Exact for a linear field, which is what makes lap(linear) == 0.
+        gf = np.empty((mesh.nface, 2))
+        gf[i] = (mesh.wf[i, None] * grad_phi[o[i]]
+                 + (1.0 - mesh.wf[i, None]) * grad_phi[n[i]])
+        gf[b] = grad_phi[o[b]]
+        cross = gamma_f * (mesh.Tf * gf).sum(axis=1) * mesh.span
+        np.add.at(out, o, cross)
+        np.add.at(out, n[i], -cross[i])
+        if bvalues is not None and len(bd):
+            # The flux out of the owner through a Dirichlet face is coef*(phi_b - phi_P). The
+            # -coef*phi_P half sits in the matrix diagonal, so the RHS carries +coef*phi_b.
+            np.add.at(out, o[bd], coef[bd] * bvalues[mesh.bface_index[bd]])
+        return out
+
+    return A, rhs_fn
