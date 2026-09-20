@@ -131,10 +131,10 @@ def _sym_stretch(a, b, d0, ratio):
     return a + full
 
 
-def cart_ring_domain(n_rad=10, n_tr=16, L1=None, L2=1.20, nz=2, span=4.0 * D,
+def cart_ring_domain(n_rad=15, n_tr=16, L2=1.40, ds_seam=0.040, nz=2, span=4.0 * D,
                      x_in=5.0, x_out=15.0, y_half=5.0,
                      ds_body=1.0 / 35.0, ds_azim=0.0280, ds_wake=0.05, ds_far=0.667,
-                     grow=1.12):
+                     grow=1.16):
     """16-block grid: 4 O-ring + 4 transition + 8 RECTANGULAR Cartesian blocks.
 
     TOPOLOGY. The O-ring's radial direction rotates through 360 degrees, so the blocks it hands
@@ -142,16 +142,30 @@ def cart_ring_domain(n_rad=10, n_tr=16, L1=None, L2=1.20, nz=2, span=4.0 * D,
     ring forces one Cartesian block's own axis 0 and axis 1 into the same padding level. Four of
     the sixteen connections therefore join axis 0 to axis 1, which `_match_extent` now supports.
 
-    WHY THE TRANSITION LAYER EXISTS. The ring's outer boundary has to be the straight square
-    edge to meet a Cartesian block, so its rays run 0.207 long at the edge midpoints and 0.500
-    at the corners -- 2.41x, and irreducible, because the half-diameter cap puts the corner at
-    exactly r = 1.0 when L1 = 0.7071. A tensor block presents ONE spacing along that face, so
-    the ring alone cannot meet it: the seam stalls at 2.41x. The transition carries a spacing
-    pinned at BOTH ends per azimuthal column (`_pin2`), matching the ring's varying outer dr
-    exactly on one side and the tile's uniform spacing on the other.
+    WHY THE TRANSITION LAYER EXISTS. A Cartesian block presents a straight edge and ONE spacing
+    along it, which an O-ring cannot meet directly. The transition carries a spacing pinned at
+    BOTH ends per azimuthal column (`_pin2`) -- the ring's outer dr on one side, the tile's
+    uniform spacing on the other -- so the seam closes at 1.00x on every column.
+
+    THE RING IS A TRUE ANNULUS, r in [R, R + D/2]. An earlier version framed it on a SQUARE of
+    half-width (R + D/2)/sqrt(2) so the corners just touched the half-diameter cap, which left
+    the transition mapping square -> square: the radial rays are then oblique to the edges at
+    BOTH ends and the shear never relaxes, measured at mean |cos| 0.414 between grid lines and
+    INDEPENDENT of L2 -- intrinsic to the geometry, not a tuning miss. Since the cross-diffusion
+    is carried by deferred correction, an explicit fixed-point iteration whose contraction
+    degrades as skew x dt, that pervasive skew is what forced dt down to 0.002.
+
+    Circle -> square instead: the ring is orthogonal by construction (mean |cos| exactly 0, from
+    0.251) and uniformly half a diameter thick (from 0.207-0.500), and the transition drops to
+    mean 0.240. For calibration the butterfly's traps sit at 0.21 and run at dt = 0.01.
+
+    L2 = 1.4 RATHER THAN 1.2 because moving the ring's outer boundary out to a uniform r = 1.0
+    squeezes the transition: against a tile at 1.2 its rays would run 0.2 at the edge midpoints
+    and 0.697 at the corners, a 3.5x spread, worse than the 2.41x it replaces. At 1.4 that is
+    2.45x, so the skew improves without handing the grading a harder problem.
     """
     from src.multiblock import Block, Connection, Domain, face_id
-    L1 = (R_CYL + 0.5 * D) / np.sqrt(2.0) if L1 is None else L1   # corner lands at r = R + D/2
+    R_OUT = R_CYL + 0.5 * D                  # the annulus outer radius: half a diameter, exactly
     z = np.arange(nz) / nz * span
     blocks, conns, idx = [], [], {}
 
@@ -212,14 +226,25 @@ def cart_ring_domain(n_rad=10, n_tr=16, L1=None, L2=1.20, nz=2, span=4.0 * D,
         th = np.arctan2(out[:, 1], out[:, 0])
         u = np.stack([np.cos(th), np.sin(th)], 1)
         r0 = np.full(n_side, R_CYL)                 # cylinder
-        r1 = ray(L1, th)                            # ring / transition frame
+        r1 = np.full(n_side, R_OUT)                 # annulus outer == transition inner
         r2 = ray(L2, th)                            # tile face
         Pr = np.empty((n_rad + 1, n_side, 2))
         Pt = np.empty((n_tr + 1, n_side, 2))
+        # ONE UNIFORM RADIAL SPACING AT BOTH SEAMS. The annulus pins the WALL at ds_body and its
+        # OUTER edge at ds_seam, and the transition runs ds_seam -> ds_seam, so every seam in
+        # the radial direction closes at 1.00x with nothing left to match per column.
+        #
+        # The transition's rays run 0.400 long at the edge midpoints and 0.980 at the corners.
+        # Pinning its outer edge to the tile's TANGENTIAL spacing (0.078) demanded 16 cells
+        # summing to ~0.96 on a ray only 0.400 long, and _pin2's bulge swung negative to make
+        # up the difference: spacing collapsed to 0.0033 between ends of 0.051 and 0.069, a
+        # 20.8x swing inside a single ray, visible as a pinch. The outer spacing does NOT have
+        # to equal the tangential one -- it only has to match the neighbouring Cartesian block's
+        # first RADIAL step, which is ours to choose. At ds_seam = 0.040 the same 16 cells want
+        # 0.64, the short ray no longer over-fills, and the worst within-ray ratio is 2.10.
+        qr = _pin2(R_OUT - R_CYL, n_rad, ds_body, ds_seam)     # identical on every column
         for j in range(n_side):
-            qr = _pin(r1[j] - r0[j], n_rad, ds_body, at_end=False)
-            dr_last = (qr[-1] - qr[-2]) * (r1[j] - r0[j])
-            qt = _pin2(r2[j] - r1[j], n_tr, dr_last, ds_tile)
+            qt = _pin2(r2[j] - r1[j], n_tr, ds_seam, ds_seam)
             Pr[:, j, :] = u[j] * (r0[j] + qr * (r1[j] - r0[j]))[:, None]
             Pt[:, j, :] = u[j] * (r1[j] + qt * (r2[j] - r1[j]))[:, None]
         rb = add("ring" + nm, *lay(Pr, rev))
@@ -227,10 +252,10 @@ def cart_ring_domain(n_rad=10, n_tr=16, L1=None, L2=1.20, nz=2, span=4.0 * D,
         add("tran" + nm, *lay(Pt, rev))
 
     # ---- the eight RECTANGULAR blocks ---------------------------------------------------
-    xW = -_stretch(L2, x_in, ds_tile, grow, ds_far)[::-1]
-    xE = _stretch(L2, x_out, ds_tile, grow, ds_wake)
-    yS = -_stretch(L2, y_half, ds_tile, grow, ds_far)[::-1]
-    yN = _stretch(L2, y_half, ds_tile, grow, ds_far)
+    xW = -_stretch(L2, x_in, ds_seam, grow, ds_far)[::-1]
+    xE = _stretch(L2, x_out, ds_seam, grow, ds_wake)
+    yS = -_stretch(L2, y_half, ds_seam, grow, ds_far)[::-1]
+    yN = _stretch(L2, y_half, ds_seam, grow, ds_far)
     for cn, cx in (("W", xW), ("C", tC), ("E", xE)):
         for rn, ry in (("S", yS), ("C", tC), ("N", yN)):
             if cn == "C" and rn == "C":
