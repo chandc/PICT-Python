@@ -43,12 +43,18 @@ def _auto_conn(blocks, ba, fa, bb, fb):
     solver. Two of the sixteen seams here were laid down end-for-end that way. Trying all eight
     and keeping the one whose face nodes actually coincide removes the whole class of mistake.
     """
-    from src.multiblock import Connection, face_slice
+    from src.multiblock import Connection, face_slice, face_axis_side
     A, B = blocks[ba], blocks[bb]
     sa, sb = face_slice(fa), face_slice(fb)
     pa = np.stack([A.x[sa], A.y[sa], A.z[sa]], -1)
     raw = np.stack([B.x[sb], B.y[sb], B.z[sb]], -1)
-    hits = []
+    # PICK THE BEST ORIENTATION, DO NOT DEMAND A PERFECT ONE. Face cells either side of a seam
+    # are ADJACENT, not coincident -- separated by one cell along the normal by design -- so an
+    # exact-coincidence test is the wrong invariant. It also silently certified a grid in which
+    # every seam DID duplicate a cell layer. The correct orientation is the one whose face
+    # points line up best; a wrong permutation or flip scrambles the tangential ordering and
+    # scores far worse, so the choice is unambiguous and is asserted to be.
+    scored = []
     for axes in ((0, 1), (1, 0)):
         for f0 in (False, True):
             for f1 in (False, True):
@@ -57,13 +63,18 @@ def _auto_conn(blocks, ba, fa, bb, fb):
                     pb = np.stack([c.align(raw[..., k]) for k in range(3)], -1)
                 except Exception:
                     continue
-                if pb.shape == pa.shape and np.abs(pa - pb).max() < 1e-9:
-                    hits.append(c)
-    if not hits:
-        raise AssertionError(f"no orientation makes blocks {ba}/{bb} coincide on {fa}/{fb}")
-    if len(hits) > 1:
-        raise AssertionError(f"orientation ambiguous for blocks {ba}/{bb}: {len(hits)} match")
-    return hits[0]
+                if pb.shape != pa.shape:
+                    continue
+                scored.append((float(np.abs(pa - pb).max()), c))
+    if not scored:
+        raise AssertionError(f"no orientation gives matching face shapes for blocks {ba}/{bb}")
+    scored.sort(key=lambda t: t[0])
+    best, runner = scored[0], (scored[1] if len(scored) > 1 else (float("inf"), None))
+    if len(scored) > 1 and runner[0] < 2.0 * best[0]:
+        raise AssertionError(
+            f"orientation ambiguous for blocks {ba}/{bb}: best {best[0]:.3e}, "
+            f"runner-up {runner[0]:.3e}")
+    return best[1]
 
 
 def _pin(L, n, d_end, at_end=True):
@@ -247,15 +258,27 @@ def cart_ring_domain(n_rad=15, n_tr=16, L2=1.40, ds_seam=0.040, nz=2, span=4.0 *
             qt = _pin2(r2[j] - r1[j], n_tr, ds_seam, ds_seam)
             Pr[:, j, :] = u[j] * (r0[j] + qr * (r1[j] - r0[j]))[:, None]
             Pt[:, j, :] = u[j] * (r1[j] + qt * (r2[j] - r1[j]))[:, None]
-        rb = add("ring" + nm, *lay(Pr, rev))
+        # EVERY SHARED LINE BELONGS TO EXACTLY ONE BLOCK. Two blocks that both carry the seam
+        # line put two cells at one physical point, coupled across a face of zero width. The
+        # validated butterfly avoids this deliberately -- `Xr[:-1]` for its ring, and
+        # `xw = xw[1:]  # X_HAND line is owned by the east trap` for its wake -- and 0 of its
+        # 13 seams are coincident. All 24 of this grid's were, which painted a spurious
+        # vorticity sheet right around the body at r = 1.0 and TRIPLED the operator error on a
+        # two-block test (Laplacian of a linear field: 30 duplicated vs 10 adjacent).
+        # Ownership here: the transition owns r = R_OUT and the square perimeter at +-L2; the
+        # ring and the Cartesian tiles drop those lines.
+        # Pr[:-1] in BOTH cases: `lay` applies the reversal afterwards, so trimming the
+        # last row here always removes the OUTER one.
+        rb = add("ring" + nm, *lay(Pr[:-1], rev))
         rb.faces[RAD_LO(rev)] = "wall"                             # the cylinder
         add("tran" + nm, *lay(Pt, rev))
 
     # ---- the eight RECTANGULAR blocks ---------------------------------------------------
-    xW = -_stretch(L2, x_in, ds_seam, grow, ds_far)[::-1]
-    xE = _stretch(L2, x_out, ds_seam, grow, ds_wake)
-    yS = -_stretch(L2, y_half, ds_seam, grow, ds_far)[::-1]
-    yN = _stretch(L2, y_half, ds_seam, grow, ds_far)
+    # [:-1] / [1:]: the transition owns the +-L2 perimeter, so the tiles start one node out.
+    xW = -_stretch(L2, x_in, ds_seam, grow, ds_far)[::-1][:-1]
+    xE = _stretch(L2, x_out, ds_seam, grow, ds_wake)[1:]
+    yS = -_stretch(L2, y_half, ds_seam, grow, ds_far)[::-1][:-1]
+    yN = _stretch(L2, y_half, ds_seam, grow, ds_far)[1:]
     for cn, cx in (("W", xW), ("C", tC), ("E", xE)):
         for rn, ry in (("S", yS), ("C", tC), ("N", yN)):
             if cn == "C" and rn == "C":
