@@ -55,7 +55,7 @@ def tangential_axes(axis):
     return tuple(a for a in range(3) if a != axis)
 
 
-def _match_extent(lay, o_lo, o_hi, my_lo, my_hi, axis, perm=(0, 1)):
+def _match_extent(lay, o_lo, o_hi, my_lo, my_hi, axis, perm=(0, 1), oaxis=None):
     """
     Reconcile a ghost layer's tangential extent with the receiving block's.
 
@@ -70,7 +70,12 @@ def _match_extent(lay, o_lo, o_hi, my_lo, my_hi, axis, perm=(0, 1)):
     body. Those cells lie geometrically inside the obstacle, so no exact value exists.
     """
     tang = [a for a in range(3) if a != axis]
-    otang = [tang[perm[0]], tang[perm[1]]]
+    # o_lo/o_hi are indexed in the NEIGHBOUR's axis numbering. Deriving its tangential axes
+    # from OUR `tang` is only right when both sides of the seam share a normal axis; for a
+    # connection joining axis 0 to axis 1 it reads the wrong entries and the reconciled slab
+    # comes back the wrong width, surfacing as a concatenate error one frame up.
+    o_all = [a for a in range(3) if a != (axis if oaxis is None else oaxis)]
+    otang = [o_all[perm[0]], o_all[perm[1]]]
     pre, post = [(0, 0)] * lay.ndim, [slice(None)] * lay.ndim
     need_pad = need_trim = False
     for pos, (ma, oa) in enumerate(zip(tang, otang)):
@@ -632,7 +637,7 @@ class Domain:
         out = []
         for comp, lay in enumerate(slabs):
             lay = np.stack([to_mine(l) for l in lay])
-            lay = _match_extent(lay, olo, ohi, my_lo, my_hi, axis)
+            lay = _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
             out.append(lay + sh[comp])
         return out
 
@@ -658,7 +663,7 @@ class Domain:
         if oside == 1:
             lay = lay[::-1]
         lay = np.stack([to_mine(l) for l in lay])
-        return _match_extent(lay, olo, ohi, my_lo, my_hi, axis)
+        return _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
 
 
     # ------------------------------------------------------------------ seam-aware operators
@@ -715,6 +720,16 @@ class Domain:
                     ok = False
                     break
                 if (c.fa % 2) == (c.fb % 2):
+                    ok = False
+                    break
+                # AND THE NORMAL AXES MUST AGREE. A connection joining axis 0 to axis 1 keeps
+                # the identity permutation, no flips, and opposite sides -- so it passed all
+                # three tests above and took the own-metric path, where block B's component
+                # along axis `a` is a DIFFERENT physical direction from block A's. Measured on
+                # two Cartesian blocks joined normally and then rotated: block A's flux
+                # divergence moved by 7.77 on the identical physical grid. The padded-geometry
+                # path below derives each block's metrics in its OWN frame and is exact there.
+                if face_axis_side(c.fa)[0] != face_axis_side(c.fb)[0]:
                     ok = False
                     break
             self._aas = ok
@@ -962,6 +977,43 @@ class Domain:
             out.append(tot[core])
         return out
 
+    def seam_axis_map(self, b):
+        """{neighbour: perm} where perm[a] is the neighbour's axis matching THIS block's axis a.
+
+        Direction-tagged quantities -- the contravariant metrics, J*g -- are padded with
+        `pad_field`, which is blind to what a component MEANS: it hands block b the neighbour's
+        component of the SAME INDEX. Across a seam joining axis 0 to axis 1 that is a different
+        physical direction, so the flux operator disagreed with `build_diffusion_matrix` (which
+        correctly reads the neighbour's own normal axis) and no pressure field could make the
+        corrected flux solenoidal -- interior divergence 2.9e+09 on step one.
+
+        The permutation is the identity whenever the seam joins like-numbered axes, so every
+        existing grid keeps the same cache keys and the same arithmetic, bitwise.
+        """
+        cache = self._sam_cache = getattr(self, "_sam_cache", {})
+        if b in cache:
+            return cache[b]
+        out = {}
+        for c in self.connections:
+            if c.ba == b:
+                me, other, fme, foth, perm = c.ba, c.bb, c.fa, c.fb, tuple(c.axes)
+            elif c.bb == b:
+                me, other, fme, foth = c.bb, c.ba, c.fb, c.fa
+                perm = tuple(np.argsort(c.axes))          # inverse permutation
+            else:
+                continue
+            am = face_axis_side(fme)[0]
+            ao = face_axis_side(foth)[0]
+            tm = [a for a in range(3) if a != am]
+            to = [a for a in range(3) if a != ao]
+            m = [None, None, None]
+            m[am] = ao
+            for i in range(2):
+                m[tm[i]] = to[perm[i]]
+            out[other] = tuple(m)
+        cache[b] = out
+        return out
+
     def pressure_face_fluxes(self, b, ps, coef_b, coefs, include_orth=True,
                              include_cross=False, rhie_chow=False):
         """
@@ -1013,12 +1065,17 @@ class Domain:
             # against the Gate 0 reference on all 640 arrays while being mathematically
             # identical. Caching only the geometric sum keeps the arithmetic order intact.
             cache = self._jg_cache = getattr(self, "_jg_cache", {})
+            amap = self.seam_axis_map(b)
             out = {}
             for bb in range(len(self.blocks)):
-                key = (bb, axis)
+                # A NEIGHBOUR ACROSS A ROTATING SEAM MUST SUPPLY ITS MAPPED COMPONENT, not the
+                # one with the same index -- see seam_axis_map. Identity for every like-axis
+                # seam, so this is bitwise inert on existing grids.
+                a_bb = amap[bb][axis] if bb in amap else axis
+                key = (bb, a_bb)
                 if key not in cache:
                     _, mb = self.block_metrics_cached(bb)
-                    cache[key] = sum(mb[KEYS[axis][c]] ** 2 for c in range(3))
+                    cache[key] = sum(mb[KEYS[a_bb][c]] ** 2 for c in range(3))
                 Jb, _ = self.block_metrics_cached(bb)
                 out[bb] = coefs[bb] * Jb * cache[key]
             return out
@@ -1319,7 +1376,7 @@ class Domain:
         # reconcile only the MISMATCH in tangential padding -- the two blocks either side of a
         # connection can differ at a reentrant corner of an obstacle
         lay = np.stack([to_mine(l) for l in lay])
-        return _match_extent(lay, olo, ohi, my_lo, my_hi, axis)
+        return _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
 
     def wall_mask(self):
         """
