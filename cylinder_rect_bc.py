@@ -150,3 +150,80 @@ def probe_index(d, x_probe=2.0 * D, y_probe=0.5 * D):
         if r[k] < best:
             best, pb, pk = r[k], b, k
     return pb, pk
+
+
+# ---------------------------------------------------------------------------------------------
+# HydroGym's jet actuator, transcribed from hydrogym/firedrake/envs/cylinder/flow.py
+# (class Cylinder, `cyl_velocity_field`), verified identical in 0.1.2.1 and 1.0.0:
+#
+#     omega = pi/18 ; theta_up = 0.5*pi ; theta_lo = -0.5*pi
+#     A_*   = conditional(abs(theta - theta_*) < omega/2,
+#                         pi/(2*omega*rad**2) * cos((pi/omega)*(theta - theta_*)), 0)
+#     u_ctrl = as_tensor((x, y)) * (A_up + A_lo)
+#
+# THREE THINGS THAT ARE EASY TO GET WRONG, ALL TAKEN FROM THE SOURCE:
+#
+# NORMAL, NOT TANGENTIAL. (x, y) on the cylinder is rad * n_hat, so the actuation blows along
+# the surface normal. The ROTARY actuator is the tangential one -- a different class.
+#
+# NOT ZERO-NET-MASS-FLUX. A_up and A_lo are both POSITIVE cosine lobes and they are ADDED, so
+# both jets blow (or both suck) together. One scalar drives the pair. A ZNMF pair would be
+# antisymmetric and would have real lift authority; this one has almost none, which is the
+# whole point of the distinction. HydroGym's MAIA backend IS ZNMF -- `[action, -action]` per
+# pair -- so the two backends are genuinely different actuators. This is the Firedrake one.
+#
+# THE NORMALISATION IS A UNIT FLUX PER JET. Integrating u_n over one jet:
+#     int_{-w/2}^{w/2} (rad * A) * rad dtheta = rad^2 * pi/(2*omega*rad^2) * (2*omega/pi) = 1
+# so each jet carries unit volumetric flux per unit control, and the pair injects 2*control.
+# Peak amplitude is pi/(2*omega*rad^2) = 36, so the peak surface speed is rad*36 = 18 per unit
+# control -- 1.8 at MAX_CONTROL, well above U_inf. That is HydroGym's scaling, not a typo.
+MAX_CONTROL = 0.1
+JET_OMEGA = np.pi / 18.0                     # 10 degrees TOTAL width
+JET_CENTRES = (0.5 * np.pi, -0.5 * np.pi)    # top and bottom
+
+
+def jet_amplitude(theta, rad=R_CYL):
+    """HydroGym's A_up + A_lo at the given surface angles (radians)."""
+    A = np.zeros_like(np.asarray(theta, dtype=float))
+    for tc in JET_CENTRES:
+        dth = np.arctan2(np.sin(theta - tc), np.cos(theta - tc))   # wrap to (-pi, pi]
+        inside = np.abs(dth) < 0.5 * JET_OMEGA
+        A = A + np.where(inside,
+                         np.pi / (2.0 * JET_OMEGA * rad ** 2)
+                         * np.cos((np.pi / JET_OMEGA) * dth), 0.0)
+    return A
+
+
+def apply_jets(m, d, control):
+    """Write the jet velocity onto the cylinder faces. `control` is HydroGym's scalar action.
+
+    Overwrites the no-slip body condition, exactly as HydroGym's `set_control` replaces the
+    actuation BC each step. Returns the discrete volumetric flux actually imposed, so a caller
+    can check it against the analytic 2*control.
+    """
+    roles = classify(d)
+    flux = 0.0
+    for (b, fid), role in roles.items():
+        if role != "body":
+            continue
+        fs = face_slice(fid)
+        blk = d.blocks[b]
+        x, y = blk.x[fs], blk.y[fs]
+        r = np.hypot(x, y)
+        A = jet_amplitude(np.arctan2(y, x)) * float(control)
+        # u = (x, y) * A -- the source's own form; |(x,y)| = rad on the surface
+        for arr, bc, val in ((m.u, m.u_bc, x * A), (m.v, m.v_bc, y * A),
+                             (m.w, m.w_bc, np.zeros_like(A))):
+            bc[b][fs] = val
+            arr[b][fs] = val
+        # Arc-length weighted normal flux, for the conservation check. ONE z-PLANE ONLY: the
+        # face carries nz planes and ravelling them together interleaves the planes, so the
+        # unwrap runs over a sawtooth and the integral came out a factor nz/... wrong (measured
+        # 0.104 against an analytic 0.200).
+        th2 = np.arctan2(y, x)[..., 0]
+        r2 = r[..., 0]
+        A2 = A[..., 0] if A.ndim == th2.ndim + 1 else A.reshape(th2.shape + (-1,))[..., 0]
+        if th2.size > 1:
+            dth = np.gradient(np.unwrap(th2.ravel()))
+            flux += float(np.sum(r2.ravel() * A2.ravel() * r2.ravel() * dth))
+    return flux
