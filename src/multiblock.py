@@ -43,11 +43,22 @@ def face_axis_side(fid):
     return fid // 2, fid % 2
 
 
-def face_slice(fid):
-    """Index tuple selecting that face's layer of cells from a (nx,ny,nz) array."""
+def face_slice(fid, span=None):
+    """Index tuple selecting that face's layer of cells from a (nx,ny,nz) array.
+
+    `span` restricts it to a SUB-RECTANGLE: ((i0, i1), (j0, j1)) over the face's two TANGENTIAL
+    axes in ascending axis order, or None for the whole face. A partial face is what lets ONE
+    block face meet SEVERAL neighbours -- the thing a Cartesian tiling around a ring needs and
+    a whole-face-only connection list cannot express.
+    """
     axis, side = face_axis_side(fid)
     s = [slice(None)] * 3
     s[axis] = 0 if side == 0 else -1
+    if span is not None:
+        tang = [a for a in range(3) if a != axis]
+        for k, rng in enumerate(span):
+            if rng is not None:
+                s[tang[k]] = slice(rng[0], rng[1])
     return tuple(s)
 
 
@@ -109,7 +120,7 @@ class Connection:
     """
 
     def __init__(self, ba, fa, bb, fb, axes=(0, 1), flips=(False, False),
-                 shift=(0.0, 0.0, 0.0)):
+                 shift=(0.0, 0.0, 0.0), span_a=None, span_b=None):
         # Physical displacement to ADD to block B's coordinates when viewed from
         # A. Zero for blocks that simply abut; for a WRAP-AROUND connection (the
         # last block of a periodic strip joining back to the first) it is the
@@ -117,6 +128,9 @@ class Connection:
         # it and the ghost coordinates jump backwards across the seam, collapsing
         # the Jacobian there -- the same failure the `period` bug produced.
         self.shift = np.asarray(shift, dtype=float)
+        # WHICH PART OF EACH FACE this connection covers -- None means the whole face, which is
+        # every existing grid, so those keep identical index tuples and identical arithmetic.
+        self.span_a, self.span_b = span_a, span_b
         self.ba, self.fa, self.bb, self.fb = ba, fa, bb, fb
         self.axes = tuple(axes)
         self.flips = tuple(bool(f) for f in flips)
@@ -130,6 +144,20 @@ class Connection:
             raise ValueError(
                 f"connection joins {FACE_NAMES[fa]} to {FACE_NAMES[fb]}: both are "
                 f"{'upper' if sa else 'lower'} faces, so the blocks would overlap")
+
+    @property
+    def idx_a(self):
+        """Index tuple into block A selecting just this connection's part of its face."""
+        return face_slice(self.fa, self.span_a)
+
+    @property
+    def idx_b(self):
+        """Index tuple into block B selecting just this connection's part of its face."""
+        return face_slice(self.fb, self.span_b)
+
+    @property
+    def partial(self):
+        return self.span_a is not None or self.span_b is not None
 
     def align(self, arr_b):
         """Reorder block B's face array so element [i,j] is the neighbour of A's face [i,j]."""
@@ -306,8 +334,8 @@ class Domain:
         (ids_a, ids_b): matching global cell ids either side of a connection, aligned so that
         ids_a[k] and ids_b[k] are the two cells that share the interface face.
         """
-        ga = self.global_ids(conn.ba)[face_slice(conn.fa)]
-        gb = self.global_ids(conn.bb)[face_slice(conn.fb)]
+        ga = self.global_ids(conn.ba)[conn.idx_a]
+        gb = self.global_ids(conn.bb)[conn.idx_b]
         gb = conn.align(gb)
         if ga.shape != gb.shape:
             raise ValueError(
@@ -335,8 +363,8 @@ class Domain:
         for c in self.connections:
             A, B = self.blocks[c.ba], self.blocks[c.bb]
             try:
-                pa = [f[face_slice(c.fa)] for f in (A.x, A.y, A.z)]
-                pb = [c.align(f[face_slice(c.fb)]) for f in (B.x, B.y, B.z)]
+                pa = [f[c.idx_a] for f in (A.x, A.y, A.z)]
+                pb = [c.align(f[c.idx_b]) for f in (B.x, B.y, B.z)]
             except ValueError:
                 continue                                   # already reported above
             if pa[0].shape != pb[0].shape:
@@ -438,13 +466,53 @@ class Domain:
     # ------------------------------------------------------------------ geometry across seams
 
     def _neighbour_of(self, b, fid):
-        """(other_block, other_face, to_my_ordering, shift) for a connected face, else None."""
+        """(other_block, other_face, to_my_ordering, shift) for a connected face, else None.
+
+        THE SINGLE-NEIGHBOUR VIEW. Returns the first connection only, so it is valid exactly
+        when this face has one. `_neighbours_of` is the general form; callers that can handle a
+        face met by SEVERAL blocks should use that instead.
+        """
         for c in self.connections:
             if c.ba == b and c.fa == fid:
                 return c.bb, c.fb, c.align, +c.shift
             if c.bb == b and c.fb == fid:
                 return c.ba, c.fa, c.unalign, -c.shift
         return None
+
+    def _neighbours_of(self, b, fid):
+        """Every connection on this face, as a list of pieces.
+
+        Each entry is (other_block, other_face, to_my_ordering, shift, my_span, other_span).
+        A face met by one neighbour over its whole extent gives a single entry with both spans
+        None -- which is every grid built so far, and those keep the old code path exactly.
+        """
+        out = []
+        for c in self.connections:
+            if c.ba == b and c.fa == fid:
+                out.append((c.bb, c.fb, c.align, +c.shift, c.span_a, c.span_b))
+            elif c.bb == b and c.fb == fid:
+                out.append((c.ba, c.fa, c.unalign, -c.shift, c.span_b, c.span_a))
+        return out
+
+    def _face_pieces_cover(self, b, fid):
+        """Check the pieces on this face tile it exactly: no overlap, no gap.
+
+        A missing piece leaves an UNINITIALISED ghost and a doubled one silently wins on
+        whichever is written last -- both produce a plausible-looking field, which is how every
+        other seam defect in this code has presented. Cheap to check once at prepare time.
+        """
+        axis, _ = face_axis_side(fid)
+        tang = [a for a in range(3) if a != axis]
+        shp = [self.blocks[b].shape[a] for a in tang]
+        seen = np.zeros(shp, dtype=int)
+        for _ob, _of, _tm, _sh, my_span, _os in self._neighbours_of(b, fid):
+            sl = [slice(None), slice(None)]
+            if my_span is not None:
+                for k, rng in enumerate(my_span):
+                    if rng is not None:
+                        sl[k] = slice(rng[0], rng[1])
+            seen[tuple(sl)] += 1
+        return seen
 
     def _ghost_layers(self, b, fid, width, src=None, shift=True):
         """
@@ -604,6 +672,62 @@ class Domain:
 
         return upto
 
+    def _assemble_ghost(self, b, fid, width, pieces, my_lo, my_hi, fetch, ncomp, shifted):
+        """Build one ghost layer stack for a face met by SEVERAL neighbours.
+
+        Each piece supplies its own sub-rectangle. The CORE tangential range is filled from the
+        pieces; any tangential padding this block carries is then edge-replicated, which is what
+        `_match_extent` already does wherever two blocks disagree on padding. That is exact for
+        the operators that read this: the face loops in face_fluxes and the pressure coefficient
+        index the core tangential range only.
+
+        Pieces are asserted to tile the face exactly. An uncovered strip would leave an
+        UNINITIALISED ghost and an overlap would let whichever piece is written last win --
+        both of which produce a plausible-looking field, the failure mode every other seam
+        defect in this code has had.
+        """
+        axis, _side = face_axis_side(fid)
+        tang = [a for a in range(3) if a != axis]
+        core = [self.blocks[b].shape[a] for a in tang]
+        cov = np.zeros(core, dtype=int)
+        out = [np.zeros((width, core[0], core[1])) for _ in range(ncomp)]
+        for ob, ofid, to_mine, sh, my_span, other_span in pieces:
+            oaxis, oside = face_axis_side(ofid)
+            slabs, olo, ohi = fetch(ob, oaxis, oside)
+            if ncomp == 1:
+                slabs = [slabs]
+            # trim the neighbour's slab to ITS sub-rectangle, in its own face ordering
+            osl = [slice(None), slice(None), slice(None)]
+            if other_span is not None:
+                otang = [a for a in range(3) if a != oaxis]
+                for kk, rng in enumerate(other_span):
+                    if rng is not None:
+                        # +olo shifts from core indices into the padded array's indexing
+                        osl[1 + kk] = slice(rng[0] + olo[otang[kk]], rng[1] + olo[otang[kk]])
+            dst = [slice(None), slice(None)]
+            if my_span is not None:
+                for kk, rng in enumerate(my_span):
+                    if rng is not None:
+                        dst[kk] = slice(rng[0], rng[1])
+            cov[tuple(dst)] += 1
+            for comp in range(ncomp):
+                lay = np.stack([to_mine(l) for l in slabs[comp]])
+                lay = lay[(slice(None),) + tuple(osl[1:])]
+                add = sh[comp] if shifted else 0.0
+                out[comp][(slice(None),) + tuple(dst)] = lay + add
+        if cov.min() != 1 or cov.max() != 1:
+            raise AssertionError(
+                f"block {b} face {FACE_NAMES[fid]}: pieces do not tile it exactly "
+                f"(coverage {cov.min()}..{cov.max()}); a gap leaves an uninitialised ghost and "
+                f"an overlap silently keeps whichever piece was written last")
+        # extend into whatever tangential padding this block carries
+        pre = [(0, 0)] * 3
+        for kk, a in enumerate(tang):
+            pre[1 + kk] = (my_lo[a], my_hi[a])
+        if any(x != (0, 0) for x in pre):
+            out = [np.pad(o, pre, mode="edge") for o in out]
+        return out
+
     def _ghost_coords(self, b, fid, width, src, upto, k, my_lo, my_hi):
         """
         Coordinate ghost layers beyond face `fid`, nearest-first, in b's ordering.
@@ -628,18 +752,26 @@ class Domain:
                 out.append(lay + (jump if side == 1 else -jump))
             return out
 
-        nb = self._neighbour_of(b, fid)
-        if nb is None:
+        pieces = self._neighbours_of(b, fid)
+        if not pieces:
             return None
-        ob, ofid, to_mine, sh = nb
-        oaxis, oside = face_axis_side(ofid)
-        slabs, olo, ohi = self.comm.fetch_coords_slab(ob, k, oaxis, oside, width, upto)
-        out = []
-        for comp, lay in enumerate(slabs):
-            lay = np.stack([to_mine(l) for l in lay])
-            lay = _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
-            out.append(lay + sh[comp])
-        return out
+        if len(pieces) == 1 and pieces[0][4] is None and pieces[0][5] is None:
+            # THE WHOLE-FACE CASE, untouched: one neighbour covering the entire face. Every grid
+            # built before partial faces existed lands here, so it keeps the identical arrays
+            # and the identical arithmetic.
+            ob, ofid, to_mine, sh = pieces[0][:4]
+            oaxis, oside = face_axis_side(ofid)
+            slabs, olo, ohi = self.comm.fetch_coords_slab(ob, k, oaxis, oside, width, upto)
+            out = []
+            for comp, lay in enumerate(slabs):
+                lay = np.stack([to_mine(l) for l in lay])
+                lay = _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
+                out.append(lay + sh[comp])
+            return out
+        return self._assemble_ghost(b, fid, width, pieces, my_lo, my_hi,
+                                    lambda ob, oaxis, oside: self.comm.fetch_coords_slab(
+                                        ob, k, oaxis, oside, width, upto),
+                                    ncomp=3, shifted=True)
 
     def _ghost_layers_field(self, b, fid, width, cur, fields):
         """Layers of a scalar field beyond face `fid`, in b's ordering. No period shift."""
@@ -976,15 +1108,15 @@ class Domain:
             axis, _ = face_axis_side(c.fa)
             oaxis, _ = face_axis_side(c.fb)
             h = self.blocks[c.ba].h[axis]
-            JgA = Jg_of(c.ba, axis)[face_slice(c.fa)]
-            JgB = c.align(Jg_of(c.bb, oaxis)[face_slice(c.fb)])
+            JgA = Jg_of(c.ba, axis)[c.idx_a]
+            JgB = c.align(Jg_of(c.bb, oaxis)[c.idx_b])
             cf = 0.5 * (JgA + JgB) / h ** 2
-            aA = conv_coef(c.ba, axis)[face_slice(c.fa)]
-            aB = c.align(conv_coef(c.bb, oaxis)[face_slice(c.fb)])
+            aA = conv_coef(c.ba, axis)[c.idx_a]
+            aB = c.align(conv_coef(c.bb, oaxis)[c.idx_b])
             ga, gb = self.pair_indices(c)
             add_face(ga, gb, cf.ravel(), aA.ravel(), aB.ravel(), h)
-            diag[c.ba][face_slice(c.fa)] += cf
-            diag[c.bb][face_slice(c.fb)] += c.unalign(cf)
+            diag[c.ba][c.idx_a] += cf
+            diag[c.bb][c.idx_b] += c.unalign(cf)
 
         c0 = 1.5 / dt if bdf2 else 1.0 / dt
         for b in range(len(self.blocks)):
@@ -1322,14 +1454,14 @@ class Domain:
                 raise ValueError(
                     f"{c}: computational spacing differs across the seam ({ha:.6g} vs "
                     f"{hb:.6g}). The face coefficient would be ambiguous.")
-            JgA = Jg_of(c.ba, axis)[face_slice(c.fa)]
-            JgB = c.align(Jg_of(c.bb, oaxis)[face_slice(c.fb)])
+            JgA = Jg_of(c.ba, axis)[c.idx_a]
+            JgB = c.align(Jg_of(c.bb, oaxis)[c.idx_b])
             cf = 0.5 * (JgA + JgB) / ha ** 2
             ga, gb = self.pair_indices(c)
             rows += [ga, gb]; cols += [gb, ga]
             vals += [-cf.ravel(), -cf.ravel()]
-            diag[c.ba][face_slice(c.fa)] += cf
-            diag[c.bb][face_slice(c.fb)] += c.unalign(cf)
+            diag[c.ba][c.idx_a] += cf
+            diag[c.bb][c.idx_b] += c.unalign(cf)
 
         for b in range(len(self.blocks)):
             rows.append(self.global_ids(b).ravel())
@@ -1435,16 +1567,21 @@ class Domain:
             sl[axis] = slice(0, width) if side == 1 else slice(-width, None)
             lay = np.moveaxis(src[tuple(sl)], axis, 0)
             return lay if side == 1 else lay[::-1]
-        nb = self._neighbour_of(b, fid)
-        if nb is None:
+        pieces = self._neighbours_of(b, fid)
+        if not pieces:
             return None
-        ob, ofid, to_mine, _ = nb
-        oaxis, oside = face_axis_side(ofid)
-        lay, olo, ohi = self.comm.fetch_field_slab(ob, k, oaxis, oside, width, upto)
-        # reconcile only the MISMATCH in tangential padding -- the two blocks either side of a
-        # connection can differ at a reentrant corner of an obstacle
-        lay = np.stack([to_mine(l) for l in lay])
-        return _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
+        if len(pieces) == 1 and pieces[0][4] is None and pieces[0][5] is None:
+            ob, ofid, to_mine, _ = pieces[0][:4]
+            oaxis, oside = face_axis_side(ofid)
+            lay, olo, ohi = self.comm.fetch_field_slab(ob, k, oaxis, oside, width, upto)
+            # reconcile only the MISMATCH in tangential padding -- the two blocks either side of
+            # a connection can differ at a reentrant corner of an obstacle
+            lay = np.stack([to_mine(l) for l in lay])
+            return _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
+        return self._assemble_ghost(b, fid, width, pieces, my_lo, my_hi,
+                                    lambda ob, oaxis, oside: self.comm.fetch_field_slab(
+                                        ob, k, oaxis, oside, width, upto),
+                                    ncomp=1, shifted=False)[0]
 
     def wall_mask(self):
         """
