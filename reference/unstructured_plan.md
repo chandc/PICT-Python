@@ -84,6 +84,35 @@ of the circle, flux 2.000000 per unit control); port to face-based application.
 
 **P9 — discrete adjoint.**
 
+## Tollgates
+
+Ordered so that each one can only fail for a reason the previous ones have already excluded.
+Every gate runs at `perturb=0` AND `perturb>0`.
+
+| # | gate | what it catches | reference |
+|---|---|---|---|
+| T1 | operator exactness | assembly, signs, skewness | grad/lap/conv of a linear field, to 1e-11. **PASSING** |
+| T2 | **spatial** order, Poisson | discretisation order | MMS, slope 2. **PASSING** (Dirichlet 2.02, Neumann 2.09) |
+| T3 | **spatial** order, Navier–Stokes | coupled discretisation | MMS with a manufactured `u, v, p` |
+| T4 | **temporal** order | the time scheme alone | fix the mesh, refine `dt`, slope 2 for BDF2 |
+| T5 | Stokes | pressure–velocity coupling WITHOUT convection | manufactured Stokes solution; isolates whether a failure is the coupling or the convection |
+| T6 | Poiseuille | flow rate for a given pressure gradient | exact solution; a wrong Rhie–Chow gives a plausible parabola at the wrong flow rate |
+| T7 | Ghia cavity Re=1000 | convection, corner singularities, secondary vortices | `src/ghia.py`, `U_RE1000` / `V_RE1000` |
+| T8 | Orr–Sommerfeld Re=7500 | numerical DISSIPATION, temporal accuracy | growth `alpha*Im(c) = 0.00223497`, phase `0.249892`; `orr_sommerfeld.py` reproduces both to 5+ digits |
+| T9 | cylinder Re=100 | the target case | no obtainable reference — see above; T1–T8 are what make its output trustworthy |
+
+**T3 and T4 must be separated.** A scheme that is second order in space and first in time still
+shows slope 2 under joint refinement if the spatial error dominates. Refine one at a time.
+
+**T8 is the sharpest gate and the reason `central` convection is not a preference.** The growth
+rate is 2.2e-3 per unit time; numerical damping of comparable size does not merely add error, it
+flips the sign and reports a stable flow. The structured solver's own study records SOU removing
+~10% of kinetic energy per turnover, which would swamp it by orders of magnitude, and needed
+48x401 to get within 1.2%. A second-order scheme has to reach that resolution the hard way.
+
+**T5 before T6/T7.** Stokes has no convection, so if it passes and Poiseuille fails, the fault is
+convection; if Stokes fails, nothing downstream is worth debugging.
+
 ## Standing notes
 
 * The solver is cell-centred FV; HydroGym is Taylor–Hood P2–P1. Same mesh, same BCs, different
