@@ -34,9 +34,15 @@ R_CYL = 0.5 * D
 # documented blockage shift; +-20 D is the attribution check. Everything
 # downstream -- trapezoid radial counts, BC classification, seam layout --
 # adapts through the geometry, and validate() re-audits the result.
-X_IN, X_OUT = 10.0 * D, 30.0 * D
-Y_HALF = float(os.environ.get("PICT_Y_HALF", "10")) * D
-X_HAND = 7.0 * D                 # butterfly ends; tensor wake block begins
+# ENV-CONFIGURABLE, following PICT_Y_HALF above. Defaults are HydroGym's `medium` mesh -- its
+# DEFAULT_MESH -- verbatim: x in [-5, 15], y in [-5, 5] (medium.geo: x_ninf=-5, x_pinf=15,
+# y_inf=5), i.e. blockage beta = 0.10. These were 10/30/10, DOUBLE that domain in every
+# direction at half the blockage; a grid was built and run for hours at the wrong size before
+# the .geo was ever opened. The env vars remain for confinement studies.
+X_IN = float(os.environ.get("PICT_X_IN", "5")) * D
+X_OUT = float(os.environ.get("PICT_X_OUT", "15")) * D
+Y_HALF = float(os.environ.get("PICT_Y_HALF", "5")) * D
+X_HAND = float(os.environ.get("PICT_X_HAND", "5")) * D   # butterfly ends; wake block begins
 
 
 def _geometric_weights(first_frac, ratio):
@@ -152,9 +158,10 @@ def _coons(edge_b, edge_t, edge_l, edge_r):
                + u * (1 - v) * P10 + u * v * P11))
 
 
-def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
+def ring_rect_domain(n_east=36, side_dt=0.030, nz=8, span=4.0 * D, L1=1.0 * D,
                      first=0.010 * D, ring_ratio=1.12, trap_ratio=1.10,
-                     wake_dx=0.15 * D, wake_hold=15.0 * D, wake_ratio=1.06):
+                     wake_dx=0.05 * D, wake_hold=None, wake_ratio=1.06,
+                     ring_circular=True, wake_dx0=0.12 * D):
     """Build the 9-block domain. Returns (Domain, idx dict)."""
     from square_cylinder_grid import _ramp_plateau_stretch
 
@@ -229,10 +236,25 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
     # four traps (trap-trap connections are whole-face equal-shape), and the
     # count is set by the LONGEST ray anywhere, so every quarter's per-column
     # weights are computed before any block is built.
-    wake_dx0 = 0.20 * D          # the wake block's first x spacing; the east
-    prep = []                     # trap's columns are built to END near this
+    # The wake block's first x spacing; the east trap's columns are built to END near this,
+    # so it is what MATCHES the trap<->wake seam. It was hardcoded at 0.20 D, tuned against
+    # the shipped wake_dx of 0.15 D; asking for HydroGym's 1/n2 = 0.05 outlet spacing while
+    # this stayed put drove a 3.3x FAIL across that seam. Track wake_dx by default.
+    wake_dx0 = (1.35 * wake_dx) if wake_dx0 is None else wake_dx0
+    prep = []
     for name, c0, c1, t_in, t_out, (i0, i1) in quarters:
         Ef = fc[c0][None, :] * (1 - t_in[:, None]) + fc[c1][None, :] * t_in[:, None]
+        # The frame is the ring's OUTER surface and the trap's INNER surface at once. As a
+        # square of half-width L1 its corners sit at L1*sqrt(2) -- at the shipped L1 = 1.0 D
+        # that is r = 1.302, i.e. 0.80 D off the cylinder, where the brief caps the O-ring at
+        # half a diameter. Projecting the frame onto the circle r = R + D/2 makes the ring an
+        # exact annulus: uniformly half a diameter thick, orthogonal by construction, and with
+        # the SAME radial extent (R_OUT - R_CYL = 0.5 D = L1 - R_CYL at L1 = 1.0 D), so
+        # `ring_last` and every seam spacing tuned against it are unchanged. `th` already put
+        # the cylinder nodes on a circle, so the azimuthal distribution is untouched too.
+        if ring_circular:
+            _th = np.arctan2(Ef[:, 1], Ef[:, 0])
+            Ef = (R_CYL + 0.5 * D) * np.column_stack([np.cos(_th), np.sin(_th)])
         O = rc[c0][None, :] * (1 - t_out[:, None]) + rc[c1][None, :] * t_out[:, None]
         Lcol = np.linalg.norm(O - Ef, axis=1)
         prep.append((name, c0, c1, Ef, O, Lcol, (i0, i1)))
@@ -289,8 +311,16 @@ def ring_rect_domain(n_east=97, side_dt=0.025, nz=8, span=4.0 * D, L1=1.0 * D,
     # match only one value, and the geometric mean splits the seam mismatch
     # evenly (sqrt(spread) on each side, warn-level, not FAIL-level)
     dx0_w = float(np.sqrt(e_ends.min() * e_ends.max()))
+    # `wake_hold` is an ABSOLUTE x, not a length: _ramp_plateau_stretch holds dx until it
+    # reaches that coordinate, then stretches to X_OUT and rescales the tail to land exactly.
+    # If it is >= X_OUT there IS no tail, the `len(tail) > 1` rescale is skipped, and the last
+    # node sits up to one dx PAST the outlet -- validate() does not check the endpoint, so a
+    # 15.044 outlet only surfaced later in classify(). Keep it strictly inside the domain.
+    wake_hold = (X_OUT - 1.0 * D) if wake_hold is None else min(wake_hold, X_OUT - 1.0 * D)
     xw = _ramp_plateau_stretch(X_HAND, X_OUT, dx0_w, wake_dx,
                                wake_hold, 1.10, wake_ratio)
+    if abs(xw[-1] - X_OUT) > 1e-9:
+        raise AssertionError(f"wake ends at {xw[-1]:.6f}, not X_OUT={X_OUT:.6f}")
     yw = (rc["se"][None, :] * (1 - tE_out[:, None])
           + rc["ne"][None, :] * tE_out[:, None])[:, 1]
     xw = xw[1:]                    # X_HAND line is owned by the east trap
