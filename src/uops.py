@@ -164,6 +164,14 @@ def laplacian(mesh, gamma_f, bkind, bval=None):
     bi = mesh.bface_index[b]
     dir_mask = bkind[bi] == DIRICHLET
     bd = np.flatnonzero(b)[dir_mask]
+    # A NEUMANN face carries ZERO total flux -- that is what the condition says. The matrix
+    # already contributes nothing there, but the deferred cross term must be suppressed too, or
+    # the operator quietly disagrees with its own boundary condition. With every face Neumann
+    # (the singular, all-Neumann pressure problem PISO actually solves) that spurious flux has
+    # no Dirichlet anchor to absorb it and the outer iteration diverges: measured L2 2.8e+06
+    # against an exact solution, versus 3e-04 once suppressed.
+    noflux = np.zeros(mesh.nface, dtype=bool)
+    noflux[np.flatnonzero(b)[~dir_mask]] = True
     rows.append(o[bd]); cols.append(o[bd]); vals.append(-coef[bd])
 
     A = sp.coo_matrix((np.concatenate(vals),
@@ -179,6 +187,7 @@ def laplacian(mesh, gamma_f, bkind, bval=None):
                  + (1.0 - mesh.wf[i, None]) * grad_phi[n[i]])
         gf[b] = grad_phi[o[b]]
         cross = gamma_f * (mesh.Tf * gf).sum(axis=1) * mesh.span
+        cross[noflux] = 0.0
         np.add.at(out, o, cross)
         np.add.at(out, n[i], -cross[i])
         if bvalues is not None and len(bd):
@@ -271,3 +280,50 @@ def convection(mesh, flux_f, bkind, scheme="upwind"):
         return out
 
     return A, rhs_fn
+
+
+def solve_poisson(mesh, grad, A, rhs_fn, source, phi_b=None, bkind=None, cache=None,
+                  tol=1e-10, max_outer=25, singular=False, x0=None):
+    """Solve  div(gamma grad phi) = source  with the deferred correction driven to convergence.
+
+    `A` carries only the orthogonal part, so one linear solve does NOT solve the problem on a
+    non-orthogonal mesh -- the T_f term depends on grad(phi), which depends on phi. The outer
+    loop lags it, which is why an outer TOLERANCE is required and a fixed sweep count is not
+    enough: on a nearly orthogonal mesh it converges in two passes, on a skewed one it does not.
+
+    `singular=True` for an all-Neumann problem, where phi is defined only up to a constant. The
+    mean is removed from the solution each pass rather than pinning a cell, because pinning puts
+    a spurious source at one cell and it shows up in the gradient there.
+    """
+    from src.linsolve import SolveCache
+    cache = cache if cache is not None else SolveCache()
+    rhs_target = source * mesh.vol
+    phi = np.zeros(mesh.ncell) if x0 is None else x0.copy()
+    hist = []
+    o_b = mesh.owner[mesh.bfaces]
+    neu = None if bkind is None else (bkind == NEUMANN)
+    for it in range(max_outer):
+        # THE GRADIENT NEEDS A VALUE ON EVERY BOUNDARY FACE, including the Neumann ones. Passing
+        # None leaves it zeros, which is a silent Dirichlet-zero: the boundary cells then get a
+        # wrong gradient, the deferred correction inherits it, and convergence collapses from
+        # second order to 0.2 while still looking like it converged. Zero normal gradient means
+        # the face value is the owner's.
+        pb_eff = np.zeros(mesh.nbface) if phi_b is None else phi_b.copy()
+        if neu is not None:
+            pb_eff[neu] = phi[o_b[neu]]
+        elif phi_b is None:
+            pb_eff = phi[o_b]
+        gr = grad(phi, pb_eff)
+        b = rhs_target - rhs_fn(gr, pb_eff)
+        if singular:
+            b = b - b.mean()
+        new = cache.solve(A, b, x0=phi, symmetric=True, rtol=min(tol * 1e-2, 1e-12),
+                          singular=singular)
+        if singular:
+            new = new - new.mean()
+        delta = float(np.abs(new - phi).max()) / max(float(np.abs(new).max()), 1e-30)
+        phi = new
+        hist.append(delta)
+        if delta < tol:
+            break
+    return phi, hist
