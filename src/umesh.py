@@ -161,6 +161,33 @@ class Mesh:
         dn = np.hypot(*(self.fcentre[i] - self.centroid[self.neigh[i]]).T)
         w[i] = dn / (do + dn)
         self.wf = w
+        self._decompose()
+
+    def _decompose(self):
+        """OVER-RELAXED split of the face area vector, S_f = E_f + T_f.
+
+            E_f = d (d.S)/(d.d)        T_f = S_f - E_f
+
+        `E_f` is parallel to the line joining the two cell centres, so the part of the Laplacian
+        built on it is a two-point stencil and stays diagonally dominant; `T_f` carries the
+        non-orthogonality and is deferred to the right-hand side. Over-relaxed (rather than
+        minimum-correction or orthogonal-correction) because |E_f| GROWS with skewness, which is
+        what keeps the implicit operator dominant on the worst cells instead of the best.
+
+        The guide's stated check for this step, `E_f + T_f == S_f`, is an algebraic identity --
+        T_f is DEFINED as the remainder, so it cannot fail and tests nothing. The real check is
+        that the Laplacian built from the split annihilates a linear field on a skewed mesh,
+        which is what `test_uops` does.
+        """
+        d = self.dcc
+        dd = (d * d).sum(axis=1)
+        dS = (d * self.normal).sum(axis=1)
+        self.Ef = d * (dS / np.maximum(dd, 1e-300))[:, None]
+        self.Tf = self.normal - self.Ef
+        # |E_f| / |d| is the coefficient the implicit Laplacian uses on each face
+        self.ef_over_d = np.hypot(*self.Ef.T) / np.maximum(self.dmag, 1e-300)
+        # cos of the angle between d and S: 1 = orthogonal, -> 0 = badly skewed
+        self.orth = dS / np.maximum(np.hypot(*d.T) * np.hypot(*self.normal.T), 1e-300)
 
     # -------------------------------------------------------------------------------------
     def _tag_boundaries(self, edges, edge_tag):
