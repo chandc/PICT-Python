@@ -57,14 +57,32 @@ inlet `DirichletBC(V, U_inf, INLET)`; outlet `DirichletBC(Q, 0, OUTLET)`; Freest
 `DirichletBC(V.sub(1), 0, FREESTREAM)` — y-component only, i.e. SYMMETRY, with the full-vector
 version commented out in their source; cylinder no-slip.
 
-**P6 — Re = 100 validation** against HydroGym on the same mesh.
-DEPENDENCY: we need their numbers. Either a HydroGym run (needs Firedrake) or published values
-for `medium`. Resolve before P6 rather than falling back on open-domain literature.
+**P6 — canonical validation, BEFORE the cylinder.** The cylinder has no reference we can
+obtain: Firedrake is not installable here, the 1.0.0 sdist ships no tests or reference values,
+and the paper's baseline tables are in Supplementary 3/5. Both of these DO have authoritative
+references, so they validate the solver rather than merely exercising it.
 
-**P7 — jets.** Profile already written and verified analytically (peak 36.0000, support 5.55%
+  **P6a — plane Poiseuille channel.** Exact solution, so the error is known pointwise and the
+  spatial order can be measured directly. Also the cheapest check that the pressure-velocity
+  coupling is right: a wrong Rhie-Chow still produces a plausible parabola but the wrong
+  flow rate for a given pressure gradient.
+
+  **P6b — Ghia, Ghia & Shin (1982) lid-driven cavity at Re = 1000.** Published centreline
+  profiles (u along x=0.5, v along y=0.5). The standard benchmark, and a hard one: the
+  corner singularities and the secondary vortices punish a sloppy convection scheme.
+
+Run BOTH at `perturb=0` and `perturb>0`. On an unperturbed right triangulation the mesh is
+exactly orthogonal (measured cos(d,S) = 1.0000), so T_f vanishes and a broken deferred
+correction passes. The skewed variant is what makes the test mean anything.
+
+**P7 — Re = 100 cylinder**, on HydroGym's `medium.msh` with the Firedrake specs. By this point
+the discretisation is validated against known answers, so a disagreement here is attributable to
+the case setup or to blockage rather than to the solver.
+
+**P8 — jets.** Profile already written and verified analytically (peak 36.0000, support 5.55%
 of the circle, flux 2.000000 per unit control); port to face-based application.
 
-**P8 — discrete adjoint.**
+**P9 — discrete adjoint.**
 
 ## Standing notes
 

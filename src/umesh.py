@@ -249,3 +249,48 @@ class Mesh:
 def from_gmsh(path, span=1.0):
     nodes, tris, _tt, edges, etag, names = read_gmsh22(path)
     return Mesh(nodes, tris, edges, etag, names, span=span)
+
+
+def rect_mesh(nx, ny, x0=0.0, x1=1.0, y0=0.0, y1=1.0, span=1.0, perturb=0.0, seed=0,
+              tags=("left", "right", "bottom", "top")):
+    """Triangulated rectangle: nx by ny quads, each split into two triangles.
+
+    `perturb` jitters the INTERIOR nodes by that fraction of the local spacing, which turns an
+    otherwise perfectly orthogonal mesh into a skewed one. That matters: on a uniform right
+    triangulation the non-orthogonal correction T_f is nearly zero, so a solver with a broken
+    deferred-correction term still passes. Running every verification at perturb=0 AND at
+    perturb>0 is what stops that.
+
+    Boundary physical tags are 1..4 for left/right/bottom/top, named by `tags`.
+    """
+    rng = np.random.default_rng(seed)
+    xs = np.linspace(x0, x1, nx + 1)
+    ys = np.linspace(y0, y1, ny + 1)
+    X, Y = np.meshgrid(xs, ys, indexing="ij")
+    if perturb:
+        hx, hy = (x1 - x0) / nx, (y1 - y0) / ny
+        X[1:-1, 1:-1] += perturb * hx * (rng.random((nx - 1, ny - 1)) - 0.5)
+        Y[1:-1, 1:-1] += perturb * hy * (rng.random((nx - 1, ny - 1)) - 0.5)
+    nid = np.arange((nx + 1) * (ny + 1)).reshape(nx + 1, ny + 1)
+    nodes = np.stack([X.ravel(), Y.ravel()], axis=1)
+
+    tris = []
+    for i in range(nx):
+        for j in range(ny):
+            a, b, c, d = nid[i, j], nid[i + 1, j], nid[i + 1, j + 1], nid[i, j + 1]
+            # alternate the diagonal so the mesh has no global bias direction
+            if (i + j) % 2 == 0:
+                tris += [[a, b, c], [a, c, d]]
+            else:
+                tris += [[a, b, d], [b, c, d]]
+    tris = np.array(tris, dtype=np.int64)
+
+    edges, etag = [], []
+    for j in range(ny):
+        edges.append([nid[0, j], nid[0, j + 1]]); etag.append(1)          # left
+        edges.append([nid[nx, j], nid[nx, j + 1]]); etag.append(2)        # right
+    for i in range(nx):
+        edges.append([nid[i, 0], nid[i + 1, 0]]); etag.append(3)          # bottom
+        edges.append([nid[i, ny], nid[i + 1, ny]]); etag.append(4)        # top
+    names = {k + 1: tags[k] for k in range(4)}
+    return Mesh(nodes, tris, np.array(edges), np.array(etag), names, span=span)
