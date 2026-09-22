@@ -21,7 +21,7 @@ CONVENTIONS, all checked by `Mesh.audit()`:
 """
 import numpy as np
 
-GMSH_LINE, GMSH_TRI = 1, 2
+GMSH_LINE, GMSH_TRI, GMSH_QUAD = 1, 2, 3
 
 
 def read_gmsh22(path):
@@ -70,50 +70,74 @@ def read_gmsh22(path):
         etype, ntag = int(p[1]), int(p[2])
         phys = int(p[3]) if ntag >= 1 else 0
         conn = [lookup[int(v)] for v in p[3 + ntag:]]
-        if etype == GMSH_TRI:
+        if etype in (GMSH_TRI, GMSH_QUAD):
             tris.append(conn); tri_tag.append(phys)
         elif etype == GMSH_LINE:
             edges.append(conn); edge_tag.append(phys)
-    return (xy, np.array(tris, dtype=np.int64), np.array(tri_tag, dtype=np.int64),
+    # all-triangle -> (n,3) array as before; any quads -> ragged list, which Mesh pads itself
+    cells = np.array(tris, dtype=np.int64) if all(len(c) == 3 for c in tris) else tris
+    return (xy, cells, np.array(tri_tag, dtype=np.int64),
             np.array(edges, dtype=np.int64), np.array(edge_tag, dtype=np.int64), names)
 
 
 class Mesh:
     """Cell-centred finite-volume connectivity for a 2D triangular mesh."""
 
-    def __init__(self, nodes, tris, edges=None, edge_tag=None, names=None, span=1.0):
+    def __init__(self, nodes, cells, edges=None, edge_tag=None, names=None, span=1.0):
+        """`cells`: (ncell, k) index array or a ragged list of index sequences -- triangles, quads
+        or any mix. Stored padded to (ncell, maxk) with -1 as `self.cells`, vertex counts in
+        `self.nvert`. `self.tris` remains as an alias ONLY when every cell is a triangle, for the
+        few consumers that still assume it (plotting, the k-exact moments).
+
+        Why polygons: on Cartesian quads the face weight is exactly 1/2, the pressure near-null
+        mode is two-colourable, and the divergence-form gradient is exactly dual AND exactly blind
+        to it -- the properties the uniform-triangle T5 pass rests on, and the ones every irregular
+        triangulation lost (record, sections 22-24). A quad layer at the walls puts those
+        properties where the boundary layer is; the triangle core keeps geometric flexibility.
+        """
         self.nodes = np.asarray(nodes, dtype=float)
-        self.tris = np.asarray(tris, dtype=np.int64)
+        C, nv = _pad_cells(cells)
+        self.cells, self.nvert = C, nv
         self.names = names or {}
         self.span = float(span)                 # thickness of the 2D slab, for volumes/forces
-
-        p = self.nodes[self.tris]               # (T, 3, 2)
-        # SIGNED area, then orient. A clockwise triangle gives a negative area and would flip
-        # every face normal built from it, so fix the winding once here rather than carry a
-        # sign through every operator.
-        cross = ((p[:, 1, 0] - p[:, 0, 0]) * (p[:, 2, 1] - p[:, 0, 1])
-                 - (p[:, 2, 0] - p[:, 0, 0]) * (p[:, 1, 1] - p[:, 0, 1]))
-        flip = cross < 0
-        if flip.any():
-            self.tris[flip] = self.tris[flip][:, ::-1]
-            p = self.nodes[self.tris]
-            cross = np.abs(cross)
-        self.area = 0.5 * np.abs(cross)         # cell area (2D)
+        A, cen = self._poly_geometry()
+        flip = A < 0
+        if flip.any():                          # orient every cell counter-clockwise
+            for r in np.flatnonzero(flip):
+                k = nv[r]; C[r, :k] = C[r, :k][::-1].copy()
+            A, cen = self._poly_geometry()
+        self.area = np.abs(A)                   # cell area (2D)
         self.vol = self.area * self.span        # cell volume
-        self.centroid = p.mean(axis=1)          # triangle centroid
-        self.ncell = len(self.tris)
-
+        self.centroid = cen
+        self.ncell = len(C)
+        self.tris = C if (nv == 3).all() else None
         self._build_faces()
         self._tag_boundaries(edges, edge_tag)
 
-    # -------------------------------------------------------------------------------------
+    def _poly_geometry(self):
+        """Signed shoelace area and area centroid of every (padded) polygon."""
+        C, nv, X = self.cells, self.nvert, self.nodes
+        A = np.zeros(len(C)); cx = np.zeros(len(C)); cy = np.zeros(len(C))
+        for k in range(C.shape[1]):
+            rows = np.flatnonzero(nv > k)
+            a = C[rows, k]; b = C[rows, (k + 1) % nv[rows]]
+            xa, ya, xb, yb = X[a, 0], X[a, 1], X[b, 0], X[b, 1]
+            cr = xa * yb - xb * ya
+            A[rows] += 0.5 * cr; cx[rows] += (xa + xb) * cr; cy[rows] += (ya + yb) * cr
+        return A, np.stack([cx, cy], axis=1) / (6.0 * A)[:, None]
+
     def _build_faces(self):
         """Edge list with owner/neighbour, area vectors, and cell-to-cell geometry."""
-        T = self.tris
-        # the three edges of every triangle, as sorted node pairs so the two sides of an
-        # interior edge produce an identical key
-        loc = np.stack([T[:, [0, 1]], T[:, [1, 2]], T[:, [2, 0]]], axis=1)   # (T, 3, 2)
-        flat = loc.reshape(-1, 2)
+        C, nv = self.cells, self.nvert
+        # every edge of every polygon, cell-major (identical to the old triangle order when all
+        # cells are triangles), as sorted node pairs so both sides of an interior edge share a key
+        maxk = C.shape[1]
+        kk = np.arange(maxk)[None, :]
+        nxt = C[np.arange(self.ncell)[:, None], (kk + 1) % nv[:, None]]
+        loc = np.stack([C, nxt], axis=2)                          # (ncell, maxk, 2); padded rows junk
+        valid = kk < nv[:, None]
+        flat = loc[valid]
+        flat_cell = np.broadcast_to(np.arange(self.ncell)[:, None], (self.ncell, maxk))[valid]
         key = np.sort(flat, axis=1)
         order = np.lexsort((key[:, 1], key[:, 0]))
         ks = key[order]
@@ -124,14 +148,13 @@ class Mesh:
         count = np.diff(np.append(start, len(ks)))
         if count.max() > 2:
             raise ValueError("an edge is shared by more than two cells: mesh is not manifold")
-
-        owner_cell = order[start] // 3
+        owner_cell = flat_cell[order[start]]
         first_local = order[start]
         self.face_nodes = flat[first_local]                       # oriented by the OWNER
         self.owner = owner_cell.astype(np.int64)
         self.neigh = np.full(len(start), -1, dtype=np.int64)
         second = start[count == 2] + 1
-        self.neigh[count == 2] = order[second] // 3
+        self.neigh[count == 2] = flat_cell[order[second]]
 
         a = self.nodes[self.face_nodes[:, 0]]
         b = self.nodes[self.face_nodes[:, 1]]
@@ -154,19 +177,37 @@ class Mesh:
                             - self.centroid[self.owner[self.boundary]])
         self.dcc = d
         self.dmag = np.hypot(d[:, 0], d[:, 1])
-        # linear interpolation weight for the OWNER value at the face
+        # Linear interpolation weight for the OWNER value at the face.
+        #
+        # NORMAL-PROJECTED, not distance-to-face-centre. The weight decides which POINT the
+        # interpolation represents: w x_O + (1-w) x_N. For that point to be where the centroid
+        # line actually crosses the face plane -- which is what the skewness correction then
+        # corrects FROM -- the weight must use distances projected on the face normal. Using raw
+        # distances to the face centre leaves a residual grad(phi).(x_int - x_w) that is O(h) and
+        # does not vanish under refinement, and it is inconsistent with the skewness correction,
+        # so the two together can be worse than neither.
+        #
+        # OpenFOAM (surfaceInterpolation::makeWeights) and code_saturne (_compute_face_distances)
+        # both use this form; the raw-distance version appears in OpenFOAM ONLY as the fallback
+        # for degenerate faces where the projected denominator underflows.
+        #
+        # On a uniform alternating-diagonal mesh both give exactly 0.5 by symmetry, so this
+        # changes nothing there -- it matters on graded, clustered and perturbed meshes.
         w = np.ones(self.nface)
         i = self.interior
-        do = np.hypot(*(self.fcentre[i] - self.centroid[self.owner[i]]).T)
-        dn = np.hypot(*(self.fcentre[i] - self.centroid[self.neigh[i]]).T)
-        w[i] = dn / (do + dn)
+        sf = self.normal[i]
+        so = np.abs((sf * (self.fcentre[i] - self.centroid[self.owner[i]])).sum(axis=1))
+        sn = np.abs((sf * (self.centroid[self.neigh[i]] - self.fcentre[i])).sum(axis=1))
+        den = so + sn
+        bad = den < 1e-300 * np.maximum(np.hypot(*sf.T), 1e-300)
+        w[i] = np.where(bad, 0.5, sn / np.maximum(den, 1e-300))
         self.wf = w
         self._decompose()
 
     def _decompose(self):
         """OVER-RELAXED split of the face area vector, S_f = E_f + T_f.
 
-            E_f = d (d.S)/(d.d)        T_f = S_f - E_f
+            E_f = d (S.S)/(d.S)        T_f = S_f - E_f
 
         `E_f` is parallel to the line joining the two cell centres, so the part of the Laplacian
         built on it is a two-point stencil and stays diagonally dominant; `T_f` carries the
@@ -174,18 +215,31 @@ class Mesh:
         minimum-correction or orthogonal-correction) because |E_f| GROWS with skewness, which is
         what keeps the implicit operator dominant on the worst cells instead of the best.
 
+        THE FORMULA MATTERS, and the earlier one here did not match this docstring. `E_f =
+        d (d.S)/(d.d)` is the MINIMUM-CORRECTION split, for which |E_f| = |S| cos(theta) and so
+        |T_f|/|E_f| = tan(theta). The deferred correction is a lagged iteration with roughly that
+        contraction factor, so it DIVERGES for any face beyond 45 degrees. The genuine
+        over-relaxed split has |E_f| = |S|/cos(theta) and |T_f|/|E_f| = sin(theta) < 1 for every
+        angle, which is the whole reason to prefer it.
+
+        This was dormant while every test mesh was near-orthogonal and surfaced the moment the
+        cavity mesh was clustered toward the walls: at cluster=1.5 the worst face is 69 degrees
+        (tan = 2.6) and the run went to NaN before its first report. Both splits reduce to
+        E_f = S_f when d is parallel to S, so uniform-mesh results are unchanged.
+
         The guide's stated check for this step, `E_f + T_f == S_f`, is an algebraic identity --
         T_f is DEFINED as the remainder, so it cannot fail and tests nothing. The real check is
         that the Laplacian built from the split annihilates a linear field on a skewed mesh,
         which is what `test_uops` does.
         """
         d = self.dcc
-        dd = (d * d).sum(axis=1)
         dS = (d * self.normal).sum(axis=1)
-        self.Ef = d * (dS / np.maximum(dd, 1e-300))[:, None]
+        SS = (self.normal * self.normal).sum(axis=1)
+        self.Ef = d * (SS / np.maximum(dS, 1e-300))[:, None]
         self.Tf = self.normal - self.Ef
-        # |E_f| / |d| is the coefficient the implicit Laplacian uses on each face
-        self.ef_over_d = np.hypot(*self.Ef.T) / np.maximum(self.dmag, 1e-300)
+        # |E_f| / |d| is the coefficient the implicit Laplacian uses on each face. For the
+        # over-relaxed split this is just |S|^2/(d.S), with no square roots.
+        self.ef_over_d = SS / np.maximum(dS, 1e-300)
         # cos of the angle between d and S: 1 = orthogonal, -> 0 = badly skewed
         self.orth = dS / np.maximum(np.hypot(*d.T) * np.hypot(*self.normal.T), 1e-300)
 
@@ -258,8 +312,36 @@ def from_gmsh(path, span=1.0):
     return Mesh(nodes, tris, edges, etag, names, span=span)
 
 
+def _pad_cells(cells):
+    """(ncell, k) array or ragged list -> padded (ncell, maxk) int64 with -1, plus vertex counts."""
+    if isinstance(cells, np.ndarray) and cells.ndim == 2:
+        C = np.array(cells, dtype=np.int64)
+        return C, np.full(len(C), C.shape[1], dtype=np.int64)
+    nv = np.array([len(c) for c in cells], dtype=np.int64)
+    C = np.full((len(cells), int(nv.max())), -1, dtype=np.int64)
+    for r, c in enumerate(cells):
+        C[r, :len(c)] = c
+    return C, nv
+
+
+def _cluster(n, a, b, beta):
+    """n+1 points on [a,b], symmetrically clustered toward BOTH ends when beta > 0.
+
+    Standard two-sided tanh stretch: uniform xi in [0,1] mapped through
+    tanh(beta(2 xi - 1))/tanh(beta), renormalised to [0,1]. beta = 0 is uniform. The map is
+    smooth and monotone, so the mesh stays valid for any beta, and symmetric, so both walls of
+    a cavity get the same treatment.
+    """
+    xi = np.linspace(0.0, 1.0, n + 1)
+    if not beta:
+        return a + (b - a) * xi
+    t = np.tanh(beta * (2.0 * xi - 1.0)) / np.tanh(beta)
+    return a + (b - a) * 0.5 * (1.0 + t)
+
+
 def rect_mesh(nx, ny, x0=0.0, x1=1.0, y0=0.0, y1=1.0, span=1.0, perturb=0.0, seed=0,
-              tags=("left", "right", "bottom", "top")):
+              tags=("left", "right", "bottom", "top"), cluster=0.0, diag="alt",
+              cells="tri", wall_layers=0):
     """Triangulated rectangle: nx by ny quads, each split into two triangles.
 
     `perturb` jitters the INTERIOR nodes by that fraction of the local spacing, which turns an
@@ -268,14 +350,25 @@ def rect_mesh(nx, ny, x0=0.0, x1=1.0, y0=0.0, y1=1.0, span=1.0, perturb=0.0, see
     deferred-correction term still passes. Running every verification at perturb=0 AND at
     perturb>0 is what stops that.
 
+    `cluster` (beta) stretches the node distribution toward all four walls, for cases whose
+    error lives in a boundary layer rather than in the interior. At Re = 1000 the cavity wall
+    layers are O(Re^-1/2) ~ 0.03, so a uniform 1/64 mesh puts only about two cells across them.
+
+    CLUSTERING IS NOT FREE HERE. Non-uniform spacing destroys the exact interior orthogonality
+    of the uniform right triangulation, which activates the non-orthogonal correction path --
+    including the known `dp_compact` / `dp_wide` directional mismatch in Rhie-Chow, which is
+    invisible at cluster=0. Measure `orth` before reading anything into a clustered result.
+
     Boundary physical tags are 1..4 for left/right/bottom/top, named by `tags`.
     """
     rng = np.random.default_rng(seed)
-    xs = np.linspace(x0, x1, nx + 1)
-    ys = np.linspace(y0, y1, ny + 1)
+    xs = _cluster(nx, x0, x1, cluster)
+    ys = _cluster(ny, y0, y1, cluster)
     X, Y = np.meshgrid(xs, ys, indexing="ij")
     if perturb:
-        hx, hy = (x1 - x0) / nx, (y1 - y0) / ny
+        # jitter by the LOCAL spacing, so a clustered mesh is not torn apart near the walls
+        hx = np.minimum(np.diff(xs)[:-1], np.diff(xs)[1:])[:, None]
+        hy = np.minimum(np.diff(ys)[:-1], np.diff(ys)[1:])[None, :]
         X[1:-1, 1:-1] += perturb * hx * (rng.random((nx - 1, ny - 1)) - 0.5)
         Y[1:-1, 1:-1] += perturb * hy * (rng.random((nx - 1, ny - 1)) - 0.5)
     nid = np.arange((nx + 1) * (ny + 1)).reshape(nx + 1, ny + 1)
@@ -285,12 +378,26 @@ def rect_mesh(nx, ny, x0=0.0, x1=1.0, y0=0.0, y1=1.0, span=1.0, perturb=0.0, see
     for i in range(nx):
         for j in range(ny):
             a, b, c, d = nid[i, j], nid[i + 1, j], nid[i + 1, j + 1], nid[i, j + 1]
-            # alternate the diagonal so the mesh has no global bias direction
-            if (i + j) % 2 == 0:
+            # `diag`: "alt" alternates the diagonal so the mesh has no global bias direction;
+            # "same" splits every quad the same way. THIS IS NOT COSMETIC. Alternating diagonals
+            # make the centroid-to-centroid line miss the face barycentre by exactly h/6, a fixed
+            # fraction of the cell that does not shrink under refinement. A same-diagonal split
+            # has EXACTLY ZERO skewness on every face family. Eymard, Herbin & Latche (M2AN 40
+            # (2006) 501, Remarks 2.1 and 4.4) prove convergence for collocated FV Stokes only
+            # when that segment crosses the face at its barycentre, and state that without it the
+            # first-order rate is lost -- so this choice is a hypothesis of the theorem, not a
+            # meshing preference.
+            # `cells`: "tri" splits every quad; "quad" splits none; "hybrid" keeps the outermost
+            # `wall_layers` rows/columns as quads and splits the core. A quad/triangle interface
+            # shares one node pair, so the face builder sees an ordinary manifold edge.
+            near_wall = (i < wall_layers or i >= nx - wall_layers
+                         or j < wall_layers or j >= ny - wall_layers)
+            if cells == "quad" or (cells == "hybrid" and near_wall):
+                tris.append([a, b, c, d])
+            elif diag == "same" or (i + j) % 2 == 0:
                 tris += [[a, b, c], [a, c, d]]
             else:
                 tris += [[a, b, d], [b, c, d]]
-    tris = np.array(tris, dtype=np.int64)
 
     edges, etag = [], []
     for j in range(ny):

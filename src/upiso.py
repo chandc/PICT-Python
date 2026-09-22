@@ -58,13 +58,25 @@ class PISO:
     """
 
     def __init__(self, mesh, nu, dt, bc_u, bc_v, bc_p, scheme="central",
-                 n_corr=2, n_nonorth=2, body_force=None, backend="scipy", convect=True):
+                 n_corr=2, n_nonorth=2, body_force=None, backend="splu", convect=True,
+                 n_inner=2):
         self.m = mesh
         self.nu, self.dt = float(nu), float(dt)
         self.bc_u, self.bc_v, self.bc_p = bc_u, bc_v, bc_p
         self.scheme = scheme
         self.convect = bool(convect)   # False -> Stokes, which isolates the pressure coupling
         self.n_corr, self.n_nonorth = n_corr, n_nonorth
+        # Inner iterations of the momentum DEFERRED correction within one time step. With
+        # n_inner = 1 the non-orthogonal cross term (and the deferred central convection) is
+        # built from the PREVIOUS time level's gradient -- a one-step lag that is invisible at a
+        # steady fixed point and O(dt) in an unsteady problem. Measured on T4 (unsteady Stokes,
+        # decaying Taylor-Green, uniform mesh where the cross term lives only on the 26.6-deg
+        # boundary faces): slope 0.91 instead of 2, and zeroing that term dropped the error at
+        # dt = 0.1 by 4x straight onto the spatial floor. Iterating converges the correction at
+        # t^{n+1} instead; the steady operator is unchanged, so nothing steady moves (measured
+        # bit-identical on T5). Two iterations suffice: T4 orders 2.70 / 2.01 at n_inner = 2 against
+        # 0.85 / 0.92 / 0.91 lagged. n_inner = 1 is kept only for comparison.
+        self.n_inner = int(n_inner)
         self.fx = np.zeros(mesh.ncell) if body_force is None else np.asarray(body_force[0])
         self.fy = np.zeros(mesh.ncell) if body_force is None else np.asarray(body_force[1])
 
@@ -81,15 +93,61 @@ class PISO:
 
         self._mcache = SolveCache(backend=backend)
         self._pcache = SolveCache(backend=backend)
+        self._gam_cache = None; self._Ap = None; self._Ap_rhs = None   # pressure Laplacian, rebuilt only when gam changes
         # the viscous operator never changes, so assemble it once
         self.Lu, self.Lu_rhs = laplacian(mesh, np.full(mesh.nface, self.nu), bc_u.kind)
         self.Lv, self.Lv_rhs = laplacian(mesh, np.full(mesh.nface, self.nu), bc_v.kind)
         # pressure operator: coefficient is 1/a_P interpolated to faces, set each step
         self.p_singular = bool((bc_p.kind == NEUMANN).all())
+        self.rc_scale = 1.0        # diagnostic knob on the Rhie-Chow damping magnitude
+        self.p_neumann_extrap = False  # linear extrapolation of p to Neumann faces in the momentum gradient (experiment)
+        # Gradient used ONLY for the Rhie-Chow `dp_wide` term. It is deliberately separable from
+        # self.grad: the damping (dp_compact - dp_wide) is dissipative only while the wide
+        # gradient acts as a SMOOTHER. A higher-order gradient does not smooth -- it can overshoot
+        # the compact difference and flip the sign of the dissipation. Substituting a quadratic
+        # k-exact gradient here diverged geometrically at n=64 (max|p| growing ~2.7x per step)
+        # while div F stayed at 1e-12, i.e. the projection was sound and the feedback loop was not.
+        self.grad_rc = None        # None -> use self.grad
+        # Gradient used ONLY for the pressure gradient in the MOMENTUM source. Separable so a
+        # high-order gradient can be used where it buys accuracy without putting it inside the
+        # pressure-correction feedback loop, which is where it destabilises.
+        # Divergence-form pressure gradient for the momentum source (and hence Rhie-Chow's
+        # dp_wide, which receives the same gp). DEFAULT: the exact adjoint of the interpolated-flux
+        # divergence. The LSQ gradient in this slot gives order 0.02 on T5 (its gradient of the
+        # pressure checkerboard carries a smooth mode the Stokes operator amplifies) and diverges
+        # outright on a clustered mesh at n = 64; the dual Green-Gauss gives 1.98 / 1.99 and is
+        # stable everywhere tested. Its zeroth-order inconsistency on irregular triangles is
+        # harmless HERE (supraconvergence, measured) and must not be imported into the Laplacian
+        # cross terms, the pressure-correction update or the Poisson deferred correction, which
+        # keep self.grad. Record: reference/skew_unstructured_literature.md sections 16-24.
+        from src.ugrad import GGDualGradient
+        self.grad_p = GGDualGradient(mesh)   # set to None to fall back to self.grad
 
     # -----------------------------------------------------------------------------------------
     def _momentum(self, comp, phi, phi_old, bc, gp_comp):
-        """Assemble and solve one momentum component. Returns (phi_star, a_P)."""
+        """Assemble and solve one momentum component. Returns (phi_star, a_P, a_C).
+
+        `a_C` IS THE SIMPLEC COEFFICIENT, and it is not a refinement -- without it this solver
+        diverges outright whenever diffusion dominates the momentum diagonal.
+
+        The velocity correction u' = -(V/a) grad p' approximates A^{-1} by 1/a. SIMPLE takes
+        a = a_P, the bare diagonal; that is only defensible when a_P is dominated by the
+        transient term. A viscous operator has ZERO ROW SUM, so its contribution cancels out of
+        the true response to a smooth pressure field while inflating a_P. Measured on the Stokes
+        gate (nu=1, dt=0.05, h=1/16, diffusion number 12.8): a_P = 6.06 but the row sum is
+        0.058594 = a_t*V exactly. D = V/a_P is then 92x too small, the pressure correction
+        overshoots by that factor, and `p += pp` amplifies geometrically -- max|u| grew ~32x per
+        step, reaching 7.8e+14 by step 12.
+
+        SIMPLEC uses a_P - sum(a_N) instead, which IS the matrix row sum (with a_N = -A[P,N]).
+        That is exact for a constant field, so the viscous part cancels as it should. Taking the
+        row sum rather than a_P - sum|a_N| keeps the signs right for central convection, whose
+        off-diagonals are not sign-definite.
+
+        Corrector count is NOT the cure and measuring it is how this was pinned down: n_corr 1,
+        2, 5, 20 and 50 all produced a bit-identical divergent trajectory, which rules the PISO
+        splitting out and leaves the coefficient itself.
+        """
         m = self.m
         if self.convect:
             C, C_rhs = convection(m, self.Ff, bc.kind, scheme=self.scheme)
@@ -110,12 +168,22 @@ class PISO:
         gphi = self.grad(phi, pb)
         b = (rhs_t + (self.fx if comp == 0 else self.fy) - gp_comp) * m.vol
         b = b - C_rhs(phi, pb, gphi) + L_rhs(gphi, pb)
-        x = self._mcache.solve(A.tocsr(), b, x0=phi, symmetric=False, rtol=1e-10)
-        aP = np.asarray(A.tocsr().diagonal())
-        return x, aP
+        Ac = A.tocsr()
+        x = self._mcache.solve(Ac, b, x0=phi, symmetric=False, rtol=1e-10)
+        f_comp = self.fx if comp == 0 else self.fy
+        for _ in range(self.n_inner - 1):
+            pb = bc.effective(x)
+            gphi = self.grad(x, pb)
+            b = (rhs_t + f_comp - gp_comp) * m.vol - C_rhs(x, pb, gphi) + L_rhs(gphi, pb)
+            x = self._mcache.solve(Ac, b, x0=x, symmetric=False, rtol=1e-10)
+        aP = np.asarray(Ac.diagonal())
+        # SIMPLEC: a_P - sum(a_N) == the row sum. Floored at the transient term, which is the
+        # response a row-sum-zero spatial operator can never push below.
+        aC = np.maximum(np.asarray(Ac.sum(axis=1)).ravel(), a_t * m.vol)
+        return x, aP, aC
 
     # -----------------------------------------------------------------------------------------
-    def _rhie_chow(self, u, v, aP, p, gp):
+    def _rhie_chow(self, u, v, aP, aC, p, gp):
         """Face flux from cell velocities, with time-step-independent pressure damping."""
         m = self.m
         i, b = m.interior, m.boundary
@@ -130,23 +198,43 @@ class PISO:
         ubar[b] = ub[m.bface_index[b]]; vbar[b] = vb[m.bface_index[b]]
         Fbar = (ubar * m.normal[:, 0] + vbar * m.normal[:, 1]) * m.span
 
-        # D_f = (V/a_P) interpolated to the face, times the face area factor
-        Dcell = m.vol / np.maximum(aP, 1e-300)
+        # D_f = (V/a_P) interpolated to the face. THIS ONE STAYS a_P, unlike the pressure
+        # equation's SIMPLEC coefficient: it is not a free stabilisation parameter but comes
+        # straight out of the momentum equation's algebraic form,
+        #     u_P = H_P/a_P - (V/a_P)(grad p)_P,
+        # which is what makes the H/a_P terms cancel when the interpolated cell velocity is
+        # subtracted from the face velocity. Substituting a_C here (tried, on the grounds that
+        # V/a_P collapses to 3.17e-04 against the pressure equation's 2.93e-02 when diffusion
+        # dominates) over-damps and blows up: L2(u) 4.0e+27 by n=32, then NaN.
+        Dcell = self.rc_scale * m.vol / np.maximum(aP, 1e-300)
         D = np.empty(m.nface)
         D[i] = w[i]*Dcell[o[i]] + (1-w[i])*Dcell[n[i]]
         D[b] = Dcell[o[b]]
 
-        # compact minus wide pressure gradient -- the checkerboard is invisible to the wide one
+        # Compact minus wide pressure gradient -- the checkerboard is invisible to the wide one.
+        #
+        # BOTH MUST BE THE SAME DIRECTIONAL DERIVATIVE. The earlier form took the compact part as
+        # (p_N - p_P)/|d|, which is grad p . dhat, and the wide part as gpf . nhat. Those agree
+        # only where d is parallel to S, so the difference was contaminated by an O(1) directional
+        # mismatch on any non-orthogonal face. It was invisible on the uniform mesh (interior
+        # faces there are exactly orthogonal) and surfaces the moment the mesh is clustered:
+        # `orth` min falls from 0.894 to 0.149 at cluster=2.0.
+        #
+        # The fix is to build the compact term with the same over-relaxed decomposition the
+        # Laplacian and `_pressure_flux` already use, S_f = E_f + T_f, so the damping is a genuine
+        # face-normal flux difference. On an orthogonal face E_f = S_f and T_f = 0, which reduces
+        # this EXACTLY to the old expression -- verified bit-identical at cluster=0.
         pbv = self.bc_p.effective(p)
-        dp_compact = np.zeros(m.nface)
-        dp_compact[i] = (p[n[i]] - p[o[i]]) / m.dmag[i]
-        dp_compact[b] = (pbv[m.bface_index[b]] - p[o[b]]) / m.dmag[b]
+        gpw = gp if self.grad_rc is None else self.grad_rc(p, pbv)
         gpf = np.empty((m.nface, 2))
-        gpf[i] = w[i, None]*gp[o[i]] + (1-w[i])[:, None]*gp[n[i]]
-        gpf[b] = gp[o[b]]
-        nhat = m.normal / np.maximum(np.hypot(*m.normal.T), 1e-300)[:, None]
-        dp_wide = (gpf * nhat).sum(axis=1)
-        area = np.hypot(*m.normal.T) * m.span
+        gpf[i] = w[i, None]*gpw[o[i]] + (1-w[i])[:, None]*gpw[n[i]]
+        gpf[b] = gpw[o[b]]
+        dp_compact = np.zeros(m.nface)                  # |E_f| dp/d|d|  + T_f . grad_f
+        dp_compact[i] = m.ef_over_d[i] * (p[n[i]] - p[o[i]])
+        dp_compact[b] = m.ef_over_d[b] * (pbv[m.bface_index[b]] - p[o[b]])
+        dp_compact = dp_compact + (m.Tf * gpf).sum(axis=1)
+        dp_wide = (gpf * m.normal).sum(axis=1)          # both now are grad p . S_f
+        area = m.span
 
         # NO RHIE-CHOW DAMPING ON A PRESCRIBED-VELOCITY BOUNDARY. There the flux IS the
         # boundary condition, u_wall . S, and nothing may be added to it. Damping those faces
@@ -156,8 +244,16 @@ class PISO:
         # operator nevertheless missed its own source by 1.8e-03, and as max|div F| climbing to
         # 4e-03 over ten steps with every field still looking plausible.
         damp = D * (dp_compact - dp_wide) * area
+        # A face's flux is prescribed when the velocity component ALONG ITS NORMAL is Dirichlet --
+        # not only when both components are. A symmetry plane (u Neumann, v Dirichlet = 0 on a
+        # y-normal face) prescribes its normal flux exactly as a wall does, and damping it would
+        # inject the same spurious net mass as bug (18) in the record. Axis-aligned mixed faces are
+        # handled here (the cylinder case's Freestream); an oblique face with mixed components is
+        # not a well-posed prescription and falls back to requiring both.
+        kd_u = self.bc_u.kind == DIRICHLET; kd_v = self.bc_v.kind == DIRICHLET
+        Sb = m.normal[m.bfaces]; ax = np.abs(Sb[:, 0]) > 1e-9 * np.hypot(*Sb.T); ay = np.abs(Sb[:, 1]) > 1e-9 * np.hypot(*Sb.T)
         fixed_u = np.zeros(m.nface, dtype=bool)
-        fixed_u[m.bfaces] = (self.bc_u.kind == DIRICHLET) & (self.bc_v.kind == DIRICHLET)
+        fixed_u[m.bfaces] = (kd_u & kd_v) | (kd_u & ~ay) | (kd_v & ~ax)
         damp[fixed_u] = 0.0
         F = Fbar - damp
 
@@ -180,23 +276,38 @@ class PISO:
     def step(self):
         m = self.m
         pb = self.bc_p.effective(self.p)
-        gp = self.grad(self.p, pb)
+        G = self.grad if self.grad_p is None else self.grad_p
+        gp = G(self.p, pb)
+        if self.p_neumann_extrap:
+            # Neumann faces: p_b = p_P + grad p_P . (x_b - x_P) instead of the owner value (zeroth order).
+            # One fixed-point pass with the gradient just computed. Experiment on the wall-excited
+            # pressure checkerboard of non-bipartite meshes (record section 36/40); boundary term only,
+            # the interior operator and its duality with the divergence are untouched.
+            m_ = self.m; bf = m_.bfaces; neu = self.bc_p.kind == NEUMANN; bo = m_.owner[bf][neu]
+            pb = pb.copy(); pb[neu] = self.p[bo] + ((m_.fcentre[bf][neu] - m_.centroid[bo]) * gp[bo]).sum(axis=1)
+            gp = G(self.p, pb)
 
-        u_star, aP = self._momentum(0, self.u, self.u_old, self.bc_u, gp[:, 0])
-        v_star, _ = self._momentum(1, self.v, self.v_old, self.bc_v, gp[:, 1])
+        u_star, aP, aC = self._momentum(0, self.u, self.u_old, self.bc_u, gp[:, 0])
+        v_star, _, _ = self._momentum(1, self.v, self.v_old, self.bc_v, gp[:, 1])
 
         self.u_old, self.v_old = self.u.copy(), self.v.copy()
         u, v = u_star, v_star
 
         for _ in range(self.n_corr):
-            F = self._rhie_chow(u, v, aP, self.p, gp)
-            # pressure equation: div( (V/a_P) grad p' ) = div F
-            Dcell = m.vol / np.maximum(aP, 1e-300)
+            F = self._rhie_chow(u, v, aP, aC, self.p, gp)
+            # pressure equation: div( (V/a_C) grad p' ) = div F, a_C the SIMPLEC coefficient.
+            # Rhie-Chow above keeps V/a_P -- that one comes from the momentum equation's own
+            # algebraic form, not from the correction, so the two coefficients differ on purpose.
+            Dcell = m.vol / np.maximum(aC, 1e-300)
             w = m.wf; i, b = m.interior, m.boundary
             gam = np.empty(m.nface)
             gam[i] = w[i]*Dcell[m.owner[i]] + (1-w[i])*Dcell[m.neigh[i]]
             gam[b] = Dcell[m.owner[b]]
-            Ap, Ap_rhs = laplacian(m, gam, self.bc_p.kind)
+            # gam depends only on a_C, which is fixed for a fixed dt and viscosity; rebuilding the
+            # sparse operator every corrector was 8% of a step for nothing (profiled).
+            if self._gam_cache is None or not np.array_equal(gam, self._gam_cache):
+                self._Ap, self._Ap_rhs = laplacian(m, gam, self.bc_p.kind); self._gam_cache = gam.copy()
+            Ap, Ap_rhs = self._Ap, self._Ap_rhs
             src = divergence(m, F)
             pp, _hist = solve_poisson(m, self.grad, Ap, Ap_rhs, src,
                                       np.zeros(m.nbface) if self.p_singular else self.bc_p.value,

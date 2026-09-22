@@ -190,6 +190,8 @@ class SolveCache:
                           shape=A.shape, b=b,
                           x0=(x0 if x0 is not None else _np.zeros_like(b)),
                           rtol=rtol, symmetric=symmetric, singular=singular)
+        if self.backend == "splu":
+            return self._direct_solve(A, b, singular)
         if self.backend == "petsc":
             # THE NORMALISATION IS DECIDED INSIDE, where the measured singularity is known.
             # `singular` is a HINT the SciPy path ignores entirely, and this is the THIRD place
@@ -219,6 +221,43 @@ class SolveCache:
         M = make_precond(A, self.precond)
         solver = spla.cg if symmetric else spla.bicgstab
         x, info = solver(A, b, x0=x0, M=M, rtol=rtol, maxiter=maxiter)
+        return x
+
+    def _direct_solve(self, A, b, singular):
+        """Cached sparse LU. Factor once per distinct matrix VALUES, back-substitute per solve.
+
+        Exposed as `backend="splu"`. The closure `_splu_solve` below was only ever reachable as
+        an AmgX-fallback refuge, so every SciPy-backend run paid Jacobi-CG to rtol 1e-12 on the
+        pressure Poisson and Jacobi-BiCGStab to 1e-10 on momentum, at every corrector of every
+        step -- hundreds of iterations each. For the verification suite the operators are FIXED
+        across steps (steady Stokes at constant dt: pressure gam from a_C, momentum a_t V - L),
+        so the factorisation amortises to nothing and each solve is a back-substitution.
+
+        Singular (all-Neumann) systems: pin DOF 0 to remove the constant null space, then remove
+        the mean, which is the same member SciPy/AmgX are normalised to. Valid because the
+        right-hand side is compatible to machine precision (the continuity truncation error
+        telescopes -- section 4 of the collocated-analysis report).
+        """
+        A = A.tocsr()
+        b = np.asarray(b, dtype=np.float64)
+        if singular:
+            A = A.copy(); b = b.copy()
+            r0, r1 = A.indptr[0], A.indptr[1]
+            A.data[r0:r1] = 0.0
+            diag = np.flatnonzero(A.indices[r0:r1] == 0)
+            if len(diag) == 0:
+                raise ValueError("cannot pin DOF 0: no diagonal entry in row 0")
+            A.data[r0 + diag[0]] = 1.0
+            b[0] = 0.0
+        vals = A.data
+        if self._splu is None or self._splu_vals is None or \
+                self._splu_vals.shape != vals.shape or not np.array_equal(vals, self._splu_vals):
+            self._splu = spla.splu(A.tocsc())
+            self._splu_vals = vals.copy()
+        x = self._splu.solve(b)
+        self.iterations = 0
+        if singular:
+            x = x - x.mean()
         return x
 
     def _petsc_solve_mpi(self, A, b, rtol, symmetric, singular, x0=None):

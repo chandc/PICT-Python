@@ -116,9 +116,10 @@ def divergence(mesh, face_flux):
     inverse bookkeeping of the closure check in `Mesh.audit`.
     """
     out = np.zeros(mesh.ncell)
-    np.add.at(out, mesh.owner, face_flux)
+    # bincount, not add.at: same scatter-add, ~5-10x faster (add.at is unbuffered)
+    out += np.bincount(mesh.owner, weights=face_flux, minlength=mesh.ncell)
     i = mesh.interior
-    np.add.at(out, mesh.neigh[i], -face_flux[i])
+    out -= np.bincount(mesh.neigh[i], weights=face_flux[i], minlength=mesh.ncell)
     return out / mesh.vol
 
 
@@ -177,23 +178,36 @@ def laplacian(mesh, gamma_f, bkind, bval=None):
     A = sp.coo_matrix((np.concatenate(vals),
                        (np.concatenate(rows), np.concatenate(cols))), shape=(nc, nc)).tocsr()
 
+    # The deferred cross term  sum_f gamma T_f . grad_f  is LINEAR in the cell gradient, so it is
+    # a fixed sparse operator: cell <- scatter(face) <- diag(gamma span T_f) <- interp(cell grad).
+    # Assembled ONCE here and applied as two matvecs. The numpy version of the same thing (mask
+    # indexing on (nface,2) arrays, four times per momentum step) was 30% of a PISO step when
+    # profiled; converting its scatter to bincount changed nothing, because the indexing, not the
+    # scatter, was the cost. Also what the adjoint wants: an explicit matrix.
+    fi = np.flatnonzero(i); fb_ = np.flatnonzero(b); nfi = len(fi); nfb = len(fb_)
+    cT = (gamma_f * mesh.span)[:, None] * mesh.Tf                      # (nface, 2)
+    cT[noflux] = 0.0
+    # interpolation face <- cell for the gradient (ordinary weights on interior, owner on boundary)
+    Ii = sp.coo_matrix((np.concatenate([mesh.wf[fi], 1.0 - mesh.wf[fi]]),
+                        (np.concatenate([fi, fi]), np.concatenate([o[fi], n[fi]]))),
+                       shape=(mesh.nface, nc)).tocsr()
+    Ib = sp.coo_matrix((np.ones(nfb), (fb_, o[fb_])), shape=(mesh.nface, nc)).tocsr()
+    Interp = Ii + Ib
+    # scatter cell <- face: +1 owner, -1 neighbour (interior only)
+    Sc = (sp.coo_matrix((np.ones(mesh.nface), (o, np.arange(mesh.nface))), shape=(nc, mesh.nface))
+          - sp.coo_matrix((np.ones(nfi), (n[fi], fi)), shape=(nc, mesh.nface))).tocsr()
+    Cx = (Sc @ sp.diags(cT[:, 0]) @ Interp).tocsr()
+    Cy = (Sc @ sp.diags(cT[:, 1]) @ Interp).tocsr()
+    # Dirichlet boundary term: +coef * phi_b into the owner
+    Bd = sp.coo_matrix((coef[bd], (o[bd], mesh.bface_index[bd])), shape=(nc, mesh.nbface)).tocsr()
+
     def rhs_fn(grad_phi, bvalues=None):
         """Deferred non-orthogonal correction plus the Dirichlet boundary contribution."""
-        out = np.zeros(nc)
-        # non-orthogonal part, gamma T_f . grad_f, with grad_f a face interpolation of the
-        # cell gradients. Exact for a linear field, which is what makes lap(linear) == 0.
-        gf = np.empty((mesh.nface, 2))
-        gf[i] = (mesh.wf[i, None] * grad_phi[o[i]]
-                 + (1.0 - mesh.wf[i, None]) * grad_phi[n[i]])
-        gf[b] = grad_phi[o[b]]
-        cross = gamma_f * (mesh.Tf * gf).sum(axis=1) * mesh.span
-        cross[noflux] = 0.0
-        np.add.at(out, o, cross)
-        np.add.at(out, n[i], -cross[i])
+        out = Cx @ grad_phi[:, 0] + Cy @ grad_phi[:, 1]
         if bvalues is not None and len(bd):
             # The flux out of the owner through a Dirichlet face is coef*(phi_b - phi_P). The
             # -coef*phi_P half sits in the matrix diagonal, so the RHS carries +coef*phi_b.
-            np.add.at(out, o[bd], coef[bd] * bvalues[mesh.bface_index[bd]])
+            out = out + Bd @ bvalues
         return out
 
     return A, rhs_fn
@@ -247,14 +261,13 @@ def convection(mesh, flux_f, bkind, scheme="upwind"):
         # face's own contribution F_f * phi_b enters with its own sign -- not negated as though
         # it were being moved across an equals sign.
         if phi_b is not None and len(binflow):
-            np.add.at(out, o[binflow], F[binflow] * phi_b[mesh.bface_index[binflow]])
+            out += np.bincount(o[binflow], weights=F[binflow] * phi_b[mesh.bface_index[binflow]], minlength=nc)
         # Boundary OUTFLOW takes the owner's cell value, which sits at the centroid rather than
         # on the face; extrapolate along the gradient for the same reason as the interior
         # skewness correction.
         if grad_phi is not None and len(boutflow):
             dx = mesh.fcentre[boutflow] - mesh.centroid[o[boutflow]]
-            np.add.at(out, o[boutflow],
-                      F[boutflow] * (grad_phi[o[boutflow]] * dx).sum(axis=1))
+            out += np.bincount(o[boutflow], weights=F[boutflow] * (grad_phi[o[boutflow]] * dx).sum(axis=1), minlength=nc)
         if scheme == "upwind":
             return out
         # deferred correction: central minus upwind, interior faces only
@@ -275,8 +288,8 @@ def convection(mesh, flux_f, bkind, scheme="upwind"):
         # owner gets +F*phi_f and the matrix already supplied +F*upwind, so the balance is
         # +F*(central - upwind); the neighbour gets the negative of the same thing.
         corr = F[i] * (ce - up)
-        np.add.at(out, o[i], corr)
-        np.add.at(out, n[i], -corr)
+        out += np.bincount(o[i], weights=corr, minlength=nc)
+        out -= np.bincount(n[i], weights=corr, minlength=nc)
         return out
 
     return A, rhs_fn
