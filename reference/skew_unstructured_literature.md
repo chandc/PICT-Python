@@ -1919,3 +1919,26 @@ Figure index for T9: `t9_forces.png` (histories, spectra), `t9_pressure.png`, `t
 (cell-flat vorticity with mesh, two butterflies vs tris), `t9_vorticity_contours.png` (near/far,
 three v2 runs), `t9_tri_vorticity_cell_vs_vertex.png`, `hydrogym_vorticity_fields.png` (their DG0
 vs CG1), `t9_vs_hydrogym.png` (force overlays), `hydrogym_vs_ours_fields(_mesh).png`.
+
+## 42. Equal-order finite elements show the same speckle (2026-09-22)
+
+HydroGym's P1-P1 case (velocity_order = 1, `stabilization="none"`, the element pair their RL
+examples use) rerun with field export: St 0.1785, C_D 1.4702, C_L amp 0.3541 (unchanged from
+section 38). `figures/vorticity_wiggles_compare.png`: raw cell-level vorticity (top) and
+vertex-averaged / CG1 (bottom) for four solutions of the same problem.
+
+| solution | cell-level free-stream rms | vertex-averaged |
+|---|---|---|
+| HydroGym P2-P1 (Taylor-Hood, inf-sup stable) | 8.4e-3 | 8.2e-3 |
+| HydroGym P1-P1 (equal order, unstabilised) | 1.50e-2 | 8.9e-3 |
+| ours, collocated FV, same mesh | 2.44e-2 | 9.7e-3 |
+| ours, wake-refined butterfly quads | 1.01e-2 | 9.8e-3 |
+
+The equal-order finite element on the same triangles carries a cell-level speckle of the same
+kind as ours, 1.8x the Taylor-Hood floor against our 2.9x; vertex averaging takes all four to
+the same 8-10e-3 floor. So the mode is a property of equal-order velocity-pressure collocation
+on a non-bipartite mesh, present in Firedrake's P1-P1 as in our FV; Taylor-Hood does not have it
+because its velocity space is richer than its pressure space (inf-sup), which is the FE way of
+buying what a staggered or bipartite arrangement buys in FV. Our amplitude is 1.6x theirs, the
+price of Rhie-Chow's compact damping against the FE's implicit consistency. Nothing in this
+changes the force conclusions of sections 38-39.
