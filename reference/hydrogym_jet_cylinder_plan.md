@@ -239,3 +239,25 @@ plumbing already gated 6/6. G4 (the adjoint through a scaled Dirichlet BC) is th
 risk. G5 is one afternoon and gates the whole GPU premise. G6 is the long pole and must not
 start until G5 has named the device and G3 has a baseline WITH ITS SCATTER BAND -- a control
 result quoted against a baseline whose own spread is unknown says nothing.
+
+## Status 2026-09-23: HydroGym's own jet environment, trained with its own stack
+
+Both variants trained on the Spark with HydroGym's Firedrake solver and SB3 PPO (their script and
+defaults, 100k steps, (C_L, C_D) observations, 5000-step episodes from their published checkpoint).
+Full account in `skew_unstructured_literature.md` sections 43-44; archives in `results/hydrogym_rl/`.
+
+| | shipped jets (symmetric, net flux) | ZNMF opposed jets (`hg_znmf.py`) |
+|---|---|---|
+| C_D uncontrolled -> controlled | 1.486 -> 1.032 (-30.6%) | 1.486 -> 1.487 (0.0%) |
+| C_L rms | 0.25 -> 0.002 | 0.25 -> 11.9 (slot pressure from reversing jets) |
+| learned action | constant -0.1 (suction bound) | +-0.1 alternating every step, mean 0 |
+| episodes to converge | 2 | never improved |
+| wake | no vortex; base flow held by suction | natural Karman street |
+
+Consequences for this plan: (1) the shipped `Cylinder` reward is solved by steady maximal suction,
+so a drag-reduction number on it is not a wake-control result and the ">20%" in their docs is that
+solution; (2) the physically constrained (ZNMF) jets need Rabault's ingredients to be learnable --
+probes (`--obs-type velocity_probes`), an action hold (`--num-substeps 50`) and ~10x the budget --
+and the constant references (steady asymmetric deflection, 5-11%) are the floor a policy must beat;
+(3) for our own adjoint/DPC comparison against HydroGym, the ZNMF variant with an actuation cost is
+the target, and the reproduction of section 2 above stands (jets as written, discrepancy recorded).
