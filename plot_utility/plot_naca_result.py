@@ -6,8 +6,9 @@ import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt, matpl
 from matplotlib.collections import PolyCollection
 from src.umesh import Mesh
 from src.uops import Gradient
-f = sys.argv[1] if len(sys.argv) > 1 else "results/naca/naca0012_a20_re100.npz"; REF = dict(Cd=0.577, Cl=0.783)
-d = np.load(f); H = d["hist"]; t, cd, cl, cdp = H.T; nu = 0.01; al = np.radians(20.0)
+f = sys.argv[1] if len(sys.argv) > 1 else "results/naca/naca0012_a20_re100.npz"; alpha = float(sys.argv[2]) if len(sys.argv) > 2 else 20.0
+REF = {20.0: dict(Cd=0.577, Cl=0.783), 40.0: dict(Cd=1.081, Cl=1.027)}[alpha]   # HydroGym NACA0012Gust_2D_Re100_AOA{20,40} environment_config.yaml
+d = np.load(f); H = d["hist"]; t, cd, cl, cdp = H.T; nu = 0.01; al = np.radians(alpha)
 cells = [d["cells"][k, :d["nvert"][k]] for k in range(len(d["nvert"]))]; m = Mesh(d["nodes"], cells, span=1.0)
 bt = d["btag"][m.bfaces]; wall = m.bfaces[bt == 5]; wo = m.owner[wall]
 n2 = int(0.6 * len(t)); w = slice(n2, None); clw = cl[w] - cl[w].mean()
@@ -24,8 +25,8 @@ ut = (d["u"][wo] * tan[:, 0] + d["v"][wo] * tan[:, 1]); cf = 2 * nu * ut / dn
 cp = 2 * d["p"][wo] - 2 * d["p"][(np.hypot(*m.centroid.T) > 7.5) & (m.centroid[:, 0] < 0)].mean()
 up = loc[:, 1] > 0
 fig, ax = plt.subplots(2, 3, figsize=(24, 12))
-a = ax[0, 0]; a.plot(t, cd, label="C_D"); a.plot(t, cl, label="C_L"); a.axhline(REF["Cd"], color="C0", ls=":", label="HydroGym C_D 0.577"); a.axhline(REF["Cl"], color="C1", ls=":", label="HydroGym C_L 0.783")
-a.set_ylim(0, 2); a.set_xlabel("t (chords)"); a.set_title(f"forces; last 40%: C_D {cd[w].mean():.3f}, C_L {cl[w].mean():.3f}"); a.legend(fontsize=8); a.grid(alpha=.3)
+a = ax[0, 0]; a.plot(t, cd, label="C_D"); a.plot(t, cl, label="C_L"); a.axhline(REF["Cd"], color="C0", ls=":", label=f"HydroGym C_D {REF['Cd']}"); a.axhline(REF["Cl"], color="C1", ls=":", label=f"HydroGym C_L {REF['Cl']}")
+a.set_ylim(0, 3); a.set_xlabel("t (chords)"); a.set_title(f"forces; last 40%: C_D {cd[w].mean():.3f}, C_L {cl[w].mean():.3f}"); a.legend(fontsize=8); a.grid(alpha=.3)
 a = ax[0, 1]; a.plot(t[w], cl[w]); a.set_title(f"C_L, last 40%: rms {cl[w].std():.2e}" + (f", St_c {1/per.mean():.4f}" if shedding else " (steady)")); a.set_xlabel("t"); a.grid(alpha=.3)
 a = ax[0, 2]; a.plot(loc[up, 0], cp[up], ".-", ms=3, label="upper (suction) side"); a.plot(loc[~up, 0], cp[~up], ".-", ms=3, label="lower side"); a.invert_yaxis(); a.set_xlabel("x/c"); a.set_title("C_p (referenced to the far field ahead)"); a.legend(fontsize=8); a.grid(alpha=.3)
 a2 = a.twinx(); a2.plot(loc[up, 0], cf[up], "C2.", ms=2, label="C_f upper"); a2.plot(loc[~up, 0], cf[~up], "C3.", ms=2, label="C_f lower"); a2.axhline(0, color="k", lw=0.5); a2.set_ylabel("C_f"); a2.legend(fontsize=8, loc="lower right")
@@ -47,5 +48,5 @@ for a, (xl, yl, lev, ttl, lw) in zip(ax[1], [((-0.5, 2.5), (-1.3, 1.0), np.linsp
     if "mesh" in ttl: a.add_collection(PolyCollection(polys, facecolor="none", edgecolor="k", linewidth=lw, alpha=0.6))
     a.fill(*(d["nodes"][np.unique(np.concatenate([d["cells"][k, :d["nvert"][k]] for k in np.unique(wo)]))][:, :2].T if False else ([], [])), "0.3")
     a.set_xlim(*xl); a.set_ylim(*yl); a.set_aspect("equal"); a.set_title(f"{ttl}, t={t[-1]:.0f}"); plt.colorbar(cf_, ax=a, shrink=0.8, pad=0.01)
-plt.suptitle(f"NACA0012, alpha=20 deg, Re=100: {m.ncell} quads; reference HydroGym (m-AIA LBM) C_D 0.577, C_L 0.783", fontsize=12); plt.tight_layout()
-plt.savefig("figures/naca0012_a20_result.png", dpi=110); print("wrote figures/naca0012_a20_result.png")
+plt.suptitle(f"NACA0012, alpha={alpha:.0f} deg, Re=100: {m.ncell} quads; reference HydroGym (m-AIA LBM) C_D {REF['Cd']}, C_L {REF['Cl']}", fontsize=12); plt.tight_layout()
+out = f"figures/naca0012_a{int(alpha)}_result.png"; plt.savefig(out, dpi=110); print("wrote", out)

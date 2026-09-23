@@ -100,7 +100,7 @@ Every gate runs at `perturb=0` AND `perturb>0`.
 | T7 | Ghia cavity Re=1000 | convection, corner singularities, secondary vortices | `src/ghia.py`, `U_RE1000` / `V_RE1000`. **Converging** (32→64 order 0.7–1.3 on triangles). Wall clustering β=1.5 gives core vorticity within 0.1% of Ghia. **On 8281 quads: u rms 0.0100, all extrema within 1.6%** — 2.6× better than the best triangle mesh at equal cell count (§31) |
 | T8 | Orr–Sommerfeld Re=7500 | numerical DISSIPATION, temporal accuracy | growth `alpha*Im(c) = 0.00223497`, phase `0.249892`; `orr_sommerfeld.py` reproduces both to 5+ digits |
 | T9 | cylinder Re=100 | the target case | no obtainable reference — see above; T1–T8 are what make its output trustworthy. **Meshes ready**: HydroGym `medium.msh` regenerated exactly from `medium.geo` (17258 tri); structured butterfly O-grid `cylinder_butterfly.msh` (6992 quads, all-quad, same 112 wall edges) — matches the triangle mesh on the Stokes MMS with 2.5× fewer cells (§30). Wake refinement band not yet reproduced in the butterfly. Mesh code supports polygons; Gmsh reader accepts quads. **Both meshes done (T=150, St by zero-crossing): butterfly 6992 quads St 0.1750 / Cd 1.453 / Cl amp 0.346; HydroGym 17258 tris St 0.1775 / Cd 1.476 / Cl amp 0.376; Cd_p agrees to 0.2%** — 5–8% above unconfined literature, consistent with β=0.10 blockage; tri/quad differences are in the shear terms (§35–36). **Steady branch vs HydroGym's unit test (C_D 1.2840, same mesh/BCs): ours 1.2702 on their mesh; butterfly 1.2442/1.2627/1.2744 coarse/medium/fine, approaching 1.284 from below, extrapolations 1.278–1.295 bracket it** (§37). **HydroGym run ourselves (Spark, §38): P2-P1 medium St 0.1791 / Cd 1.4862 / Cl amp 0.3582; steady converged 1.2861. Ours on their mesh: St −0.9%, Cd −0.7%, Cl amp +4.8%; butterfly −2 to −3%.** **With wall-flux force (§39): butterfly Cd 1.4866 (+0.03%), Cl amp −1.8%, St −2.3%; wake-refined butterfly 13952 cells Cd +0.2%, Cl amp +1.8%, St −2.5%; tris Cd +0.9%, Cl amp +6%, St −0.9%.** Open: butterfly St deficit (near-body O-grid or time scheme), tri Cl amplitude. Tri vorticity speckle = two-colour mode, 3x the common 8e-3 floor at cell level, gone under vertex averaging; RC damping >1 unstable, Neumann-extrapolation −18% only (§40). **RL on HydroGym's own env (§43–44): shipped jets → constant suction, −30.6% in 2 episodes (reward loophole); ZNMF jets → nothing in 100k steps.** |
-| T10 | NACA0012, Re=100, α=20° (HydroGym's airfoil case, their solver is m-AIA-only) | **done (§45)**: steady; C_D 0.5703 / C_L 0.7729 vs HydroGym config 0.577 / 0.783 (−1.2/−1.3%), L/D 1.355 vs 1.357; self-made elliptic C-grid 33k quads (`meshes/gen_naca_cgrid.py`, `run_uairfoil.py`). Open: far-field R=16 and one refinement |
+| T10 | NACA0012, Re=100, α=20° (HydroGym's airfoil case, their solver is m-AIA-only) | **done (§45)**: steady; C_D 0.5703 / C_L 0.7729 vs HydroGym config 0.577 / 0.783 (−1.2/−1.3%), L/D 1.355 vs 1.357; self-made elliptic C-grid 33k quads (`meshes/gen_naca_cgrid.py`, `run_uairfoil.py`). **α=40° (§46): shedding, St_c 0.2331 (St_h 0.150), C_D 1.068 / C_L 1.010 vs HydroGym 1.081 / 1.027 (−1.2/−1.6%)**. Open: far-field R=16 and one refinement |
 
 **T3 and T4 must be separated.** A scheme that is second order in space and first in time still
 shows slope 2 under joint refinement if the spatial error dominates. Refine one at a time.
@@ -256,6 +256,16 @@ Rhie-Chow damping. That points at the discrete continuity/momentum-interpolation
   Jacobian there".
 * **Face-based jet application** — the profile is written and verified analytically
   (`cylinder_rect_bc.jet_amplitude`); it needs porting onto cylinder boundary faces.
+* **Bounded second-order convection for Re > ~500.** The convection term is deferred-correction
+  central (`scheme="central"`), kept because T8's growth rate punishes any first-order dissipation.
+  At Re = 1000 on the airfoil the mid-chord cell Péclet number is ~30 (h ~ 0.03, U ~ 1) and central
+  differencing will oscillate. On unstructured meshes that means a limited linear-upwind or TVD
+  scheme in the Darwish–Moukalled r-factor formulation (the upwind-side "far" value reconstructed
+  as phi_C - grad(phi)_C . d, so the Sweby limiter needs no upstream cell), applied as a deferred
+  correction on top of the implicit upwind part so the matrix stays diagonally dominant. Goal is
+  bounded second order, not "no artificial dissipation": limiters add dissipation wherever they act.
+  Gate: T3 order must not fall below the central scheme's on smooth flow, and the first Re-1000
+  test is the NACA0012 at 20° against Kurtulus (2015) St and force amplitudes. Not started.
 * **MPI** — deferred. On the structured code MPI measured NEGATIVE at this problem size
   (1 rank 4.58 s/step, 8 ranks 9.72 s/step) because the implicit solves gather to rank 0.
   Revisit only if the cell count grows by an order of magnitude.

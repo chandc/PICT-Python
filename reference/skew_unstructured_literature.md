@@ -2137,3 +2137,34 @@ ours the far-field Dirichlet at 8 chords (circulation-induced velocity there ~0.
 lowers the lift at about that level) -- the gap is of the size the two far-field treatments alone
 would produce. A far-field sensitivity (`--R 16`) and a refinement (`--d0 0.0025 --ns 289 --neta 101`)
 are the two checks to close it; neither has been run.
+
+## 46. NACA0012 at Re = 100, alpha = 40 deg: shedding (2026-09-23)
+
+Same generator and parameters with `--alpha 40` (`meshes/naca0012_a40.msh`, 33040 quads, min angle
+43.1 deg, aspect max 49 far field, nbr-volume ratio max 2.8; `figures/naca0012_a40_grid.png`). Same
+BCs and driver; probe stable at dt = 0.005; production T = 150, 30000 steps, ~290 ms/step, 2.4 h.
+Reference: HydroGym `NACA0012Gust_2D_Re100_AOA40/environment_config.yaml` unperturbed means
+C_D 1.081, C_L 1.027 (no St recorded).
+
+| window t = 90-150 | ours | HydroGym | diff |
+|---|---|---|---|
+| C_D mean | **1.0679** | 1.081 | -1.2% |
+| C_L mean | **1.0104** | 1.027 | -1.6% |
+| L/D | 0.946 | 0.950 | -0.4% |
+| C_L amplitude / rms | 0.1368 / 0.0968 | | |
+| C_D rms | 0.0252 | | |
+| **St (chord) / St (projected height c sin 40)** | **0.2331 / 0.1498** | not recorded | |
+| pressure / viscous drag | 0.882 / 0.186 | | |
+
+Shedding: 13 periods in the window, period 4.2898 +- 0.0000 (limit cycle exact to four digits from
+t ~ 20; lift amplitude 0.137 constant from t = 20 to 150). The height-based Strouhal 0.150 is the
+bluff-body value at Re_h = 64, as expected for a stalled plate. Flow (`figures/naca0012_a40_field_t20.png`,
+`_t150.png`, `naca0012_a40_result.png`): both shear layers roll up within a chord of the TE, alternately
+-- a leading-edge vortex detaching around x ~ 1.5 and a compact trailing-edge vortex just behind the
+tip -- into a Karman street deflected downward with ~2-chord spacing, cores still above +-1.2 at
+x = 10; recirculation bubble ~1.5 chords long that pinches off each cycle; C_p min -2.2 at the nose,
+suction side a chain of low-pressure cores riding the shed vortices; suction-side C_f sign changes at
+x/c 0.05 and 0.60 in the final snapshot (instantaneous). Both coefficients again 1.2-1.6% below
+HydroGym's, the same offset and sign as the 20-deg case, consistent with the far-field difference
+noted in section 45. Contrast with 20 deg: drag 1.87x, lift 1.31x, steady -> periodic, exactly the
+transition the alpha_1 ~ Re^-0.65 scaling puts near 33 deg at Re = 100.
