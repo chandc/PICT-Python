@@ -14,6 +14,6 @@ for j, (f, nm) in enumerate(cases):
         a.fill(0.5 * np.cos(th), 0.5 * np.sin(th), "0.35", zorder=3); a.set_xlim(*xl); a.set_ylim(*yl); a.set_aspect("equal")
         a.set_title(f"{nm}\nvorticity, {ttl}, t = {float(d['t']):.0f} after the checkpoint", fontsize=10); plt.colorbar(cf, ax=a, shrink=0.85, pad=0.01)
     a = ax[2, j]; a.plot(H[:, 0], H[:, 2], label="C_D"); a.plot(H[:, 0], H[:, 1], label="C_L"); a.plot(H[:, 0], H[:, 3] * 10, "k:", lw=1, label="action x10")
-    n2 = int(0.4 * len(H)); a.set_title(f"forces: C_D {H[n2:,2].mean():.4f}, C_L rms {H[n2:,1].std():.4f} (t = {H[n2,0]:.0f}..{H[-1,0]:.0f})", fontsize=10); a.set_xlabel("t"); a.grid(alpha=.3); a.legend(fontsize=8); a.set_ylim(-1.2, 1.7)
+    n2 = int(0.4 * len(H)); a.set_title(f"forces: C_D {H[n2:,2].mean():.4f}, C_L rms {H[n2:,1].std():.4f} (t = {H[n2,0]:.0f}..{H[-1,0]:.0f})", fontsize=10); a.set_xlabel("t"); a.grid(alpha=.3); a.legend(fontsize=8); a.set_ylim(min(-1.2, np.percentile(H[:, 1], 1) * 1.1), max(1.7, np.percentile(H[:, 1], 99) * 1.1))
 plt.suptitle(f"HydroGym Firedrake cylinder, Re=100, medium mesh: natural shedding vs trained control ({tag} jets)", fontsize=12); plt.tight_layout()
 plt.savefig(f"figures/hydrogym_control_fields_{tag}.png", dpi=110); print(f"wrote figures/hydrogym_control_fields_{tag}.png")

@@ -2037,3 +2037,25 @@ Run archive (kept in full): `results/hydrogym_rl/runs/PPO_Firedrake_cylinder_202
 (models every 10k steps + final, VecNormalize statistics, TensorBoard events), `logs/` (SB3
 stdout, evaluation, reference rollouts), `eval_ppo_jets_*.dat`, `baseline_*.dat`,
 `fields_shipped_*.npz`; the 800-step pressure-probe false start is kept under its own name.
+
+**Result of the ZNMF run** (100k steps, same PPO defaults; `figures/hydrogym_rl_training_znmf.png`,
+`figures/hydrogym_control_fields_znmf.png`, run archive `results/hydrogym_rl/runs/PPO_Firedrake_cylinder_znmf_20260923_033943/`):
+
+Per-episode mean C_D: 1.496, 1.504, 1.488, 1.488, 1.484, 1.564, 1.532, 1.556, 1.550, 1.538,
+1.586, 1.502, 1.498, 1.466, 1.488, 1.484 -- never more than 1.4% below the uncontrolled 1.486,
+and 5-7% above it for six episodes while the policy explored asymmetric actuation. Evaluation
+(100 time units, deterministic): C_D 1.4865 vs 1.4863 uncontrolled (0.0%), C_L rms 11.9 (!),
+action mean 0.0000, rms 0.1000: the policy chatters between +0.1 and -0.1 on alternate steps.
+Through the actuator lag (TAU 0.0556 = 5.6 steps) that averages to near-zero jet flux, so the
+wake is the natural Karman street and the drag is unchanged; the huge C_L rms is the impulsive
+surface-pressure response at the slots to the reversing 1.8 U_inf jets, not a wake effect.
+
+Reading: with HydroGym's default PPO, one CFD step per action and (C_L, C_D) as the only
+observation, the opposed ZNMF jets learn nothing in 100k steps; the policy did not even find the
+steady asymmetric deflection worth 5-11% that the constant references show. This is not evidence
+against Rabault's 8%, whose setup differs in the three things that make the problem learnable:
+151 velocity probes (state observability), an action held for 50 solver steps (no chattering, a
+control period ~1/10 of the shedding period), and ~10x the training budget. Those are the next
+knobs (`--obs-type velocity_probes`, `--num-substeps 50`, longer run) if the ZNMF comparison is
+pursued. Meanwhile the contrast is the point: the shipped jets reach 30% by trivial mass removal
+in two episodes; the physically constrained jets reach nothing in the same budget.
