@@ -1,0 +1,15 @@
+HydroGym Cylinder mesh=fine velocity_order=2: cells 176814, velocity dofs 708440, pressure dofs 88703, ranks 1
+  steady Re=40: CL=+0.000255 CD=1.527774
+  steady Re=60: CL=+0.000251 CD=1.302949
+  steady Re=80: CL=+0.000257 CD=1.168766
+  steady Re=100: CL=+0.000263 CD=1.076565
+STEADY mesh=fine order=2: CD=1.076565 CL=+2.63e-04  (66s)
+WARNING! There are options you set that were not used!
+WARNING! could be spelling mistake, etc!
+There are 6 unused database options. They are:
+Option left: name:--mesh value: fine source: command line
+Option left: name:--order value: 2 source: command line
+Option left: name:--steady-only (no value) source: command line
+Option left: name:-mesh value: fine source: code
+Option left: name:-order value: 2 source: code
+Option left: name:-steady-only (no value) source: code

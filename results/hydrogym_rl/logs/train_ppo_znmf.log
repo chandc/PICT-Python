@@ -1,0 +1,120 @@
+/usr/local/lib/python3.12/dist-packages/stable_baselines3/ppo/ppo.py:155: UserWarning: You have specified a mini-batch size of 64, but because the `RolloutBuffer` is of size `n_steps * n_envs = 200`, after every 3 untruncated mini-batches, there will be a truncated mini-batch of size 8
+We recommend using a `batch_size` that is a factor of `n_steps * n_envs`.
+Info: (n_steps=200 and n_envs=1)
+  warnings.warn(
+/usr/local/lib/python3.12/dist-packages/stable_baselines3/common/on_policy_algorithm.py:150: UserWarning: You are trying to run PPO on the GPU, but it is primarily intended to run on the CPU when not using a CNN policy (you are using ActorCriticPolicy which should be a MlpPolicy). See https://github.com/DLR-RM/stable-baselines3/issues/1245 for more info. You can pass `device='cpu'` or `export CUDA_VISIBLE_DEVICES=` to force using the CPU.Note: The model will train, but the GPU utilization will be poor and the training might take longer than on CPU.
+  warnings.warn(
+======================================================================
+Training SB3 Agent on Firedrake Environment
+======================================================================
+Algorithm: PPO
+Environment: cylinder_znmf
+Total timesteps: 100000
+======================================================================
+
+Environment configuration:
+  Flow: cylinder_znmf
+  Reynolds: 100
+  Mesh: medium
+  dt: 0.01
+  num_substeps: 1
+  Observation type: lift_drag
+
+Environment created (Wrapped in Monitor, DummyVecEnv, VecNormalize):
+  Observation space: Box(-inf, inf, (2,), float64)
+  Action space: Box(-0.1, 0.1, (1,), float64)
+
+Creating PPO model...
+Using cuda device
+✓ Model created
+
+Log directory: /work/rl_logs/PPO_Firedrake_cylinder_znmf_20260923_033943
+
+======================================================================
+Starting training...
+======================================================================
+
+Logging to /work/rl_logs/PPO_Firedrake_cylinder_znmf_20260923_033943/PPO_run_1
+----------------------------
+| time/              |     |
+|    fps             | 6   |
+|    iterations      | 1   |
+|    time_elapsed    | 29  |
+|    total_timesteps | 200 |
+----------------------------
+-----------------------------------------
+| time/                   |             |
+|    fps                  | 6           |
+|    iterations           | 2           |
+|    time_elapsed         | 57          |
+|    total_timesteps      | 400         |
+| train/                  |             |
+|    approx_kl            | 0.004544927 |
+|    clip_fraction        | 0.0199      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.42       |
+|    explained_variance   | -0.222      |
+|    learning_rate        | 0.0003      |
+|    loss                 | 0.954       |
+|    n_updates            | 10          |
+|    policy_gradient_loss | -0.00879    |
+|    std                  | 1.01        |
+|    value_loss           | 2.66        |
+-----------------------------------------
+------------------------------------------
+| time/                   |              |
+|    fps                  | 7            |
+|    iterations           | 3            |
+|    time_elapsed         | 85           |
+|    total_timesteps      | 600          |
+| train/                  |              |
+|    approx_kl            | 0.0003842879 |
+|    clip_fraction        | 0            |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.43        |
+|    explained_variance   | -1.53        |
+|    learning_rate        | 0.0003       |
+|    loss                 | 0.144        |
+|    n_updates            | 20           |
+|    policy_gradient_loss | -0.00056     |
+|    std                  | 1.01         |
+|    value_loss           | 0.438        |
+------------------------------------------
+-------------------------------------------
+| time/                   |               |
+|    fps                  | 7             |
+|    iterations           | 4             |
+|    time_elapsed         | 113           |
+|    total_timesteps      | 800           |
+| train/                  |               |
+|    approx_kl            | 0.00014388794 |
+|    clip_fraction        | 0             |
+|    clip_range           | 0.2           |
+|    entropy_loss         | -1.43         |
+|    explained_variance   | -2.27         |
+|    learning_rate        | 0.0003        |
+|    loss                 | 0.0666        |
+|    n_updates            | 30            |
+|    policy_gradient_loss | -0.000782     |
+|    std                  | 1             |
+|    value_loss           | 0.239         |
+-------------------------------------------
+------------------------------------------
+| time/                   |              |
+|    fps                  | 7            |
+|    iterations           | 5            |
+|    time_elapsed         | 141          |
+|    total_timesteps      | 1000         |
+| train/                  |              |
+|    approx_kl            | 0.0024946171 |
+|    clip_fraction        | 0.00391      |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.41        |
+|    explained_variance   | 0.568        |
+|    learning_rate        | 0.0003       |
+|    loss                 | 0.0112       |
+|    n_updates            | 40           |
+|    policy_gradient_loss | -0.00273     |
+|    std                  | 0.988        |
+|    value_loss           | 0.0872       |
+------------------------------------------

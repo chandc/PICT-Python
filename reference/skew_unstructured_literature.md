@@ -1942,3 +1942,98 @@ because its velocity space is richer than its pressure space (inf-sup), which is
 buying what a staggered or bipartite arrangement buys in FV. Our amplitude is 1.6x theirs, the
 price of Rhie-Chow's compact damping against the FE's implicit consistency. Nothing in this
 changes the force conclusions of sections 38-39.
+
+## 43. Training HydroGym's jet cylinder as shipped (Spark, 2026-09-22): the objective rewards suction
+
+Setup: `tools/hydrogym_cmp/train_sb3_firedrake.py` (their SB3 script; only addition `--max-steps`),
+PPO defaults (n_steps 200, lr 3e-4, gamma 0.99, batch 64), `Cylinder` Re = 100 medium mesh,
+dt = 0.01, one CFD step per action, action in [-0.1, 0.1] (one scalar, both jets), reward
+-dt C_D, observations (C_L, C_D) (`--obs-type lift_drag`; the script's own default is 50 wake
+pressure probes despite its help text), 5000-step episodes each restarting from HydroGym's
+published developed-shedding checkpoint (HF dataset `dynamicslab/HydroGym-environments`,
+`Cylinder_2D_Re100_medium_FD`, C_D 1.467 at load). GPU container `hgrl` (torch 2.11+cu128 on the
+GB10, SB3 2.9.0); the MLP policy on the GPU is cosmetic, wall time is the Firedrake step at
+~7 env steps/s, 100k steps ~ 4 h.
+
+Episode returns: -65.3, -52.7, ... (mean C_D 1.31 then 1.05) within the first two episodes,
+i.e. a "29% drag reduction" after 100 time units. Reference rollouts from the same checkpoint
+(`baseline_rollout.py`, 50 or 30 time units, mean C_D over the last 60%):
+
+| actuation | C_D | C_L rms | note |
+|---|---|---|---|
+| none | 1.4862 | 0.252 | matches section 38 |
+| uniform random in [-0.1, 0.1] | 1.4832 | 0.247 | |
+| random sign +-0.1 each step (untrained Gaussian policy after clipping) | 1.4727 | 0.242 | |
+| **constant suction -0.1** | **1.0416** | **0.021** | shedding suppressed |
+| constant blowing +0.05 | 1.8656 | 0.459 | |
+| constant blowing +0.1 | 2.3154 | 0.714 | |
+
+Steady maximal suction through both 10-degree slots at +-90 degrees (wall-normal velocity up to
+R A u = 0.5 x 36 x 0.1 = 1.8 U_inf) suppresses shedding and cuts the surface-stress drag 30%.
+The reward has no actuation cost, so this is the optimum the environment defines, and PPO finds
+it in two episodes. It is not the 8-12% of the published references: Rabault's jets are
+zero-net-mass-flux and opposed with a bounded mass-flow budget, and the L4DC rotary actuator
+cannot remove fluid. The docs' "more than 20% drag reduction" for the cylinder environment is
+consistent with this suction solution. The 100k-step run was left to finish to see whether PPO
+converges to the constant -0.1 or finds anything else; evaluation with `eval_policy.py`.
+
+**Result of the 100k-step run.** Per-episode returns -65.3 (exploration), then -52.7, -52.4,
+-52.4, -52.2 and flat thereafter (20 episodes); PPO's running mean ended at -53.1. Evaluation
+(`eval_policy.py`, 100 time units each from the checkpoint, frozen VecNormalize, deterministic
+policy; `figures/hydrogym_rl_eval.png`, histories in `results/hydrogym_rl/`):
+
+| | C_D (t = 40..100) | C_L rms | action |
+|---|---|---|---|
+| uncontrolled | 1.4863 | 0.2525 | 0 |
+| PPO policy | **1.0316** | 0.0023 | **-0.1000 constant** (rms 0.0000) |
+| constant suction reference | 1.0416 (t = 12..30) | 0.021 | -0.1 |
+
+Drag reduction 30.6%, lift oscillation removed (C_L rms decays exponentially to 3e-4 by t = 100).
+The trained policy is the constant -0.1: deterministic output pinned at the bound at every step,
+independent of the (C_L, C_D) observation. So the "as shipped" reproduction is exactly what the
+reference rollouts predicted after the first episode: HydroGym's jet Cylinder with its default
+reward is solved by maximal steady suction, and the >20% figure in their docs is this solution.
+It says nothing about feedback wake control and is not comparable to the 8-12% of Rabault or the
+rotary L4DC case. A meaningful jet benchmark needs (a) zero-net-mass-flux opposed jets and (b)
+an actuation cost or mass-flow budget in the reward, both one-line changes in `flow.py` /
+`evaluate_objective`; that variant has not been run.
+
+## 44. The zero-net-mass-flux variant (Spark, 2026-09-23)
+
+`tools/hydrogym_cmp/hg_znmf.py`: `CylinderZNMF(hgym.Cylinder)` overriding only
+`cyl_velocity_field` with `slot(+90) - slot(-90)` -- the top slot blows while the bottom sucks
+for a > 0, net flux 4e-17 at a = 0.1 (shipped class: -0.2007), |flux| 0.2007 (0.1 per slot);
+same 10-degree cosine slots, same single scalar in [-0.1, 0.1], same actuator lag, same reward
+-dt C_D, same restart checkpoint (`..._00000690.ckpt`, selected with HydroGym's own glob rule so
+both runs start from the identical state, C_L 0.233 / C_D 1.467). Training command identical to
+section 43 apart from `--env cylinder_znmf`; run dir `PPO_Firedrake_cylinder_znmf_20260923_033943`.
+
+Constant-actuation references (30 time units from the checkpoint, mean over the last 60%):
+
+| ZNMF actuation | C_D | C_L rms | note |
+|---|---|---|---|
+| none | 1.4862 | 0.252 | |
+| constant +0.1 (top blows, bottom sucks) | 1.409 | 0.281 | still settling: 1.515 / 1.410 / 1.400 per 10 units |
+| constant -0.1 (top sucks, bottom blows) | 1.328 | 0.194 | still settling: 1.320 / 1.275 / 1.365 |
+
+By reflection symmetry the two should agree once settled; the difference is the shedding phase of
+the shared start and the short window. Steady asymmetric ZNMF actuation at the bound deflects the
+wake and buys of order 5-11% of drag with the lift oscillation intact -- the "steer the wake"
+solution seen earlier with our own opposed jets (hydrogym_jet_cylinder_plan.md). That is the
+floor a ZNMF policy has to beat to be called feedback control.
+
+**Fields of the trained shipped-jet control** (`rollout_fields.py`, 60 time units from the
+checkpoint in HydroGym's Firedrake solver; `figures/hydrogym_control_fields_shipped.png`).
+Uncontrolled: the Karman street, cores +-2, spacing 2.7, C_D 1.486, C_L +-0.36. Controlled
+(constant suction -0.1 at both slots, which is the PPO policy): no vortex anywhere in the domain
+-- the two separated shear layers stay parallel and thin to the outlet, the boundary layer is drawn
+onto the surface at the +-90-degree slots and separation moves aft; C_D falls to 1.08 within two
+time units and relaxes to 1.033, C_L decays as a damped oscillation to 0.007 rms by t = 24 and
+keeps shrinking. It is the unstable symmetric base flow held by suction, with a thinner wake than
+the natural base flow (steady C_D 1.284) because fluid is removed from it. The 30% is complete
+suppression by steady mass removal, not weakened shedding.
+
+Run archive (kept in full): `results/hydrogym_rl/runs/PPO_Firedrake_cylinder_20260922_225051/`
+(models every 10k steps + final, VecNormalize statistics, TensorBoard events), `logs/` (SB3
+stdout, evaluation, reference rollouts), `eval_ppo_jets_*.dat`, `baseline_*.dat`,
+`fields_shipped_*.npz`; the 800-step pressure-probe false start is kept under its own name.

@@ -1,0 +1,40 @@
+model /work/rl_logs/PPO_Firedrake_cylinder_20260922_225051/model_final.zip
+stats /work/rl_logs/PPO_Firedrake_cylinder_20260922_225051/vec_normalize_final.pkl
+INFO:hydrogym.data_manager:Detected solver profile 'FIREDRAKE' from local cache sentinel '.FIREDRAKE'
+INFO:hydrogym.data_manager:Profile 'FIREDRAKE' has no required files defined yet, skipping validation
+Using cached environment: /root/.cache/hydrogym/Cylinder_2D_Re100_medium_FD
+  uncontrolled t=  10.0  CD 1.4829  CL rms 0.2573  |a| mean 0.0000  (127 ms/step)
+  uncontrolled t=  20.0  CD 1.4842  CL rms 0.2402  |a| mean 0.0000  (126 ms/step)
+  uncontrolled t=  30.0  CD 1.4868  CL rms 0.2559  |a| mean 0.0000  (126 ms/step)
+  uncontrolled t=  40.0  CD 1.4855  CL rms 0.2532  |a| mean 0.0000  (126 ms/step)
+  uncontrolled t=  50.0  CD 1.4864  CL rms 0.2441  |a| mean 0.0000  (126 ms/step)
+  uncontrolled t=  60.0  CD 1.4865  CL rms 0.2628  |a| mean 0.0000  (126 ms/step)
+  uncontrolled t=  70.0  CD 1.4855  CL rms 0.2390  |a| mean 0.0000  (126 ms/step)
+  uncontrolled t=  80.0  CD 1.4871  CL rms 0.2617  |a| mean 0.0000  (126 ms/step)
+  uncontrolled t=  90.0  CD 1.4853  CL rms 0.2462  |a| mean 0.0000  (126 ms/step)
+  uncontrolled t= 100.0  CD 1.4868  CL rms 0.2509  |a| mean 0.0000  (126 ms/step)
+INFO:hydrogym.data_manager:Detected solver profile 'FIREDRAKE' from local cache sentinel '.FIREDRAKE'
+INFO:hydrogym.data_manager:Profile 'FIREDRAKE' has no required files defined yet, skipping validation
+/usr/local/lib/python3.12/dist-packages/stable_baselines3/common/on_policy_algorithm.py:150: UserWarning: You are trying to run PPO on the GPU, but it is primarily intended to run on the CPU when not using a CNN policy (you are using ActorCriticPolicy which should be a MlpPolicy). See https://github.com/DLR-RM/stable-baselines3/issues/1245 for more info. You can pass `device='cpu'` or `export CUDA_VISIBLE_DEVICES=` to force using the CPU.Note: The model will train, but the GPU utilization will be poor and the training might take longer than on CPU.
+  warnings.warn(
+Using cached environment: /root/.cache/hydrogym/Cylinder_2D_Re100_medium_FD
+  controlled t=  10.0  CD 1.0808  CL rms 0.1398  |a| mean 0.1000  (127 ms/step)
+  controlled t=  20.0  CD 1.0494  CL rms 0.0306  |a| mean 0.1000  (127 ms/step)
+  controlled t=  30.0  CD 1.0374  CL rms 0.0139  |a| mean 0.1000  (127 ms/step)
+  controlled t=  40.0  CD 1.0336  CL rms 0.0078  |a| mean 0.1000  (126 ms/step)
+  controlled t=  50.0  CD 1.0322  CL rms 0.0046  |a| mean 0.1000  (126 ms/step)
+  controlled t=  60.0  CD 1.0317  CL rms 0.0026  |a| mean 0.1000  (125 ms/step)
+  controlled t=  70.0  CD 1.0315  CL rms 0.0015  |a| mean 0.1000  (125 ms/step)
+  controlled t=  80.0  CD 1.0314  CL rms 0.0009  |a| mean 0.1000  (125 ms/step)
+  controlled t=  90.0  CD 1.0314  CL rms 0.0005  |a| mean 0.1000  (124 ms/step)
+  controlled t= 100.0  CD 1.0314  CL rms 0.0003  |a| mean 0.1000  (124 ms/step)
+EVAL window t=40..100: uncontrolled CD 1.4863 CL_rms 0.2525 | controlled CD 1.0316 CL_rms 0.0023 | drag reduction 30.6% | action mean -0.1000 rms 0.0000 (MAX_CONTROL 0.1)
+WARNING! There are options you set that were not used!
+WARNING! could be spelling mistake, etc!
+There are 6 unused database options. They are:
+Option left: name:--logdir value: /work/rl_logs/PPO_Firedrake_cylinder_20260922_225051 source: command line
+Option left: name:--out value: out/eval_ppo_jets source: command line
+Option left: name:--T value: 100 source: command line
+Option left: name:-logdir value: /work/rl_logs/PPO_Firedrake_cylinder_20260922_225051 source: code
+Option left: name:-out value: out/eval_ppo_jets source: code
+Option left: name:-T value: 100 source: code

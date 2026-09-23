@@ -1,0 +1,7 @@
+INFO:hydrogym.data_manager:Detected solver profile 'FIREDRAKE' from local cache sentinel '.FIREDRAKE'
+INFO:hydrogym.data_manager:Profile 'FIREDRAKE' has no required files defined yet, skipping validation
+Using cached environment: /root/.cache/hydrogym/Cylinder_2D_Re100_medium_FD
+  suck t= 10.0 CD(last 10) 1.0808 CL rms 0.1398 (135 ms/step)
+  suck t= 20.0 CD(last 10) 1.0494 CL rms 0.0306 (136 ms/step)
+  suck t= 30.0 CD(last 10) 1.0374 CL rms 0.0139 (136 ms/step)
+BASELINE suck: mean CD over t=0..30: 1.0559   last 60%: 1.0416   CL rms 0.0214   return sum(-dt*CD) -31.68

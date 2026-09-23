@@ -1,0 +1,9 @@
+INFO:hydrogym.data_manager:Detected solver profile 'FIREDRAKE' from local cache sentinel '.FIREDRAKE'
+INFO:hydrogym.data_manager:Profile 'FIREDRAKE' has no required files defined yet, skipping validation
+Using cached environment: /root/.cache/hydrogym/Cylinder_2D_Re100_medium_FD
+  random t= 10.0 CD(last 10) 1.5068 CL rms 0.2685 (141 ms/step)
+  random t= 20.0 CD(last 10) 1.4623 CL rms 0.2313 (141 ms/step)
+  random t= 30.0 CD(last 10) 1.4745 CL rms 0.2391 (141 ms/step)
+  random t= 40.0 CD(last 10) 1.4761 CL rms 0.2503 (141 ms/step)
+  random t= 50.0 CD(last 10) 1.4991 CL rms 0.2485 (141 ms/step)
+BASELINE random: mean CD over t=0..50: 1.4837   last 60%: 1.4832   CL rms 0.2470   return sum(-dt*CD) -74.19

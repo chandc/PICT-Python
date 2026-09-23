@@ -1,0 +1,65 @@
+HydroGym Cylinder mesh=medium velocity_order=2: cells 2246, velocity dofs 69492, pressure dofs 8744, ranks 8
+  steady Re=40: CL=+0.000019 CD=1.789428
+  steady Re=60: CL=+0.000024 CD=1.530724
+  steady Re=80: CL=+0.000027 CD=1.382226
+  steady Re=100: CL=+0.000030 CD=1.284032
+STEADY mesh=medium order=2: CD=1.284032 CL=+2.96e-05  (2s)
+  t=   0.00  CL=+0.0067  CD=1.2840  (230 ms/step)
+  t=   5.00  CL=-0.0000  CD=1.2841  (38 ms/step)
+  t=  10.00  CL=+0.0003  CD=1.2840  (38 ms/step)
+  t=  15.00  CL=+0.0002  CD=1.2840  (38 ms/step)
+  t=  20.00  CL=-0.0010  CD=1.2840  (38 ms/step)
+  t=  25.00  CL=+0.0008  CD=1.2841  (39 ms/step)
+  t=  30.00  CL=+0.0035  CD=1.2844  (39 ms/step)
+  t=  35.00  CL=-0.0086  CD=1.2859  (39 ms/step)
+  t=  40.00  CL=-0.0030  CD=1.2918  (39 ms/step)
+  t=  45.00  CL=+0.0442  CD=1.3103  (40 ms/step)
+  t=  50.00  CL=+0.0043  CD=1.3445  (40 ms/step)
+  t=  55.00  CL=-0.1320  CD=1.3873  (40 ms/step)
+  t=  60.00  CL=-0.2024  CD=1.4204  (41 ms/step)
+  t=  65.00  CL=-0.1142  CD=1.4414  (41 ms/step)
+  t=  70.00  CL=+0.0854  CD=1.4641  (41 ms/step)
+  t=  75.00  CL=+0.2729  CD=1.4840  (42 ms/step)
+  t=  80.00  CL=+0.3450  CD=1.4863  (42 ms/step)
+  t=  85.00  CL=+0.2634  CD=1.4764  (42 ms/step)
+  t=  90.00  CL=+0.0645  CD=1.4753  (43 ms/step)
+  t=  95.00  CL=-0.1629  CD=1.4878  (43 ms/step)
+  t= 100.00  CL=-0.3230  CD=1.4967  (43 ms/step)
+  t= 105.00  CL=-0.3495  CD=1.4892  (44 ms/step)
+  t= 110.00  CL=-0.2290  CD=1.4768  (44 ms/step)
+  t= 115.00  CL=-0.0124  CD=1.4782  (44 ms/step)
+  t= 120.00  CL=+0.2080  CD=1.4914  (45 ms/step)
+  t= 125.00  CL=+0.3425  CD=1.4967  (45 ms/step)
+  t= 130.00  CL=+0.3351  CD=1.4862  (45 ms/step)
+  t= 135.00  CL=+0.1867  CD=1.4756  (46 ms/step)
+  t= 140.00  CL=-0.0392  CD=1.4808  (46 ms/step)
+  t= 145.00  CL=-0.2476  CD=1.4940  (46 ms/step)
+  t= 150.00  CL=-0.3540  CD=1.4955  (46 ms/step)
+  t= 155.00  CL=-0.3131  CD=1.4831  (47 ms/step)
+  t= 160.00  CL=-0.1404  CD=1.4753  (47 ms/step)
+  t= 165.00  CL=+0.0901  CD=1.4837  (47 ms/step)
+  t= 170.00  CL=+0.2823  CD=1.4958  (48 ms/step)
+  t= 175.00  CL=+0.3582  CD=1.4935  (48 ms/step)
+  t= 180.00  CL=+0.2846  CD=1.4803  (48 ms/step)
+  t= 185.00  CL=+0.0913  CD=1.4758  (49 ms/step)
+  t= 190.00  CL=-0.1388  CD=1.4868  (49 ms/step)
+  t= 195.00  CL=-0.3109  CD=1.4969  (49 ms/step)
+  integration done in 993s
+  saved fields out/medium_p2_fields.npz: 17258 cells, 8744 vertices
+  13 periods, mean 5.5842 +- 0.0000
+RESULT hydrogym mesh=medium order=2 dt=0.01: St=0.1791  Cd_mean=1.4861  Cl_rms=0.2523  Cl_amp=0.3582  Cd_amp=0.0109  (window t=120.0..200.0)  steady CD=1.2840
+WARNING! There are options you set that were not used!
+WARNING! could be spelling mistake, etc!
+There are 12 unused database options. They are:
+Option left: name:--dt value: 0.01 source: command line
+Option left: name:--mesh value: medium source: command line
+Option left: name:--order value: 2 source: command line
+Option left: name:--out value: out/medium_p2b source: command line
+Option left: name:--save-fields value: out/medium_p2_fields.npz source: command line
+Option left: name:--T value: 200 source: command line
+Option left: name:-dt value: 0.01 source: code
+Option left: name:-mesh value: medium source: code
+Option left: name:-order value: 2 source: code
+Option left: name:-out value: out/medium_p2b source: code
+Option left: name:-save-fields value: out/medium_p2_fields.npz source: code
+Option left: name:-T value: 200 source: code
