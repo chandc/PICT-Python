@@ -2059,3 +2059,81 @@ control period ~1/10 of the shedding period), and ~10x the training budget. Thos
 knobs (`--obs-type velocity_probes`, `--num-substeps 50`, longer run) if the ZNMF comparison is
 pursued. Meanwhile the contrast is the point: the shipped jets reach 30% by trivial mass removal
 in two episodes; the physically constrained jets reach nothing in the same budget.
+
+## 45. NACA0012 at Re = 100, alpha = 20 deg: the grid (2026-09-23)
+
+Target chosen from HydroGym's airfoil family (all on their m-AIA lattice-Boltzmann backend, which
+is closed source and amd64-only, so we build the case in our own solver). Their
+`NACA0012Gust_2D_Re100_AOA20/environment_config.yaml` records the **unperturbed means C_D = 0.577,
+C_L = 0.783** (Ma 0.1, U_inf 0.0577 lattice units, chord 8 cells at level 0, bounding box
+[-64,-48]x[192,48] i.e. 32c x 12c with the airfoil 8c from the inlet, local refinement to
+level 12 within 0.5c of the body, sponge at the far boundary). That is the reference number for
+this case; whether their flow sheds is not recorded.
+
+Grid, `meshes/gen_naca_cgrid.py` -> `meshes/naca0012_a20.msh`, `figures/naca0012_a20_grid.png`:
+structured C-grid, all quads (bipartite, no checkerboard), chord 1, LE at the origin, airfoil
+rotated 20 deg nose-up, free stream along +x. Domain: front arc R = 8 about the TE x, straight
+top/bottom at y = +-8 to the outlet at x = 24 (32c x 16c). 121 surface points clustered at the
+nose only (1 - cos), TE spacing 0.026 matched to the wake cut's first spacing 0.02; cut leaves the
+TE along the chord and relaxes to horizontal over one chord (no kink); 121 cut points, stretch
+1.030, spacing 0.21 at the outlet; 71 layers, first cell 0.005 on the airfoil (per-line geometric
+ratio 1.006-1.071), first spacing on the cut 0.3x the local cut spacing (aspect ~3 instead of 400).
+Far-boundary points uniform in arc length. Construction: transfinite interpolation, then 6000
+Jacobi iterations of the Winslow equations with control functions taken from the algebraic grid
+(TTM/Sorenson), which keeps the wall clustering and removes the fanning. Two rejected routes are
+in the file's comments: plain TFI gave 10-deg cells at the nose; marching along normals folded at
+the 172-deg wedges the cut makes at the sharp TE (244 and 1819 inverted cells).
+
+Result: 25200 quads, 25510 nodes, 120 wall faces, 0 inverted cells, min angle 28 deg (p1 29),
+aspect max 11 (at the nose), neighbour-volume ratio p99 1.33 / max 8.1, wall cells 0.001-0.013.
+Boundary tags: Inlet (arc + top + bottom, Dirichlet u = 1, v = 0), Outlet (x = 24, p = 0),
+Airfoil (no-slip). Driver `run_uairfoil.py` (cylinder driver with the tag map and no symmetry
+planes). Not yet run.
+
+**Grid revisions before the first run.** (i) Trailing edge: nose-only clustering left 0.026 cells at
+the TE beside 0.005 wall layers and the smoother opened a sparse fan behind the tip -> two-sided
+arc-length distribution per side (nose 8e-4 growing at 1.051 over the front 65% of the arc, TE
+0.008 growing at 1.078 over the rear 35%, spacings meeting at 0.033; 97 points per side, 193 in
+all; cut first spacing 0.012). (ii) Far field: uniformly spaced far points against the geometric
+wake cut sheared the far-field cells to 22 degrees around x = 11-15, |y| = 3-4, and the first flow
+probe (dt = 0.005) blew up exactly there -- pressure to 47 at t = 0.45, then velocity to 3 at
+(12.3, -3.4) -- with the near-body region still clean. Sliding far points during the smoothing did
+not cure it (the control functions carried the TFI shear). Fix: far points directly above/below the
+cut points (vertical eta-lines over the wake) and a geometric distribution around the front arc
+starting from the junction spacing (0.012 growing at 1.040 to 0.49 at the front). Cost: a visible
+band of fine lines over the TE spanning the domain height and aspect 46 in the far field there.
+
+Final grid: 33040 quads, 192 wall faces, min angle 48.3 deg, aspect p99 25 / max 46 (far field
+above the TE), neighbour-volume ratio max 1.71, wall cells 0.0005-0.012. Probe at dt = 0.005:
+stable through 600 steps, C_D 1.37 -> 0.635 and C_L 1.56 -> 1.005 by t = 3 and still falling
+toward HydroGym's 0.577 / 0.783; 300 ms/step. Production run: T = 100, dt = 0.005 (CFL ~9 on the
+0.0008 nose spacing, implicit), impulsive start, ~100 min; `results/naca/naca0012_a20_re100.npz`.
+
+**Result (T = 100, dt = 0.005, 274 ms/step, 91 min).** The flow is steady: C_L rms 1e-8 over
+t = 60-100, dC_D/dt 3e-12 at the end, drag within 1e-4 of its final value by t = 17 after the
+impulsive start (`figures/naca0012_a20_result.png`, fields `figures/naca0012_a20_field_t10.png`
+and `_t100.png`).
+
+| | ours (FV, C-grid 33k quads) | HydroGym (m-AIA LBM, config) | diff |
+|---|---|---|---|
+| C_D | **0.5703** | 0.577 | -1.2% |
+| C_L | **0.7729** | 0.783 | -1.3% |
+| L/D | 1.355 | 1.357 | -0.1% |
+| pressure / viscous drag | 0.318 / 0.252 | not given | |
+| C_p min | -1.615 at x/c 0.014 | | |
+| suction-side C_f sign changes | x/c 0.333 (separation), 0.923 | | |
+
+Flow: attached over the front third of the suction side, separation at x/c = 0.33, one large
+recirculation bubble to half a chord behind the TE with two weak counter-rotating cells inside and
+a small secondary reversal at x/c 0.92-1; C_p plateau -0.9 to -0.4 over the bubble (hence pressure
+drag 56% of the total); stagnation just under the nose, peak speed 1.23. No shedding: the
+height-based Reynolds number is 34. The two shear layers leave smoothly and decay; the free stream
+is clean at the +-2 level (all-quad grid, no speckle). The starting vortices of the impulsive
+start are at x = 8-10 at t = 10 and gone by t = 100.
+
+Reading: both coefficients 1.2-1.3% below HydroGym's, L/D identical. Their number carries their
+own discretisation (LBM at Ma 0.1 with an immersed STL boundary, 32c x 12c, sponge far field) and
+ours the far-field Dirichlet at 8 chords (circulation-induced velocity there ~0.8% of U_inf, which
+lowers the lift at about that level) -- the gap is of the size the two far-field treatments alone
+would produce. A far-field sensitivity (`--R 16`) and a refinement (`--d0 0.0025 --ns 289 --neta 101`)
+are the two checks to close it; neither has been run.
