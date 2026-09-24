@@ -2168,3 +2168,143 @@ x/c 0.05 and 0.60 in the final snapshot (instantaneous). Both coefficients again
 HydroGym's, the same offset and sign as the 20-deg case, consistent with the far-field difference
 noted in section 45. Contrast with 20 deg: drag 1.87x, lift 1.31x, steady -> periodic, exactly the
 transition the alpha_1 ~ Re^-0.65 scaling puts near 33 deg at Re = 100.
+
+## 47. Periodic faces, T6 Poiseuille, T8 Orr-Sommerfeld (2026-09-23)
+
+**Periodic seams** (`Mesh.make_periodic(tag_a, tag_b, shift)`): the a-faces and b-faces are paired
+by centre (`fcentre_a + shift = fcentre_b`), each pair becomes one interior face owned by a's cell
+with b's owner as neighbour, and the b-face is deleted. The cell-to-cell vector of the merged face is
+`centroid_b - shift - centroid_a` -- b's owner mapped back beside a -- so `dcc` points forward
+across the seam (first attempt had the sign reversed: dcc +1.75 and orth = -1 on a unit domain;
+now -0.25, wf 0.5, orth 1, audit clean). Two operators read `centroid[neigh]` directly and were
+changed to `centroid[owner] + dcc` (convection skewness point in `uops.laplacian`/`convection`,
+`GGSkewGradient`); the LSQ gradient already used `dcc`. Check: LSQ gradient of sin(2 pi x) y^2 on a
+16x16 periodic quad mesh has the same max error on seam cells as in the interior (0.112 both).
+
+**T6 plane Poiseuille** (`test_upoiseuille.py`: 4 x ny quads, walls Dirichlet, periodic x, body
+force, nu = 0.1, dt = 0.5, marched to |du| < 1e-11 in ~42 steps):
+
+| ny | A: parabola L2 error | B: sin(pi y) L2 error | rate |
+|---|---|---|---|
+| 8 | 1.56e-2 | 9.16e-3 | |
+| 16 | 3.91e-3 | 2.28e-3 | 2.01 |
+| 32 | 9.77e-4 | 5.68e-4 | 2.00 |
+| 64 | | 1.42e-4 | 2.00 |
+
+Second order at the walls on both cases, |v| at round-off. The parabola is not reproduced exactly:
+the cell-centred half-cell wall flux leaves a uniform offset G h^2/(8 nu) (u_max = 1.000000 at every
+ny against the centroid-exact 0.984/0.996/0.999), which is second order, not the "exact by
+construction" of the node-based structured scheme -- the expected difference between cell-centred
+and vertex-centred wall treatments. PASS.
+
+**T8 Orr-Sommerfeld, Re = 7500, alpha = 1** (`test_uorr_sommerfeld.py`: 48 x ny quads on
+[0, 2 pi] x [-1, 1], periodic x, no-slip walls, f_x = 2 nu, least-stable eigenmode seeded at 1e-4,
+BDF2, central convection, growth and phase from the first streamwise Fourier mode fitted over
+t = 30-100; reference growth 0.00223497, phase 0.24989154):
+
+| grid | cells | dt | growth | error | phase speed | error | time |
+|---|---|---|---|---|---|---|---|
+| 48 x 100 | 4800 | 0.05 | 0.001865 | -16.6% | 0.24445 | -2.18% | 1.1 min |
+| 48 x 200 | 9600 | 0.05 | 0.002214 | -0.9% | 0.24572 | -1.67% | 2.0 min |
+| 48 x 400 | 19200 | 0.05 | 0.002266 | +1.4% | 0.24603 | -1.55% | 4.0 min |
+| structured code, 48 x 401 | | 0.05 | 0.002209 | -1.2% | 0.24614 | -1.50% | 80 min |
+
+The disturbance GROWS on every grid -- the correct sign of stability, which is the substantive
+result; a first-order scheme's damping would flip it. The growth error changes sign between
+ny = 200 and 400 (order 4.1 then -0.55), the fingerprint of two errors of opposite sign: spatial
+over-damping that vanishes with refinement and a temporal error that does not. The phase speed
+is flat at -1.6% across the grids, exactly as in the structured code at the same dt, i.e.
+temporal-limited. The unstructured code reaches the structured code's 48 x 401 accuracy in 4
+minutes instead of 80 (sparse direct solves against the structured code's iterative ones).
+
+Time-step check at 48 x 400, dt = 0.025 (7.8 min): growth 0.002256 (+0.9%), phase 0.24739
+(-1.00%). Both move toward the reference with dt alone, so the residuals at dt = 0.05 are mostly
+temporal. Splitting each error into a dt-independent part and a part scaling as dt^2 from the two
+runs: growth = +0.7% (spatial, at ny = 400) + 0.7% (temporal at dt 0.05); phase = -0.8% (spatial)
+- 0.7% (temporal at dt 0.05). The structured code's 48 x 401 / dt 0.025 gave 12.5% / 0.94% at
+ny = 201 and was never run at 401 with the smaller step. T8: PASS -- growth of the correct sign
+on every grid, within 1% of Streett's rate at 48 x 400 / dt 0.025, phase within 1%.
+
+**Orders, one variable at a time** (`figures/t8_os_growth.png`, `plot_utility/plot_t8_growth.py`;
+all fits on t = 30-100 from the energy |a|^2 of the seeded mode):
+
+| grid | dt | sigma | err | phase c | err |
+|---|---|---|---|---|---|
+| 48x100 | 0.0125 | 0.001838 | -17.8% | 0.24648 | -1.36% |
+| 48x200 | 0.0125 | 0.002193 | -1.9% | 0.24776 | -0.85% |
+| 48x400 | 0.0125 | 0.002245 | +0.5% | 0.24807 | -0.73% |
+| 48x400 | 0.025 | 0.002256 | +0.9% | 0.24739 | -1.00% |
+| 48x400 | 0.05 | 0.002266 | +1.4% | 0.24603 | -1.55% |
+| 48x400 | 0.1 | 0.002241 | +0.3% | 0.24331 | -2.64% |
+
+Spatial (dt = 0.0125, temporal error ~1/16 of its dt = 0.05 size): growth-rate error vs Streett
+3.24 then 2.05 per halving; Richardson on the raw values 2.77 (sigma) and 2.02 (phase). SECOND
+ORDER IN SPACE for both. Temporal (48x400, four dt): the phase-speed error halves per dt halving,
+-2.64 / -1.55 / -1.00 / -0.73%, Richardson order 1.00 on both triplets -- FIRST ORDER IN TIME with
+convection present, against 2.3-2.7 on the unsteady Stokes gate (T4) where there is no convection.
+The growth rate is within +-1% at 48x400 for every dt and non-monotone in dt (0.1 gives +0.3%,
+0.05 gives +1.4%): its temporal error is below the level at which an order can be read.
+Hypothesis for the first-order phase: `_momentum` assembles the convection matrix with `self.Ff`,
+the mass flux of the PREVIOUS time step -- a first-order-in-time linearisation of the convecting
+velocity that Stokes never exercises. Test: extrapolate the flux to n+1 (2 F^n - F^{n-1}).
+
+**Hypothesis confirmed, fix adopted.** `PISO.conv_flux_extrap`: the convection matrix is
+assembled with 2 F^n - F^{n-1} instead of F^n. On 48x200:
+
+| dt | lagged flux F^n: growth / phase | extrapolated 2F^n - F^{n-1}: growth / phase |
+|---|---|---|
+| 0.05 | -0.9% / -1.67% | -1.9% / -0.60% |
+| 0.025 | -- | -2.5% / -0.58% |
+| 0.0125 | -1.9% / -0.85% | -2.6% / -0.58% |
+
+With the extrapolation both quantities are dt-independent to the third digit: the phase error that
+halved with dt is gone, and what remains (-0.58% phase, -2.6% growth at 48x200) is the spatial
+error at that grid. The lagged flux had been partially cancelling the spatial growth error
+(hence the misleading -0.9% at dt 0.05). The extrapolation is now the DEFAULT; every T9/T10
+number recorded above was produced with the lagged flux and is therefore first-order in time
+(at their dt = 0.01 / 0.005 the effect is small; measured on the butterfly cylinder below).
+
+**Effect on the cylinder** (butterfly 6992 quads, dt = 0.01, T = 150, wall-flux force, window 90-150):
+
+| convecting flux | St | C_D | C_L amp | C_L rms |
+|---|---|---|---|---|
+| F^n (lagged, all earlier T9 results) | 0.1750 | 1.4866 | 0.3519 | 0.2488 |
+| 2F^n - F^{n-1} (new default) | 0.1755 | 1.4801 | 0.3331 | 0.2357 |
+| HydroGym P2-P1 BDF3, same dt | 0.1791 | 1.4862 | 0.3582 | 0.2532 |
+
+The second-order flux moves St by +0.3%, C_D by -0.4% and the lift amplitude by -5.3%, so the
+first-order lag had been flattering the lift comparison (-1.8% -> -7.0% vs HydroGym) and the
+drag agreement (+0.03% -> -0.4%). Which is the time-converged answer is being settled by the
+same pair at dt = 0.005 (below).
+
+**Streamwise resolution.** The phase-speed residual that survived dt and wall-normal refinement
+(-0.47% at 48x400) is the streamwise dispersion of second-order central differencing at 48 cells
+per wavelength, (kh)^2/6 = 0.29%: doubling nx gives phase -0.60% -> -0.29% at ny = 200 and
+-0.47% -> -0.16% at ny = 400 (growth unchanged, -2.1% / +0.3%: the growth rate is wall-normal
+limited). 96x400 at dt 0.05: growth +0.3%, phase -0.16%.
+
+**T8 summary.** Second order in space in both directions (wall-normal: sigma error 3.25 / 1.84
+per halving, Richardson 2.74 sigma / 2.03 phase; streamwise: the dispersion residual falls 3.7x
+per doubling), second order in time once the convecting flux is extrapolated (dt-independent to
+the third digit), and the three error sources are separated and each quantified. Best point
+96x400, dt 0.05: growth within 0.3% and phase within 0.16% of Streett's eigenvalue. The
+convecting-flux fix is the one solver change to come out of T8; the record's earlier T9/T10 numbers
+carry the first-order lag (quantified on the cylinder above).
+
+**dt = 0.005 pair, butterfly 6992 quads** (T = 150, window 90-150):
+
+| convecting flux | dt | St | C_D | C_L amp |
+|---|---|---|---|---|
+| 2F^n - F^{n-1} | 0.01 | 0.1755 | 1.4801 | 0.3331 |
+| 2F^n - F^{n-1} | 0.005 | 0.1755 | 1.4793 | 0.3328 |
+| F^n (lagged) | 0.01 | 0.1750 | 1.4866 | 0.3519 |
+| F^n (lagged) | 0.005 | 0.1753 | 1.4826 | 0.3422 |
+| HydroGym P2-P1 BDF3 | 0.01 | 0.1791 | 1.4862 | 0.3582 |
+
+The extrapolated flux is time-converged at dt = 0.01 (all three quantities move < 0.1% on halving
+dt); the lagged flux converges toward it at exactly first order (lift-amplitude gap 0.019 -> 0.0094).
+So the TIME-CONVERGED butterfly answer at this grid is St 0.1755 (-2.0% vs HydroGym), C_D 1.479
+(-0.45%), C_L amplitude 0.333 (-7.1%). The earlier -1.8% lift agreement was the first-order lag
+cancelling a spatial deficit. Both remaining deficits point at near-body resolution on the 6992-cell
+butterfly (wall cell 0.024): the fine butterfly (27968 quads) shedding run and a rerun of
+HydroGym's triangle mesh with the new default are the next two runs; neither done here.

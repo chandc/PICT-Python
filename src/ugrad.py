@@ -255,7 +255,7 @@ class GGSkewGradient:
         invV = 1.0 / mesh.vol
         G = Gradient(mesh, weight)
         # skewness vector per interior face: face centroid minus centroid-line crossing
-        d = mesh.centroid[n[i]] - mesh.centroid[o[i]]
+        d = mesh.dcc[i]                                                      # = centroid[n]-centroid[o], periodic-safe
         lam = ((mesh.fcentre[i] - mesh.centroid[o[i]]) * S[i]).sum(axis=1) / np.maximum((d * S[i]).sum(axis=1), 1e-300)
         # DUAL weights (1-w) p_O + w p_N are exact for a linear field at C_O + (1-lam) d -- the
         # MIRROR of the ordinary crossing point C_O + lam d about the centroid-line midpoint. The

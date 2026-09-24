@@ -281,8 +281,9 @@ def convection(mesh, flux_f, bkind, scheme="upwind"):
         # an exact 1.82, and present at perturb=0 too, so it is not a skewed-mesh effect that
         # a nice mesh hides. Correcting by grad_f . (x_face - x_interp) restores exactness.
         if grad_phi is not None:
-            xin = (w[:, None] * mesh.centroid[o[i]]
-                   + (1.0 - w)[:, None] * mesh.centroid[n[i]])
+            # neighbour centroid as owner + dcc, so a periodic seam (dcc carries the period
+            # shift) is handled; identical to centroid[n] on an ordinary face
+            xin = mesh.centroid[o[i]] + (1.0 - w)[:, None] * mesh.dcc[i]
             gf = w[:, None] * grad_phi[o[i]] + (1.0 - w)[:, None] * grad_phi[n[i]]
             ce = ce + (gf * (mesh.fcentre[i] - xin)).sum(axis=1)
         # owner gets +F*phi_f and the matrix already supplied +F*upwind, so the balance is

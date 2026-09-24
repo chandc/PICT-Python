@@ -269,6 +269,54 @@ class Mesh:
                 miss += 1
         self.unmatched_boundary = miss
 
+    def make_periodic(self, tag_a, tag_b, shift, rtol=1e-6):
+        """Turn two boundary groups into one periodic seam.
+
+        Every face tagged `tag_a` is paired with the face tagged `tag_b` whose centre is
+        `fcentre_a + shift`; the pair becomes ONE interior face (the a-face survives with a's owner,
+        its neighbour is b's owner, the b-face is deleted). The cell-to-cell vector of the merged
+        face is `centroid[owner_b] - shift - centroid[owner_a]` (b's owner mapped back next to a), i.e. the period shift is carried
+        in `dcc` so the vector points forward across the seam instead of jumping back across the
+        domain -- the structured code's own scar ("ghost coordinates jump backwards across the
+        seam, collapsing the Jacobian"). Everything downstream that reads geometry through `dcc`,
+        `wf`, `Ef`/`Tf`, `normal` is then periodic for free; the two places that read
+        `centroid[neigh]` directly were changed to `centroid[owner] + dcc`.
+        Call once, after construction and before any operator is built."""
+        shift = np.asarray(shift, dtype=float)
+        fa = self.faces_with_tag(tag_a); fb = self.faces_with_tag(tag_b)
+        if len(fa) == 0 or len(fa) != len(fb):
+            raise ValueError(f"periodic pairing needs equal face counts: {len(fa)} vs {len(fb)}")
+        from scipy.spatial import cKDTree
+        dist, j = cKDTree(self.fcentre[fb]).query(self.fcentre[fa] + shift)
+        scale = float(np.hypot(*shift)) if np.hypot(*shift) > 0 else 1.0
+        if dist.max() > rtol * scale or len(np.unique(j)) != len(j):
+            raise ValueError(f"periodic faces do not match: max offset {dist.max():.3e}, unique partners {len(np.unique(j))}/{len(j)}")
+        partner = fb[j]
+        self.neigh[fa] = self.owner[partner]
+        # the neighbour across an a-face is the periodic IMAGE of b's owner, which sits at centroid_b - shift
+        self.dcc[fa] = self.centroid[self.owner[partner]] - shift - self.centroid[self.owner[fa]]
+        self.btag[fa] = 0
+        keep = np.ones(self.nface, dtype=bool); keep[partner] = False
+        for name in ("owner", "neigh", "face_nodes", "length", "normal", "sf", "fcentre", "dcc", "btag"):
+            setattr(self, name, getattr(self, name)[keep])
+        self.nface = len(self.owner)
+        self.interior = self.neigh >= 0
+        self.boundary = ~self.interior
+        self.dmag = np.hypot(self.dcc[:, 0], self.dcc[:, 1])
+        # normal-projected owner weights, with the neighbour centroid taken as owner + dcc
+        w = np.ones(self.nface); i = self.interior; sf = self.normal[i]
+        xo = self.centroid[self.owner[i]]; xn = xo + self.dcc[i]
+        so = np.abs((sf * (self.fcentre[i] - xo)).sum(axis=1)); sn = np.abs((sf * (xn - self.fcentre[i])).sum(axis=1))
+        den = so + sn; w[i] = np.where(den < 1e-300, 0.5, sn / np.maximum(den, 1e-300))
+        self.wf = w
+        self._decompose()
+        self.bfaces = np.flatnonzero(self.boundary)
+        self.bface_index = np.full(self.nface, -1, dtype=np.int64)
+        self.bface_index[self.bfaces] = np.arange(len(self.bfaces))
+        self.nbface = len(self.bfaces)
+        self.periodic = getattr(self, "periodic", []) + [(int(tag_a), int(tag_b), shift.copy(), fa.copy())]
+        return fa
+
     def faces_with_tag(self, tag):
         return np.flatnonzero(self.boundary & (self.btag == tag))
 

@@ -21,6 +21,7 @@ ap.add_argument("--T", type=float, default=150.0); ap.add_argument("--out", defa
 ap.add_argument("--nsteps", type=int, default=None)
 ap.add_argument("--init", default=None, help="npz with centroid,u,v,p to interpolate as the initial state (no perturbation added)")
 ap.add_argument("--rc", type=float, default=1.0, help="Rhie-Chow damping scale (PISO.rc_scale)")
+ap.add_argument("--lagged-flux", action="store_true", help="convect with F^n instead of 2F^n-F^(n-1) (the pre-2026-09-23 first-order-in-time default)")
 ap.add_argument("--steady", action="store_true", help="project out the y-antisymmetric part every step (mirror map about y=0) so the flow converges to the unstable symmetric steady state; no perturbation")
 a = ap.parse_args()
 
@@ -37,6 +38,7 @@ nu = 1.0 / a.Re
 s = PISO(m, nu=nu, dt=a.dt, bc_u=BC(m, ku, vu), bc_v=BC(m, kv, vv), bc_p=BC(m, kp, vp),
          n_corr=2, n_nonorth=3, scheme="central", convect=True)
 s.rc_scale = a.rc
+if a.lagged_flux: s.conv_flux_extrap = False
 # impulsive start with a small asymmetric perturbation so shedding does not wait on roundoff
 C = m.centroid
 # The perturbation must be EVEN in y to break the reflection symmetry: the base flow has v odd in y,

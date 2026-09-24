@@ -87,6 +87,16 @@ class PISO:
         self.Ff = np.zeros(mesh.nface)
         self.u_old = self.v_old = None            # BDF2 history
         self.Ff_old = None                        # previous face flux, for time-independent RC
+        # Convecting mass flux for the momentum matrix: 2 F^n - F^{n-1}, the second-order
+        # extrapolation to n+1 (F^n alone on the first step). Using F^n, the flux at the start of
+        # the step, is a first-order-in-time linearisation: T8 (Orr-Sommerfeld, section 47 of the
+        # skew record) measured the phase speed converging at order 1.00 in dt with it, against
+        # 2.3-2.7 on the convection-free T4; with the extrapolation the phase-speed error is
+        # dt-independent (-0.60/-0.58/-0.58% at dt 0.05/0.025/0.0125 on 48x200). Every T9/T10
+        # result recorded before 2026-09-23 was run with the lagged flux.
+        self.conv_flux_extrap = True
+        self.Ff_prev = None                       # F^{n-1}
+        self._Fconv = None
         self.Fbar_old = None                      # and its plain-interpolation counterpart
         self.ubar_old = None
         self.time, self.nstep = 0.0, 0
@@ -150,7 +160,7 @@ class PISO:
         """
         m = self.m
         if self.convect:
-            C, C_rhs = convection(m, self.Ff, bc.kind, scheme=self.scheme)
+            C, C_rhs = convection(m, self._Fconv if self._Fconv is not None else self.Ff, bc.kind, scheme=self.scheme)
         else:
             C = sp.csr_matrix((m.ncell, m.ncell))
             C_rhs = lambda *a, **k: np.zeros(m.ncell)
@@ -275,6 +285,8 @@ class PISO:
     # -----------------------------------------------------------------------------------------
     def step(self):
         m = self.m
+        Fn = self.Ff
+        self._Fconv = (2.0 * Fn - self.Ff_prev) if (self.conv_flux_extrap and self.Ff_prev is not None) else None
         pb = self.bc_p.effective(self.p)
         G = self.grad if self.grad_p is None else self.grad_p
         gp = G(self.p, pb)
@@ -324,6 +336,7 @@ class PISO:
             pb = self.bc_p.effective(self.p)
             gp = self.grad(self.p, pb)
 
+        self.Ff_prev = Fn                          # F^n becomes F^{n-1} for the next step's extrapolation
         self.u, self.v, self.Ff = u, v, F
         # history advances ONCE per step
         self.Ff_old = F.copy()
