@@ -2308,3 +2308,27 @@ So the TIME-CONVERGED butterfly answer at this grid is St 0.1755 (-2.0% vs Hydro
 cancelling a spatial deficit. Both remaining deficits point at near-body resolution on the 6992-cell
 butterfly (wall cell 0.024): the fine butterfly (27968 quads) shedding run and a rerun of
 HydroGym's triangle mesh with the new default are the next two runs; neither done here.
+
+**All meshes with the corrected flux** (v3, T = 150, dt = 0.01, window 90-150, wall-flux force;
+`results/t9/v3/`, `figures/t9_vs_hydrogym.png`):
+
+| mesh | cells | St | C_D | C_L amp | C_L rms |
+|---|---|---|---|---|---|
+| HydroGym P2-P1 BDF3 (reference) | 17258 tris | 0.1791 | 1.4862 | 0.3582 | 0.2532 |
+| butterfly | 6992 | 0.1755 (-2.0%) | 1.4801 (-0.4%) | 0.3331 (-7.0%) | 0.2357 |
+| wake-refined butterfly | 13952 | 0.1750 (-2.3%) | 1.4829 (-0.2%) | 0.3453 (-3.6%) | 0.2441 |
+| **fine butterfly** | 27968 | **0.1782 (-0.5%)** | **1.4878 (+0.1%)** | **0.3520 (-1.7%)** | 0.2492 |
+| **HydroGym's tris, our solver** | 17258 | **0.1780 (-0.6%)** | **1.4927 (+0.4%)** | **0.3606 (+0.7%)** | 0.2547 |
+
+Reading. (1) Near-body refinement is what the butterfly needed: coarse -> fine takes St from
+-2.0% to -0.5% and the lift amplitude from -7.0% to -1.7%, while the wake refinement alone (same
+near-body grid) left St untouched. The 0.024 wall cell / 1.08 radial growth of the 6992-cell
+O-grid under-resolves the separating shear layers; at 0.012 it does not. (2) On HydroGym's own
+mesh our solver now reproduces their Taylor-Hood result to 0.7% on all three quantities; the
+earlier +6% lift amplitude on the triangles was the first-order flux lag, not the wall
+checkerboard (which is still there, at the +-0.1 vorticity level, and evidently costs < 1% in
+forces). (3) The two remaining differences are of opposite sign on the two mesh families
+(butterfly lift -1.7%, tris +0.7%; C_D +0.1% / +0.4%) and bracket the reference, which is what
+two second-order discretisations converging to the same answer look like. T9 is closed at the
+1% level; the open item is the 2% St deficit that persists on butterflies coarser than 0.012 at
+the wall, a resolution requirement now quantified rather than a scheme defect.

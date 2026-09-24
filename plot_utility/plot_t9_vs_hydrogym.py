@@ -10,13 +10,14 @@ runs = []
 for f in sorted(glob.glob("results/hydrogym_cmp/*_forces.dat")):
     d = np.loadtxt(f); runs.append((f"HydroGym {f.split('/')[-1].replace('_forces.dat','')}", d[:, 0], d[:, 1], d[:, 2]))
 ours = [("results/t9/hydrogym_tri_re100.npz", "ours v1 (cell-grad shear), tris"), ("results/t9/butterfly_re100.npz", "ours v1, butterfly")]
-ours += [(f, "ours v2 (wall-flux shear), " + f.split("/")[-1].replace("_re100.npz", "")) for f in sorted(glob.glob("results/t9/v2/*_re100.npz"))]
+ours += [(f, "ours v2 (wall-flux shear, lagged F^n), " + f.split("/")[-1].replace("_re100.npz", "")) for f in sorted(glob.glob("results/t9/v2/*_re100.npz"))]
+ours += [(f, "ours v3 (2F^n-F^(n-1) flux), " + f.split("/")[-1].replace("_re100.npz", "")) for f in sorted(glob.glob("results/t9/v3/*_re100.npz"))]
 for f, nm in ours:
     h = np.load(f)["hist"]; runs.append((nm, h[:, 0], h[:, 2], h[:, 1]))
 fig, ax = plt.subplots(1, 3, figsize=(20, 5.5)); rows = []
-print(f"{'run':44s} {'St':>7} {'Cd':>7} {'Cl_amp':>7} {'Cl_rms':>7} {'Cd_amp':>7} {'periods':>7}")
+print(f"{'run':60s} {'St':>7} {'Cd':>7} {'Cl_amp':>7} {'Cl_rms':>7} {'Cd_amp':>7} {'periods':>7}")
 for nm, t, cl, cd in runs:
-    s = stats(t, cl, cd); print(f"{nm:44s} {s['St']:7.4f} {s['Cd']:7.4f} {s['Cl_amp']:7.4f} {s['Cl_rms']:7.4f} {s['Cd_amp']:7.4f} {s['n']:7d}")
+    s = stats(t, cl, cd); print(f"{nm:60s} {s['St']:7.4f} {s['Cd']:7.4f} {s['Cl_amp']:7.4f} {s['Cl_rms']:7.4f} {s['Cd_amp']:7.4f} {s['n']:7d}")
     # align on the last upward zero-crossing so the cycles overlay
     t0 = s["tz"][-2]; sel = (t >= t0 - 12) & (t <= t0 + 0.5)
     ax[0].plot(t[sel] - t0, cl[sel], lw=1.3, label=f"{nm}: St {s['St']:.4f}"); ax[1].plot(t[sel] - t0, cd[sel], lw=1.3, label=f"{nm}: Cd {s['Cd']:.4f}")
