@@ -64,6 +64,16 @@ $$ F_f^{\,conv} = 2 F_f^{\,n} - F_f^{\,n-1} \quad\text{(second-order extrapolati
 
 Using the flux at the start of the step, $F_f^{\,n}$, is a first-order-in-time linearisation of the convecting velocity. It is invisible on any convection-free test (the unsteady Stokes gate T4 measured order 2.3-2.7 with it) and was caught only by the Orr-Sommerfeld gate T8, where the phase speed of the unstable mode converged at order 1.00 in $\Delta t$. With the extrapolated flux the T8 results are $\Delta t$-independent to the third digit, and the cylinder's shedding forces stop moving between $\Delta t = 0.01$ and $0.005$ (the lagged version converges to them at first order). `PISO.conv_flux_extrap` (default on) selects this; the Rhie-Chow corrector still uses $F^n$ for its time-step-independent damping term, which is a different role.
 
+### RK3 Fractional Step (`time_scheme = "rk3"`, the LES integrator)
+
+The Le & Moin (1991) three-stage scheme is available alongside BDF2-PISO. Stage $k$ advances $\vec u^k \to \vec u^{k+1}$ over $\Delta t_k = (\alpha_k+\beta_k)\Delta t$:
+
+$$ \frac{V}{\Delta t}\vec u^* - \beta_k L\vec u^* = \frac{V}{\Delta t}\vec u^k - \gamma_k N(\vec u^k) - \zeta_k N(\vec u^{k-1}) + \alpha_k L\vec u^k + (\alpha_k+\beta_k)V(\vec f - \nabla p^k) $$
+
+with $\gamma = (8/15, 5/12, 3/4)$, $\zeta = (0, -17/60, -5/12)$, $\alpha = \beta = (4/15, 1/15, 1/6)$. $N(\vec u^k)$ is the central convection assembled on the stage's own divergence-free flux $F^k$ and applied to $\vec u^k$ explicitly, so there is no convecting-flux extrapolation and no linearisation lag; diffusion is Crank-Nicolson. Each stage ends with a Rhie-Chow face flux, one pressure correction with $D = (\alpha_k+\beta_k)V/a_C$, $\vec u^{k+1} = \vec u^* - D\nabla p'$, $F^{k+1} = F^* - F_{p'}$, $p^{k+1} = p^k + p'$. The Rhie-Chow damping inside the stages is the plain $D_f = \Delta t_k V/a_P$ form **without** the time-step-independent transient term: that term cancels the previous damping only when consecutive steps are equal, and with the unequal RK stage steps it left a $\Delta t$-independent dissipation floor (§50 of the record). Measured (§50): convection third order, diffusion second order, energy loss 0.04%/turnover at $\Delta t = 0.005$ on the advected Taylor-Green against 3.9% for BDF2-PISO, Orr-Sommerfeld phase speed $\Delta t$-independent to $4\times10^{-4}$%. The stage convection is explicit, so the CFL limit is about $\sqrt3$ on the stage.
+
+**Initial flux.** `PISO.init_flux()` builds $F_f$ from the initial cell velocity on the first step when $F_f$ is identically zero and the velocity is not (a run from rest is unaffected). Before this every run began with $F_f = 0$, i.e. a first step that convected nothing: a one-off $O(\Delta t)$ error that capped every temporal-order test on a non-trivial initial field at first order, for BDF2 and RK3 alike.
+
 > [!NOTE]
 > The lift-amplitude change on the cylinder at $\Delta t = 0.01$ was 5%, not the fraction of a percent one might guess from $\omega \Delta t \approx 0.01$: the relevant time scale for the linearisation error is the near-wall convective one, $h/u \sim 0.024$, i.e. a local CFL of about 0.4.
 
@@ -141,6 +151,34 @@ Where $S_0(x)$ is a smoothed step function that activates only during backflow:
 $$ S_0(x) = \frac{1}{2} \left( 1 - \tanh\left(\frac{x}{U_0}\right) \right) $$
 
 - **When fluid enters ($\vec{u} \cdot \hat{n} < 0$)**: $S_0 \approx 1$, applying a heavy artificial dynamic pressure penalty that suppresses the incoming kinetic energy and forces the vortex to cleanly leave the domain without destabilizing the global solve.
+
+---
+
+## 6b. The 2.5D Extension: Fourier Span (`src/upiso25.py`)
+
+For flows with one homogeneous periodic direction the third dimension is spectral: `PISO25` keeps every cell field as an $(N_{cell}, n_z)$ array over planes $z_j = j L_z/n_z$ and every face field as $(N_{face}, n_z)$. Spanwise derivatives are exact, $\widehat{\partial_z \phi}_k = i k_z \hat\phi_k$ with $k_z = 2\pi k/L_z$, $k = 0..n_z/2$ (Nyquist held at zero), and the plane keeps the whole collocated scheme above. Mode 0 is the 2D solver to round-off (§51 of the record).
+
+**Nonlinear term, dealiased.** $N_i = \sum_f F_f\,\phi_{i,f} + V\,\partial_z(w\,\phi_i)$ is evaluated in physical space on $M = 3n_z/2$ planes (fields padded spectrally), with the central-plus-skewness face value in the plane and the spectral derivative in $z$, then truncated to $n_z/2+1$ modes: the 3/2 rule. No upwind matrix is needed because the term is explicit (RK3).
+
+**Per-mode implicit solves.** For each stage, component and mode,
+$$ \Big(\tfrac{V}{\Delta t} - \beta_k (L_{2D} - \nu k_z^2 V)\Big)\hat\phi^* = \widehat{\text{rhs}}, $$
+a real matrix factorised once per (stage, mode) and applied to the complex right-hand side as two real columns. The deferred cross-diffusion of $\phi^*$ is iterated `n_inner` times as in 2D.
+
+**Rhie–Chow per mode.** $\hat F^*_f = \bar{\hat u}_f\cdot S_f - D_f(k)\,\big[(\nabla \hat p)_{compact} - (\nabla\hat p)_{wide}\big]\cdot S_f$ with $D(k) = \Delta t_k V/a_P(k)$, all modes at once as $(N_{face}, n_k)$ complex arrays; boundary Dirichlet values live in mode 0 only. No transient term (§50).
+
+**Pressure per mode.** Continuity $\nabla_{2D}\cdot F + V\,\partial_z w = 0$ gives, per mode,
+$$ \big[\,\mathrm{Lap}(\gamma_k) - k_z^2 D_k V\,\big]\hat p' = V\,\nabla\!\cdot\hat F^* + i k_z V \hat w^*, $$
+a real Helmholtz operator per (stage, mode); mode 0 with all-Neumann pressure is pinned at one cell with the mean removed. Then $\hat u = \hat u^* - D\nabla\hat p'$, $\hat w = \hat w^* - D\, i k_z \hat p'$, $\hat F = \hat F^* - \hat F_{p'}$, $p \mathrel{+}= p'$.
+
+**Cost.** $3 \times n_k \times 4$ factorisations per run (stages × modes × (u, v, w, p)), cached. 64² × 64 modes: 0.73 s/step of which 40% is the mode solves.
+
+### Eddy viscosity (`src/usgs.py`, LES plan L3)
+
+The velocity-gradient tensor is the LSQ cell gradient in the plane and spectral in $z$; $\Delta = (V\,\delta z)^{1/3}$; Smagorinsky ($C_s = 0.17$, optional van Driest) and WALE ($C_w = 0.55$) as in the structured code. The term $\nabla\cdot\big(\nu_t(\nabla u + \nabla u^T)\big)$ is **explicit**, evaluated with the convection on the padded planes (it is a product) and carried by the RK3 $\gamma/\zeta$ weights; molecular viscosity stays Crank–Nicolson implicit. In-plane faces use the Laplacian's split $\nu_f\,[\,|E_f|/d\,(\phi_N - \phi_P) + T_f\cdot\nabla_f\phi\,]$ plus the transpose $\nu_f\,(\partial u_j/\partial x_i)_f S_j$; spanwise $V\,\partial_z[\nu_t(\partial_z u_i + \partial_i w)]$. Measured second order against a manufactured variable-$\nu$ divergence (§52).
+
+### Forcing, statistics, restart (L5)
+
+`set_mass_flow(U_b)` adjusts a uniform body force by $(U_b - \bar U)/\Delta t$ after each step; `Stats` bins cells by a centroid coordinate and accumulates volume-weighted moments over cells, planes and samples; `save/load` restarts are bitwise lossless because RK3 carries no history (§53).
 
 ---
 

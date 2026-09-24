@@ -95,7 +95,21 @@ class PISO:
         # dt-independent (-0.60/-0.58/-0.58% at dt 0.05/0.025/0.0125 on 48x200). Every T9/T10
         # result recorded before 2026-09-23 was run with the lagged flux.
         self.conv_flux_extrap = True
+        # Outer (PIMPLE-style) iterations per time step: 1 = classic PISO. Each further pass
+        # re-linearises convection about the corrected flux and re-solves momentum with the
+        # corrected pressure, the time level held fixed; drives the splitting error to zero.
+        self.n_outer = 1
+        self.outer_change = []
+        # Time scheme: "bdf2" (PISO/PIMPLE, the default) or "rk3" -- Le & Moin's three-stage
+        # low-storage Runge-Kutta with explicit convection, Crank-Nicolson diffusion and a
+        # pressure projection at every stage (LES plan L1a).
+        self.time_scheme = "bdf2"
+        self._rk_caches = {}
+        self._rk_lap = {}
+        self._N_prev = None
+        self._rk_dt_prev = None
         self.Ff_prev = None                       # F^{n-1}
+        self._flux_init = False                   # Ff built from (u, v) on the first step, see init_flux()
         self._Fconv = None
         self.Fbar_old = None                      # and its plain-interpolation counterpart
         self.ubar_old = None
@@ -134,7 +148,7 @@ class PISO:
         self.grad_p = GGDualGradient(mesh)   # set to None to fall back to self.grad
 
     # -----------------------------------------------------------------------------------------
-    def _momentum(self, comp, phi, phi_old, bc, gp_comp):
+    def _momentum(self, comp, phi, phi_old, bc, gp_comp, phi_guess=None):
         """Assemble and solve one momentum component. Returns (phi_star, a_P, a_C).
 
         `a_C` IS THE SIMPLEC COEFFICIENT, and it is not a refinement -- without it this solver
@@ -174,12 +188,15 @@ class PISO:
             a_t, rhs_t = 1.0 / self.dt, phi / self.dt
 
         A = sp.diags(a_t * m.vol) + C - L
-        pb = bc.effective(phi)
-        gphi = self.grad(phi, pb)
+        # phi is the TIME LEVEL (transient rhs); phi_guess is the latest iterate for the lagged
+        # deferred terms and the initial guess -- they differ only inside outer iterations
+        g0 = phi if phi_guess is None else phi_guess
+        pb = bc.effective(g0)
+        gphi = self.grad(g0, pb)
         b = (rhs_t + (self.fx if comp == 0 else self.fy) - gp_comp) * m.vol
-        b = b - C_rhs(phi, pb, gphi) + L_rhs(gphi, pb)
+        b = b - C_rhs(g0, pb, gphi) + L_rhs(gphi, pb)
         Ac = A.tocsr()
-        x = self._mcache.solve(Ac, b, x0=phi, symmetric=False, rtol=1e-10)
+        x = self._mcache.solve(Ac, b, x0=g0, symmetric=False, rtol=1e-10)
         f_comp = self.fx if comp == 0 else self.fy
         for _ in range(self.n_inner - 1):
             pb = bc.effective(x)
@@ -191,6 +208,91 @@ class PISO:
         # response a row-sum-zero spatial operator can never push below.
         aC = np.maximum(np.asarray(Ac.sum(axis=1)).ravel(), a_t * m.vol)
         return x, aP, aC
+
+    # -----------------------------------------------------------------------------------------
+    RK3_GAMMA = (8.0 / 15.0, 5.0 / 12.0, 3.0 / 4.0)
+    RK3_ZETA = (0.0, -17.0 / 60.0, -5.0 / 12.0)
+    RK3_ALPHA = (4.0 / 15.0, 1.0 / 15.0, 1.0 / 6.0)      # alpha = beta: Crank-Nicolson diffusion per stage
+
+    def step_rk3(self):
+        """Le & Moin (1991) RK3 / Crank-Nicolson fractional step, projection at every stage.
+
+        Stage k advances u^k -> u^{k+1} over dt_k = (alpha_k + beta_k) dt:
+            (V/dt) u* - beta_k L u*  =  V u^k/dt - gamma_k N(u^k) - zeta_k N(u^{k-1})
+                                        + alpha_k L u^k + (alpha_k+beta_k) V (f - grad p^k)
+        with N(u) = C(F^k) u the volume-integrated central convection on the stage's divergence-free
+        flux F^k (explicit, so no linearisation lag -- the splitting error G0 measured in PISO is
+        gone by construction), then Rhie-Chow face flux, a pressure correction pp on
+        div((V/a_C) grad pp) = div F*, and u^{k+1} = u* - (V/a_C) grad pp, F^{k+1} = F* - F_pp,
+        p^{k+1} = p^k + pp (Dcell carries dt_k, so pp is a pressure). Convection is third order in dt, diffusion and
+        pressure second order. The three momentum matrices (one per beta_k) and the three
+        pressure operators are factorised once and cached.
+        """
+        m = self.m; dt = self.dt
+        u, v, F, p = self.u, self.v, self.Ff, self.p
+        N_prev = None
+        dt_save = self.dt
+        for k in range(3):
+            g, z, al = self.RK3_GAMMA[k], self.RK3_ZETA[k], self.RK3_ALPHA[k]; be = al
+            dtk = (al + be) * dt
+            # convective term on the stage flux (explicit, deferred central on top of upwind)
+            if self.convect:
+                C, C_rhs = convection(m, F, self.bc_u.kind, scheme=self.scheme)
+                def N(phi, bc):
+                    pb = bc.effective(phi); return C @ phi + C_rhs(phi, pb, self.grad(phi, pb))
+            else:
+                def N(phi, bc): return np.zeros(m.ncell)
+            Nk = (N(u, self.bc_u), N(v, self.bc_v))
+            if N_prev is None: N_prev = Nk
+            pb = self.bc_p.effective(p); gp = (self.grad if self.grad_p is None else self.grad_p)(p, pb)
+            a_t = 1.0 / dt
+            if k not in self._rk_caches:
+                self._rk_caches[k] = (SolveCache(backend=self._mcache.backend), SolveCache(backend=self._mcache.backend))
+            out = []
+            for comp, (phi, bc, L, L_rhs, f, Np, Npr) in enumerate(((u, self.bc_u, self.Lu, self.Lu_rhs, self.fx, Nk[0], N_prev[0]),
+                                                                     (v, self.bc_v, self.Lv, self.Lv_rhs, self.fy, Nk[1], N_prev[1]))):
+                pbc = bc.effective(phi); gphi = self.grad(phi, pbc)
+                Ldiff_k = L @ phi + L_rhs(gphi, pbc)                       # full diffusion of u^k
+                A = (sp.diags(a_t * m.vol) - be * L).tocsr()
+                b = a_t * m.vol * phi - g * Np - z * Npr + al * Ldiff_k + (al + be) * m.vol * (f - gp[:, comp])
+                x = phi
+                for _ in range(max(1, self.n_inner)):                       # lagged cross-diffusion of u*
+                    pbs = bc.effective(x); gs = self.grad(x, pbs)
+                    bb = b + be * L_rhs(gs, pbs)
+                    x = self._rk_caches[k][comp].solve(A, bb, x0=x, symmetric=False, rtol=1e-10)
+                out.append((x, np.asarray(A.diagonal()), np.maximum(np.asarray(A.sum(axis=1)).ravel(), a_t * m.vol)))
+            us, aP, aC = out[0][0], out[0][1], out[0][2]; vs = out[1][0]
+            # projection: Rhie-Chow flux with the stage's time step, pressure correction
+            # Plain per-stage Rhie-Chow (D_k = dt_k V/a_C), WITHOUT Choi's dt-independent transient
+            # term: that term cancels the previous damping only when consecutive steps are equal, and
+            # inside a three-stage RK it left a dt-independent 1.2-1.7%/turnover dissipation (with the
+            # current or the previous stage step in its denominator alike), or blew up with the
+            # predictor-based pair. Without it the stage damping is O(dt_k) and the measured loss on
+            # the advected Taylor-Green is 0.13%/turnover at dt 0.005 (64^2), ~dt^1.8, checkerboard
+            # indicator unchanged (record section 50).
+            self.Ff_old = None
+            self.dt = dtk
+            Fs = self._rhie_chow(us, vs, aP / (al + be), aC / (al + be), p, gp)
+            self.dt = dt_save
+            Dcell = (al + be) * m.vol / np.maximum(aC, 1e-300)
+            w = m.wf; i, bnd = m.interior, m.boundary
+            gam = np.empty(m.nface); gam[i] = w[i] * Dcell[m.owner[i]] + (1 - w[i]) * Dcell[m.neigh[i]]; gam[bnd] = Dcell[m.owner[bnd]]
+            if k not in self._rk_lap or not np.array_equal(gam, self._rk_lap[k][0]):
+                Ap, Ap_rhs = laplacian(m, gam, self.bc_p.kind); self._rk_lap[k] = (gam.copy(), Ap, Ap_rhs, SolveCache(backend=self._mcache.backend))
+            _, Ap, Ap_rhs, pc = self._rk_lap[k]
+            src = divergence(m, Fs)
+            pp, _h = solve_poisson(m, self.grad, Ap, Ap_rhs, src, np.zeros(m.nbface) if self.p_singular else self.bc_p.value,
+                                   bkind=self.bc_p.kind, cache=pc, tol=1e-9, max_outer=self.n_nonorth, singular=self.p_singular)
+            gpp = self.grad(pp, BC(m, self.bc_p.kind, np.zeros(m.nbface)).effective(pp))
+            u = us - Dcell * gpp[:, 0]; v = vs - Dcell * gpp[:, 1]
+            F = Fs - self._pressure_flux(gam, pp, gpp)
+            p = p + pp                  # Dcell already carries dt_k, so pp is in pressure units
+            N_prev = Nk
+        self.u_old, self.v_old = self.u.copy(), self.v.copy()
+        self.Ff_prev = self.Ff
+        self.u, self.v, self.Ff, self.p = u, v, F, p
+        self.Ff_old = None                          # the BDF2 path's Choi pair is not maintained under RK3
+        self.time += dt; self.nstep += 1
 
     # -----------------------------------------------------------------------------------------
     def _rhie_chow(self, u, v, aP, aC, p, gp):
@@ -283,59 +385,98 @@ class PISO:
         return F
 
     # -----------------------------------------------------------------------------------------
+    def init_flux(self):
+        """Face flux from the current cell velocity (plain interpolation, boundary values from the BCs).
+
+        Every run used to start with Ff = 0, so the FIRST step convected nothing: a one-off O(dt)
+        error with an O(|u.grad u|) coefficient, invisible in windowed statistics (T8, T9) and in
+        runs from rest, but it capped every temporal-order test on a non-trivial initial field at
+        first order (record section 50: the advected Taylor-Green showed err ~ 1.36 dt for BDF2 and
+        RK3 alike, mesh-independent). Called once, lazily, by step()/step_rk3() when nstep == 0 and
+        Ff is identically zero while (u, v) is not; a run from rest is unchanged. Set Ff yourself
+        (e.g. from a restart file) and it is left alone."""
+        m = self.m; i, b = m.interior, m.boundary; w = m.wf
+        ub = self.bc_u.effective(self.u); vb = self.bc_v.effective(self.v)
+        uf = np.empty(m.nface); vf = np.empty(m.nface)
+        uf[i] = w[i] * self.u[m.owner[i]] + (1 - w[i]) * self.u[m.neigh[i]]; vf[i] = w[i] * self.v[m.owner[i]] + (1 - w[i]) * self.v[m.neigh[i]]
+        uf[b] = ub[m.bface_index[b]]; vf[b] = vb[m.bface_index[b]]
+        self.Ff = (uf * m.normal[:, 0] + vf * m.normal[:, 1]) * m.span
+        self._flux_init = True
+
+    def _maybe_init_flux(self):
+        if not self._flux_init and self.nstep == 0 and not np.any(self.Ff) and (np.any(self.u) or np.any(self.v)):
+            self.init_flux()
+        self._flux_init = True
+
     def step(self):
+        self._maybe_init_flux()
+        if self.time_scheme == "rk3":
+            return self.step_rk3()
         m = self.m
         Fn = self.Ff
-        self._Fconv = (2.0 * Fn - self.Ff_prev) if (self.conv_flux_extrap and self.Ff_prev is not None) else None
-        pb = self.bc_p.effective(self.p)
-        G = self.grad if self.grad_p is None else self.grad_p
-        gp = G(self.p, pb)
-        if self.p_neumann_extrap:
-            # Neumann faces: p_b = p_P + grad p_P . (x_b - x_P) instead of the owner value (zeroth order).
-            # One fixed-point pass with the gradient just computed. Experiment on the wall-excited
-            # pressure checkerboard of non-bipartite meshes (record section 36/40); boundary term only,
-            # the interior operator and its duality with the divergence are untouched.
-            m_ = self.m; bf = m_.bfaces; neu = self.bc_p.kind == NEUMANN; bo = m_.owner[bf][neu]
-            pb = pb.copy(); pb[neu] = self.p[bo] + ((m_.fcentre[bf][neu] - m_.centroid[bo]) * gp[bo]).sum(axis=1)
-            gp = G(self.p, pb)
-
-        u_star, aP, aC = self._momentum(0, self.u, self.u_old, self.bc_u, gp[:, 0])
-        v_star, _, _ = self._momentum(1, self.v, self.v_old, self.bc_v, gp[:, 1])
-
-        self.u_old, self.v_old = self.u.copy(), self.v.copy()
-        u, v = u_star, v_star
-
-        for _ in range(self.n_corr):
-            F = self._rhie_chow(u, v, aP, aC, self.p, gp)
-            # pressure equation: div( (V/a_C) grad p' ) = div F, a_C the SIMPLEC coefficient.
-            # Rhie-Chow above keeps V/a_P -- that one comes from the momentum equation's own
-            # algebraic form, not from the correction, so the two coefficients differ on purpose.
-            Dcell = m.vol / np.maximum(aC, 1e-300)
-            w = m.wf; i, b = m.interior, m.boundary
-            gam = np.empty(m.nface)
-            gam[i] = w[i]*Dcell[m.owner[i]] + (1-w[i])*Dcell[m.neigh[i]]
-            gam[b] = Dcell[m.owner[b]]
-            # gam depends only on a_C, which is fixed for a fixed dt and viscosity; rebuilding the
-            # sparse operator every corrector was 8% of a step for nothing (profiled).
-            if self._gam_cache is None or not np.array_equal(gam, self._gam_cache):
-                self._Ap, self._Ap_rhs = laplacian(m, gam, self.bc_p.kind); self._gam_cache = gam.copy()
-            Ap, Ap_rhs = self._Ap, self._Ap_rhs
-            src = divergence(m, F)
-            pp, _hist = solve_poisson(m, self.grad, Ap, Ap_rhs, src,
-                                      np.zeros(m.nbface) if self.p_singular else self.bc_p.value,
-                                      bkind=self.bc_p.kind, cache=self._pcache,
-                                      tol=1e-9, max_outer=self.n_nonorth,
-                                      singular=self.p_singular)
-            gpp = self.grad(pp, BC(m, self.bc_p.kind, np.zeros(m.nbface)).effective(pp))
-            # correct the cell velocities and the face flux
-            u = u - Dcell * gpp[:, 0]
-            v = v - Dcell * gpp[:, 1]
-            Fp = self._pressure_flux(gam, pp, gpp)
-            F = F - Fp
-            self.p = self.p + pp
+        u_n, v_n = self.u, self.v                   # time level n, fixed through the outer iterations
+        u, v, F = u_n, v_n, Fn
+        self.outer_change = []
+        for outer in range(self.n_outer):
+            if outer == 0:
+                self._Fconv = (2.0 * Fn - self.Ff_prev) if (self.conv_flux_extrap and self.Ff_prev is not None) else None
+                guess_u = guess_v = None
+            else:
+                # PIMPLE-style outer iteration: re-linearise convection about the latest corrected
+                # flux and re-solve momentum with the latest pressure; the time level stays u^n.
+                self._Fconv = F
+                guess_u, guess_v = u, v
             pb = self.bc_p.effective(self.p)
-            gp = self.grad(self.p, pb)
+            G = self.grad if self.grad_p is None else self.grad_p
+            gp = G(self.p, pb)
+            if self.p_neumann_extrap:
+                # Neumann faces: p_b = p_P + grad p_P . (x_b - x_P) instead of the owner value (zeroth order).
+                # One fixed-point pass with the gradient just computed. Experiment on the wall-excited
+                # pressure checkerboard of non-bipartite meshes (record section 36/40); boundary term only,
+                # the interior operator and its duality with the divergence are untouched.
+                m_ = self.m; bf = m_.bfaces; neu = self.bc_p.kind == NEUMANN; bo = m_.owner[bf][neu]
+                pb = pb.copy(); pb[neu] = self.p[bo] + ((m_.fcentre[bf][neu] - m_.centroid[bo]) * gp[bo]).sum(axis=1)
+                gp = G(self.p, pb)
 
+            u_star, aP, aC = self._momentum(0, u_n, self.u_old, self.bc_u, gp[:, 0], phi_guess=guess_u)
+            v_star, _, _ = self._momentum(1, v_n, self.v_old, self.bc_v, gp[:, 1], phi_guess=guess_v)
+            u_prev, v_prev = u, v
+            u, v = u_star, v_star
+
+            for _ in range(self.n_corr):
+                F = self._rhie_chow(u, v, aP, aC, self.p, gp)
+                # pressure equation: div( (V/a_C) grad p' ) = div F, a_C the SIMPLEC coefficient.
+                # Rhie-Chow above keeps V/a_P -- that one comes from the momentum equation's own
+                # algebraic form, not from the correction, so the two coefficients differ on purpose.
+                Dcell = m.vol / np.maximum(aC, 1e-300)
+                w = m.wf; i, b = m.interior, m.boundary
+                gam = np.empty(m.nface)
+                gam[i] = w[i]*Dcell[m.owner[i]] + (1-w[i])*Dcell[m.neigh[i]]
+                gam[b] = Dcell[m.owner[b]]
+                # gam depends only on a_C, which is fixed for a fixed dt and viscosity; rebuilding the
+                # sparse operator every corrector was 8% of a step for nothing (profiled).
+                if self._gam_cache is None or not np.array_equal(gam, self._gam_cache):
+                    self._Ap, self._Ap_rhs = laplacian(m, gam, self.bc_p.kind); self._gam_cache = gam.copy()
+                Ap, Ap_rhs = self._Ap, self._Ap_rhs
+                src = divergence(m, F)
+                pp, _hist = solve_poisson(m, self.grad, Ap, Ap_rhs, src,
+                                          np.zeros(m.nbface) if self.p_singular else self.bc_p.value,
+                                          bkind=self.bc_p.kind, cache=self._pcache,
+                                          tol=1e-9, max_outer=self.n_nonorth,
+                                          singular=self.p_singular)
+                gpp = self.grad(pp, BC(m, self.bc_p.kind, np.zeros(m.nbface)).effective(pp))
+                # correct the cell velocities and the face flux
+                u = u - Dcell * gpp[:, 0]
+                v = v - Dcell * gpp[:, 1]
+                Fp = self._pressure_flux(gam, pp, gpp)
+                F = F - Fp
+                self.p = self.p + pp
+                pb = self.bc_p.effective(self.p)
+                gp = self.grad(self.p, pb)
+
+            self.outer_change.append(float(max(np.abs(u - u_prev).max(), np.abs(v - v_prev).max())) if outer > 0 else np.nan)
+
+        self.u_old, self.v_old = u_n.copy(), v_n.copy()
         self.Ff_prev = Fn                          # F^n becomes F^{n-1} for the next step's extrapolation
         self.u, self.v, self.Ff = u, v, F
         # history advances ONCE per step

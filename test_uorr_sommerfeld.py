@@ -22,7 +22,8 @@ def build(ny):
     nb = m.nbface; kd = np.full(nb, DIRICHLET); kn = np.full(nb, NEUMANN)
     s = PISO(m, nu=NU, dt=DT, bc_u=BC(m, kd, np.zeros(nb)), bc_v=BC(m, kd, np.zeros(nb)), bc_p=BC(m, kn, np.zeros(nb)),
              n_corr=2, n_nonorth=1, scheme="central", body_force=(np.full(m.ncell, 2 * NU), np.zeros(m.ncell)))
-    s.conv_flux_extrap = os.environ.get("OS_FLUXEXTRAP", "1") == "1"     # default on; OS_FLUXEXTRAP=0 reproduces the lagged-flux (first-order-in-time) runs
+    s.conv_flux_extrap = os.environ.get("OS_FLUXEXTRAP", "1") == "1"
+    s.time_scheme = os.environ.get("OS_SCHEME", "bdf2")            # OS_SCHEME=rk3 selects the Le-Moin RK3/CN fractional step (LES plan L1a)     # default on; OS_FLUXEXTRAP=0 reproduces the lagged-flux (first-order-in-time) runs
     c, phi, yc = least_stable(RE, ALPHA, 120)
     D, _ = cheb(len(yc) - 1)
     Pphi = BarycentricInterpolator(yc, phi); Pdphi = BarycentricInterpolator(yc, D @ phi)
@@ -59,7 +60,7 @@ if __name__ == "__main__":
     rows = []
     for ny in nys:
         g, cph, nc, wt, ts, aa = run(ny); rows.append((ny, g, cph))
-        np.savez(f"results/t8_os_nx{NX}_ny{ny}_dt{DT}" + ("_fx" if os.environ.get("OS_FLUXEXTRAP", "1") == "1" else "") + ".npz", t=ts, a=aa, growth=g, phase=cph)
+        np.savez(f"results/t8_os_nx{NX}_ny{ny}_dt{DT}" + ("_rk3" if os.environ.get("OS_SCHEME", "bdf2") == "rk3" else "") + ("_fx" if os.environ.get("OS_FLUXEXTRAP", "1") == "1" else "") + ".npz", t=ts, a=aa, growth=g, phase=cph)
         print(f"   {NX}x{ny:<4d} ({nc:6d} cells)  growth {g:.6f} ({(g/G_REF-1)*100:+6.1f}%)   phase {cph:.6f} ({(cph/C_REF-1)*100:+5.2f}%)   {wt/60:.1f} min", flush=True)
     if len(rows) > 1:
         for (n1, g1, _), (n2, g2, _) in zip(rows[:-1], rows[1:]):

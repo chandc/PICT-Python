@@ -2435,3 +2435,404 @@ time integration itself -- BDF2 plus the PISO velocity-pressure splitting -- at 
 the same conclusion the structured code reached ("discretisation error rather than a systematic
 energy source"), here with the split made explicit. T11: PASS -- operator conserving to round-off
 on quads; full step dissipation second order in dt and 0.2% per turnover at dt = 0.00125.
+
+## 49. L0 of the LES plan: what dissipates in a full inviscid step (2026-09-24)
+
+`PISO.n_outer` added: PIMPLE-style outer iterations within a time step -- convection re-linearised
+about the corrected flux, momentum re-solved with the corrected pressure, time level held fixed;
+`n_outer = 1` is classic PISO and reproduces T6 and T8 bit-for-bit. The iterate change falls to
+1e-15 by the fourth pass on the inviscid Taylor-Green.
+
+**Steady Taylor-Green, 64^2 quads, T = 0.1, loss per turnover:**
+
+| dt | PISO (n_outer 1) | converged coupling | converged, Rhie-Chow OFF |
+|---|---|---|---|
+| 0.01 | 8.08e-2 | 3.35e-3 | -7e-9 |
+| 0.005 | 2.18e-2 | 2.32e-3 | -7e-11 |
+| 0.0025 | 6.30e-3 | 1.44e-3 | -3e-13 |
+| 32^2, dt 0.005 | 2.96e-2 | 1.10e-2 | -3e-11 |
+
+Three findings. (1) The velocity-pressure SPLITTING is 77-89% of the loss; iterating it out
+leaves the rest. (2) What remains is the Rhie-Chow damping, entirely: with it off and the
+coupling converged the energy is conserved to round-off. That residual does NOT vanish with dt
+(order 0.5-0.7 in dt) and falls ~4x from 32^2 to 64^2: an O(h^2) dissipation inherent to the
+collocated scheme, 0.14-0.33% per turnover at 64^2. (3) The STEADY Taylor-Green cannot see the
+time integrator at all -- a steady exact solution satisfies BDF2 with zero temporal error -- so
+the "BDF2 dissipation" of section 48 was misattributed: it was splitting plus Rhie-Chow. The
+integrator is measured on the advected Taylor-Green below.
+
+**Advected Taylor-Green** (TGV + uniform stream (1.0, 0.7): exact solution u = TGV(x - U0 t) + U0,
+unsteady in the grid frame; 64^2 quads, T = 0.1, CFL ~0.4 at dt 0.005; fluctuation-energy loss per
+turnover and L2 error against the exact solution):
+
+| dt | PISO | converged coupling, RC on | converged coupling, RC off | L2 err: PISO / converged |
+|---|---|---|---|---|
+| 0.01 | 1.89e-1 | 9.09e-2 | 8.86e-2 | 3.3e-2 / 5.0e-3 |
+| 0.005 | 4.94e-2 | 2.40e-2 | 2.22e-2 | 1.6e-2 / 1.7e-3 |
+| 0.0025 | 1.31e-2 | 6.75e-3 | 5.54e-3 | 7.9e-3 / 1.0e-3 |
+| 0.00125 | 3.72e-3 | 2.12e-3 | 1.38e-3 | 4.3e-3 / 9.0e-4 |
+
+The BDF2-only loss (converged coupling, RC off) is second order in dt to three digits (1.99, 2.01,
+2.00): 2.2% per turnover at dt 0.005, 0.14% at 0.00125. The splitting adds as much again (PISO
+4.9e-2 vs 2.2e-2 at dt 0.005) and dominates the SOLUTION error: 1.6e-2 against 1.7e-3, which is
+already the spatial floor of the 64^2 grid (the converged error flattens at 9e-4). Rhie-Chow adds
+~10%.
+
+**G0 verdict.** Splitting and BDF2 contribute comparably (each ~2% per turnover at dt 0.005 on
+64^2), Rhie-Chow is a ~10% / O(h^2) floor. Per the plan's decision rule this selects **L1a: RK3
+with per-stage projection** -- it removes the linearisation lag of the splitting by construction
+and cuts the integrator's own dissipation from O(dt^2) to O(dt^3). Converged BDF2 coupling
+(`n_outer` >= 4) stays available as the reference integrator; it already lowers the solution
+error 9x at dt 0.005 for 4x the cost per step.
+
+## 50. L1a: RK3 with per-stage projection (2026-09-24)
+
+`PISO.time_scheme = "rk3"` selects the Le & Moin (1991) RK3 / Crank-Nicolson fractional step
+(coefficients gamma = 8/15, 5/12, 3/4; zeta = 0, -17/60, -5/12; alpha = beta = 4/15, 1/15, 1/6):
+per stage an implicit CN viscous solve with the convection explicit on the stage's own
+divergence-free flux (no linearisation lag, no deferred convecting flux), Rhie-Chow face flux,
+one pressure correction, cell velocity and face flux corrected, `p += pp`. Three momentum
+matrices and three pressure operators, factorised once and cached. Cost 15-20 ms/step against
+BDF2-PISO's 29 ms at 64^2 (three Poisson solves, but no corrector loop). Explicit convection
+puts a CFL limit of about sqrt(3) on the stage; the cylinder runs at dt 0.005 (CFL ~0.2 at the wall).
+`run_ucylinder.py --time-scheme rk3`, `OS_SCHEME=rk3` for T8, `test_utemporal.py` for T4.
+
+**Three things went wrong before it worked, in order.** (1) `p += pp/(alpha+beta)`: the cell
+diffusivity `D = (alpha+beta) V / a_C` already carries the stage step, so pp IS a pressure; the
+rescaling ran away. (2) Choi's dt-independent Rhie-Chow term `(D/dt)(F_old - Fbar_old)` inside
+the stages. With the predictor's interpolated velocity as `Fbar_old` it was unstable; with the
+matched pair (corrected flux, plain interpolation of the corrected velocity) it was stable but
+left a **dt-independent** loss of 1.2-1.7%/turnover at 64^2, whether the current or the previous
+stage step sat in its denominator. The term cancels the previous damping only when consecutive
+steps are equal; the RK stage steps are 8/15, 2/15, 5/15 of dt. **Decision: no transient term
+inside RK3.** The per-stage damping is then `D_k = dt_k V/a_C`, O(dt), and the checkerboard
+indicator on the 64^2 / 32^2 Taylor-Green is unchanged (0.010 / 0.038 over T = 1).
+(3) `Ff = 0` at the start of EVERY run: the first step convected nothing. A one-off O(dt) error
+with an O(|u.grad u|) coefficient, invisible in windowed statistics (T8, T9) and in runs from
+rest (T5, T6, cavity), but it capped every temporal-order test on a non-trivial initial field at
+first order -- BDF2 and RK3 alike showed `err = 1.36 dt` on the advected Taylor-Green,
+mesh-independent (32^2-128^2), which is what finally gave it away (a spatial residual would have
+fallen 4x per refinement). `PISO.init_flux()` now builds Ff by interpolation of (u, v) on the
+first step when Ff is identically zero and the velocity is not. T6 rates unchanged (2.01/2.00/2.00).
+
+**T4 (temporal order), `test_utemporal.py`.** Decaying Taylor-Green, fully periodic 64^2, nu 0.01,
+K = 2 pi, T = 1 (exact NS solution, decay to 0.454); error against the same scheme at
+dt_ref = dt_min/4 isolates the temporal part from the O(h^2) floor (1.7e-4 / 2.0e-4).
+
+| dt | BDF2-PISO vs ref (order) | RK3, Rhie-Chow on (order) | RK3, Rhie-Chow off (order) |
+|---|---|---|---|
+| 0.04 | 9.02e-3 | 1.32e-4 | 1.09e-5 |
+| 0.02 | 2.42e-3 (1.90) | 8.29e-5 (0.67) | 2.71e-6 (2.01) |
+| 0.01 | 6.78e-4 (1.84) | 4.67e-5 (0.83) | 6.74e-7 (2.01) |
+| 0.005 | 2.17e-4 (1.65) | 2.38e-5 (0.97) | 1.66e-7 (2.02) |
+| 0.0025 | 8.07e-5 (1.43) | 1.07e-5 (1.15) | 3.96e-8 (2.07) |
+
+Inviscid advected Taylor-Green (U0 = (1, 0.7), T = 0.25, 64^2, floor 2.2e-3), the convective order:
+
+| dt | BDF2-PISO (order) | RK3, Rhie-Chow on (order) | RK3, Rhie-Chow off (order) |
+|---|---|---|---|
+| 0.02 | 8.54e-2 | 5.40e-2 | 5.40e-2 |
+| 0.01 | 1.09e-2 (2.97) | 1.50e-4 (8.5) | 6.78e-5 (9.6) |
+| 0.005 | 2.74e-3 (1.99) | 5.60e-5 (1.42) | 8.70e-6 (2.96) |
+| 0.0025 | 6.56e-4 (2.06) | 2.29e-5 (1.29) | 1.17e-6 (2.89) |
+
+Reading: the integrator alone is **third order in convection (2.9-3.0) and second order in
+diffusion (2.0, Crank-Nicolson, by construction)** -- the plan's "order >= 2.8" holds for the
+convective part only; no CN-viscous scheme can give it for the viscous part, and the constant is
+1000x below BDF2's (1.1e-5 against 1.3e-2 at dt 0.04). With Rhie-Chow on, the O(dt) per-stage
+damping becomes the leading dt-dependence once the integrator error drops below it: a
+first-order term with a ~1e-2 coefficient (5.6e-5 at dt 0.005, still 50x below BDF2), spatially
+O(h^2). The exact-solution error sits on the spatial floor for every dt <= 0.04 in both cases,
+which is what one wants from a time scheme.
+
+**T8 (Orr-Sommerfeld, 48 x 400, `OS_SCHEME=rk3`):**
+
+| dt | growth (error) | phase speed (error) | wall time |
+|---|---|---|---|
+| 0.05 | 0.002230 (-0.21%) | 0.248753 (-0.456%) | 2.7 min |
+| 0.025 | 0.002231 (-0.20%) | 0.248752 (-0.456%) | 5.4 min |
+| 0.0125 | 0.002231 (-0.19%) | 0.248752 (-0.456%) | 10.9 min |
+
+Phase speed dt-independent to 4e-4% (criterion 0.1%), growth within 0.2% (criterion 1%). The
+remaining -0.46% in the phase speed is the 48-cell streamwise dispersion, (kh)^2/6 = 0.29% with
+kh = 2 pi/48 plus the wall-normal part; BDF2 at 48 x 200 gave -0.58% to -0.60% for all three dt
+(section 47), so the temporal part of both schemes is already below the spatial one here. BDF2-PISO at
+48 x 400, dt 0.05, like for like: growth 0.002247 (+0.5%), phase 0.248715 (-0.47%), 3.9 min against
+RK3's 2.7 min -- same phase speed to 0.015%, growth error 2.5x larger, and slower.
+
+**T11 (energy, 64^2 quads, T = 0.1, loss per turnover, initial flux from the velocity):**
+
+| dt | steady TGV: BDF2-PISO | RK3 | advected TGV: BDF2-PISO | RK3 | RK3, Rhie-Chow off |
+|---|---|---|---|---|---|
+| 0.01 | 6.16e-2 | 6.74e-4 | 1.48e-1 | 1.22e-3 | 5.39e-4 |
+| 0.005 | 1.69e-2 | 3.45e-4 | 3.87e-2 | 4.13e-4 | 6.76e-5 |
+| 0.0025 | 5.10e-3 | 1.74e-4 | 1.04e-2 | 1.83e-4 | 8.48e-6 |
+| 32^2, dt 0.005 | 4.54e-2 | 1.50e-3 | | | |
+
+(The BDF2 numbers differ from sections 48-49 because the first step now convects; the
+advected-TGV loss at dt 0.005 was 4.94e-2 with the zero initial flux and is 3.87e-2 with it.)
+RK3 at dt 0.005: **0.04%/turnover, 94x below BDF2-PISO and 5x inside the 0.2% criterion**; over
+T = 1 it is 0.042%. The integrator alone (Rhie-Chow off) loses at exactly dt^3 (orders 3.0, 3.0).
+With Rhie-Chow on, the loss is ~dt (steady: 6.7e-4 -> 3.4e-4 -> 1.7e-4), which is the per-stage
+damping `D_k ~ dt_k`, not the integrator -- so the plan's "and ∝ dt^3" holds for the time scheme
+and not for the full step; the full step's dt-dependence is the pressure smoothing. This is the
+trade made in (2) above: a dt-independent Rhie-Chow gives a dt-independent 1.2-1.7% floor; an
+O(dt) one gives 0.04% at the working step and vanishes with it. On 32^2 the loss is 0.15%, so the
+term is O(h^2) as before.
+
+**T9 (fine butterfly, 27968 quads, dt 0.005, `--time-scheme rk3`):**
+
+| | St | Cd mean | Cl amp | Cl rms | Cd pressure |
+|---|---|---|---|---|---|
+| BDF2-PISO, dt 0.005 (section 45) | 0.1782 | 1.4878 | 0.3520 | 0.2492 | 1.1112 |
+| RK3, dt 0.005 | 0.1781 (-0.06%) | 1.4845 (-0.22%) | 0.3495 (-0.71%) | 0.2470 | 1.1094 |
+| HydroGym P2-P1 | 0.1791 | 1.4862 | 0.3582 | | |
+
+St and Cd inside the 0.3% band; the lift amplitude moves -0.7%, outside it, and away from
+HydroGym (-2.4% against -1.7%). The lift amplitude was already the quantity most sensitive to the
+time discretisation (5% between dt 0.01 and 0.005 with the lagged flux, section 45), so a 0.7%
+shift between two second/third-order integrators at the same dt is the temporal error of ONE of
+them showing; which one needs the dt 0.0025 BDF2 and RK3 runs (2.4 h each), not done. Same wall
+time per step as BDF2-PISO here (139 against ~140 ms: the three Poisson solves cost what the two
+correctors did), 12 shedding periods in the window, log `results/logs/t9_rk3_butterfly_fine.log`,
+fields `results/t9/rk3/butterfly_fine_re100.npz`.
+
+**G1 verdict.** T8 met on both counts; T11 met on magnitude (0.04% against 0.2%), and ∝ dt^3 for
+the integrator with the Rhie-Chow damping ∝ dt as the leading full-step term; T4 met for
+convection (order 3), diffusion second order by construction (Crank-Nicolson) at a constant
+1000x below BDF2; T9 met for St and Cd (-0.06%, -0.22%), lift amplitude -0.7% against a 0.3% band -- a dt 0.0025 pair would say whose temporal error it is. Why no dt-independent Rhie-Chow inside RK3: Choi's term makes the damping dt-independent BY
+DESIGN, and a dt-independent damping is a dt-independent dissipation -- section 49 already
+measured it in BDF2 with the coupling converged (0.14-0.33%/turnover at 64^2, order 0.5-0.7 in
+dt). Inside RK3 the same term, with the per-stage matched pair and either stage step in its
+denominator, gave 1.2-1.7%: the same floor, larger because three projections per step each
+carry it. The O(dt) stage damping trades that floor for a term that vanishes with dt, which is
+the right trade for an integrator whose own error is dt^3. BDF2-PISO stays the default (`time_scheme = "bdf2"`); RK3 is the LES integrator.
+
+## 51. L2: the 2.5D solver -- unstructured plane, Fourier span (2026-09-24)
+
+`src/upiso25.py`, class `PISO25(mesh, nz, Lz, nu, dt, bc_u, bc_v, bc_w, bc_p)`. The plane is the
+existing cell-centred collocated FV scheme; the span is periodic and spectral: `nz` planes,
+`nk = nz/2 + 1` modes from `rfft`, Nyquist held at zero. Per RK3 stage (the L1a integrator):
+
+* nonlinear term in physical space on `M = 3nz/2` planes (3/2 rule): the in-plane part is the
+  face sum `sum_f F_f phi_f` with the central + skewness face value (what the 2D deferred central
+  converges to; no upwind matrix is needed for an explicit term), plus `V d(w phi)/dz` spectral;
+  the products are truncated back to `nk` modes -- dealiased in z by construction;
+* one momentum solve per mode and component: `(V/dt) - beta (L_2D - nu k^2 V)`, Crank-Nicolson in
+  both directions, the deferred cross-diffusion iterated `n_inner` times; real factorisation,
+  complex right-hand side as two columns;
+* Rhie-Chow per mode with `D = dt_k V / a_P(k)` (no transient term, section 50), all modes at
+  once as (nface, nk) complex arrays;
+* pressure per mode, `[Lap(gam_k) - k^2 D_k V] pp = V div F* + i k V w*`, mode 0 pinned at one
+  cell with the mean removed (exact for the compatible right-hand side), `u -= D grad pp`,
+  `w -= D i k pp`, `F -= F_pp`, `p += pp`.
+
+Factorisations: `3 x nk x (3 + 1)` (stages x modes x (u, v, w, p)), cached for the run since
+`a_C(k)` depends only on dt, nu and k. Cost at 32^2 x 32 modes: 100 ms/step; 6992-cell butterfly
+x 4 planes: 160 ms/step (three 2D problems per plane-mode; the 2D RK3 on the same mesh is 35 ms).
+
+**Mode 0 IS the 2D solver.** The 2D RK3 (`PISO.step_rk3`) and `PISO25` with `nz = 4` on a
+z-independent field: `max|u_25 - u_2D|` 1.8e-15, `|p|` 3e-14, `|F|` 6e-17, `w` identically zero,
+over five steps. Same mesh, same factorisations up to the solver's own round-off. This is the check
+that makes the rest of the 2D validation ladder (T1-T11) carry over to the plane of the 2.5D solver
+without rerunning it.
+
+**G2-A, energy balance. 3D Taylor-Green Re 100, (2 pi)^3, 32^2 x 32 modes, dt 0.02, T = 10.**
+Two references for `-dE/dt`: `nu * int |omega|^2` with the vorticity from the least-squares cell
+gradient (the plan's wording), and the scheme's OWN discrete dissipation
+`eps_d = -sum phi . L_3D phi` with the operators the solver applies (in-plane orthogonal + cross,
+spectral z). The two differ by the gradient's truncation error, which is not a solver defect:
+
+| t | E | nu Z (gradient) | eps_d (discrete) | -dE/dt | -dE/dt / nu Z | -dE/dt / eps_d |
+|---|---|---|---|---|---|---|
+| 0 | 31.0063 (pi^3 exact) | 1.8445 (1.8604 exact) | 1.8564 | | | |
+| 1.0 | 29.1440 | 1.9016 | 1.9187 | 1.9213 | 1.0103 | 1.0013 |
+| 3.0 | 24.5743 | 2.6217 | 2.7192 | 2.7225 | 1.0385 | 1.0012 |
+| 5.0 | 18.4756 | 3.0522 | 3.2277 | 3.2342 | 1.0596 | 1.0020 |
+| 7.0 | 12.3892 | 2.4294 | 2.6679 | 2.6734 | 1.1004 | 1.0021 |
+| 9.0 | 8.0568 | 1.5327 | 1.6831 | 1.6852 | 1.0995 | 1.0013 |
+
+Against the discrete dissipation the balance holds to **0.11-0.22% at every sample** (criterion
+0.5%): that residual is the numerical dissipation of the full step (the O(dt) Rhie-Chow damping
+of section 50, the 32^2 in-plane truncation). Against the gradient-based enstrophy the "error"
+grows to 10% by t = 7, when the flow has cascaded to scales the 32^2 least-squares gradient
+under-resolves by 10% -- the same O(h^2) under-estimate the T11 enstrophy showed; at 64^2 the
+gradient gap falls to 1.1-2.4% while the discrete balance tightens to 0.02-0.06%. dt 0.01 at 32^2:
+0.06-0.10%, half the dt 0.02 residual -- the O(dt) stage damping of section 50, as expected.
+
+| variant | -dE/dt / eps_d - 1, range over t = 0.5..9.5 | -dE/dt / nu Z - 1 at t = 7 |
+|---|---|---|
+| 32^2 x 32, dt 0.02 | 0.11-0.22% | 10.0% |
+| 32^2 x 32, dt 0.01 | 0.06-0.10% | 10.0% |
+| 64^2 x 32, dt 0.02 | 0.02-0.06% | 2.4% |
+
+The gradient gap is h-dependent and dt-independent; the discrete residual is both, and the plan's
+criterion is met with margin in every variant. Peak dissipation eps_d = 3.23 at t = 5.0
+(nu Z: 3.05 at t = 4.9); Brachet et al. (1983) Re 100: peak at t ~ 5 (see V1 for the
+quantitative comparison at Re 1600).
+
+**G2-B, spanwise convergence (32^2 plane, dt 0.02, T = 1, error against nz = 32):**
+nz 4: 1.84; nz 8: 1.18e-1; nz 16: 4.99e-4. Geometric (150x then 240x per doubling): spectral.
+
+**G2-C, in-plane convergence (nz = 8, dt 0.01, T = 1, cell-averaged against n = 128):**
+n 16: 1.63e-1; n 32: 3.95e-2 (order 2.04); n 64: 7.93e-3 (order 2.32, the reference's own error
+entering). Second order in the plane.
+
+**G2-D, periodic-span cylinder Re 100 (coarse butterfly, 6992 cells x 4 planes, Lz = 4, dt 0.005,
+w perturbation 1e-3 in the near wake):**
+
+| | St | Cd mean | Cl amp | Cl rms | Cd pressure | ms/step |
+|---|---|---|---|---|---|---|
+| 2D RK3, dt 0.005 | 0.1753 | 1.4704 | 0.3236 | 0.2289 | 1.0978 | 33 |
+| 2.5D, 4 planes, w perturbation 1e-3 | 0.1753 | 1.4704 | 0.3236 | 0.2289 | 1.0978 | 133 |
+
+Identical to every printed digit (criterion 0.1%). The spanwise energy E_3d fell from 1.3e-7 at
+t = 0 to 3.5e-27 at t = 150, exponentially at 0.31 per unit time (a factor 50 per 10 time units,
+steady from t = 40): the periodic-span perturbation at Re 100 is damped, as it must be (mode A
+onsets near Re 190), and the 3D machinery -- per-mode Dirichlet zero at inlet and wall, Neumann
+outlet, the k >= 1 Helmholtz solves, the spectral w-coupling -- ran for 30000 steps without
+feeding anything back into mode 0. `results/t9/rk3/butterfly_25d_nz4.npz`,
+`results/logs/t9_25d_butterfly_nz4.log`. **G2 met on all four counts.**
+
+The plan's "spanwise-inclined TGV" is replaced by B and C on the standard 3D TGV, which has the
+z-dependence (cos z) and the in-plane structure the inclined one would have tested.
+
+## 52. L3: eddy viscosity on the 2.5D solver (2026-09-24)
+
+`src/usgs.py`: the velocity-gradient tensor on (ncell, nz) fields (in-plane from the LSQ cell
+gradient with the solver's boundary values, spanwise spectral), the cell filter width
+`Delta = (V dz)^(1/3)`, and the closures of `src/sgs.py` (Smagorinsky, WALE) applied to that
+tensor. `PISO25.sgs_model = "wale" | "smagorinsky" | "none"`; `nu_t` (ncell, nz) kept for reporting.
+
+**The eddy-viscosity term is explicit.** `div(nu_t (grad u + grad u^T))` is evaluated with the
+convection on the 3/2-padded planes -- `nu_t x grad u` is a product and is dealiased with the
+rest -- and carried by the RK3 gamma/zeta weights; the molecular viscosity stays Crank-Nicolson
+implicit. A z-varying coefficient cannot sit inside the per-mode implicit solve, and the explicit
+limit `nu_t dt/h^2` is not binding for a wall-resolved LES. In-plane faces use the Laplacian's own
+split, `nu_f [E_f/d (phi_N - phi_P) + T_f . grad_f phi]`, plus the transpose
+`nu_f (d u_j/d x_i)_f S_j`; spanwise `V d/dz[nu_t (d u_i/dz + d w/d x_i)]` spectral.
+
+**G3 checks (`test_usgs.py`, all pass):**
+
+| check | result |
+|---|---|
+| solid rotation u = omega x r (Dirichlet box, omega 1.7) | \|S\| 5e-15, Smagorinsky nu_t 2e-18, WALE / analytic (C_w Delta)^2 ((2/3) omega^4)^(1/4) - 1 = 1e-15 |
+| filter width follows the cell (n 8x8x4 -> 16x16x8, shear flow) | nu_t ratio 4.0000 (Delta^2) |
+| WALE near a no-slip wall (u = y, v = y^2/2, 192 cells across, fit y in 0.02-0.12) | exponent 2.970 (3 +- 0.25), through the mesh gradient path |
+| manufactured variable-nu operator, (2 pi)^3 periodic, nu = 1 + 0.5 sin x cos y sin z, three-component field with div u != 0 | L2 orders 1.98/1.99/1.97 (16 -> 32) and 1.99/2.00/1.99 (32 -> 64) in x/y/z |
+
+**Dynamic check, TGV Re 1600, 64^2 x 64 modes, dt 0.02 (the V1 preview; V1 proper follows G3):**
+| run | -dE/dt peak (per unit volume) | at t | resolved eps_d peak | numerical + model share at the peak | <nu_t>/nu (mean / max at the peak) | ms/step |
+|---|---|---|---|---|---|---|
+| DNS (les_findings.md: SEM reference) | 0.012299 | 8.93 | | | | |
+| no model | 0.01303 (+5.9%) | 8.4 | 0.01163 (-5.5%) | 11.1% | 0 | 731 |
+| WALE | 0.01188 (-3.4%) | 8.5 | 0.00442 | 63.4% | 1.32 / 24 | 964 |
+
+`figures/utgv1600_dissipation.png`. Read carefully: (1) with no model the 64^3-equivalent grid
+over-dissipates the peak by 6% and 11% of the peak is numerical (the O(dt) Rhie-Chow damping
+plus the in-plane truncation, section 51); the LSQ-gradient enstrophy sits 40% low at the peak,
+which is the resolution, not the balance. (2) WALE brings the peak value inside 5% but the model
+does 63% of the dissipating and is active from t = 0 -- <nu_t>/nu 0.8 on the laminar initial
+field (WALE responds to g.g, and S^d is not zero for the Taylor-Green vortex), rising to 1.3
+with a maximum of 24 nu -- and the curve's shape is wrong before the peak: a shoulder at 0.009
+from t = 4.5 to 7 where the DNS rises smoothly (the structured 48^3 study saw the same class of
+behaviour, `les_model_study.md`). (3) Both peaks land 0.4-0.5 early (t 8.4-8.5 against 8.93,
+-5%), outside V1's 3% window; the 0.1 sampling is not the cause. V1 proper (after G3) needs the
+64^2 x 64 against 96^2 x 96 pair to separate resolution from model; this preview says the
+implicit run is already within 6% at the peak, and the WALE constant at this Delta is too
+active for this transitional case -- as WALE is known to be on laminar-to-turbulent Taylor-Green.
+
+## 53. L5: forcing, statistics, restart on the 2.5D solver (2026-09-24)
+
+* `PISO25.set_mass_flow(U_bulk)`: uniform body force adjusted after every step,
+  `f += (U_target - U_b)/dt`; `f_bulk` is the mean pressure gradient. On the laminar channel
+  (periodic x, walls y = +-1, nu 0.05, U_b 1, T = 20) the force settles on `3 nu` with the
+  wall-cell's one-sided flux error: -2.6% / -0.61% / -0.20% at ny 8 / 16 / 32, and the profile
+  converges to Poiseuille at order 1.94 / 1.99. The bulk is held to 1e-4 .. 4e-8 while the
+  profile is still relaxing (the controller is exact only once the wall stress is steady).
+* `src/ustats.py` `Stats(s, coord)`: bins cells by a centroid coordinate (unique rounded values,
+  so any y-distribution works), accumulates volume-weighted U, V, W, second moments and uv over
+  cells, planes and samples. One sample equals the instantaneous bin mean to 0.0; fifty samples
+  equal the mean of the instantaneous profiles to 0.0; the fluctuations of a z-uniform flow are
+  4e-15.
+* `PISO25.save / load`: u, v, w, p, Ff, time, step, f_bulk. RK3 carries no history, so a restart
+  needs nothing else: **100 steps after a load are bitwise identical** (u, v, w, p, Ff, f_bulk all
+  `array_equal`) to the uninterrupted run, on a 3D-perturbed forced channel.
+* `rect_mesh(..., cluster_y=beta)`: wall-normal-only tanh clustering for the channel (the existing
+  `cluster` stretches toward all four walls). Cells stay rectangular, `orth` = 1.
+
+`test_uchannel_laminar.py`, all pass. G5 met: restart lossless; statistics reproduce the analytic
+mean up to the scheme's O(h^2) Poiseuille error (the criterion's "to round-off" holds for the
+statistics machinery against the solution, not for the solution against Poiseuille, whose wall
+flux is one-sided -- section 38's force finding, seen from the other side).
+
+## 54. V2: turbulent channel Re_tau 180 on the 2.5D solver (2026-09-24)
+
+`run_uchannel25.py`: the structured minimal-channel setup exactly (`run_channel_les.py`) --
+delta = u_tau = 1, nu = 1/180, Lx = pi (565 wall units), Lz = 0.34 pi (192), y in [0, 2];
+constant pressure gradient f_x = 1, so u_tau = 1 by construction and the measured wall stress is
+a check; initial condition the in-house SEM DNS field at t = 18 (`results/minchan_re180_field.npz`,
+Delaunay in the plane, periodic linear in z); WALE. Plane 24 x 80 quads with tanh wall
+clustering (dx+ 23.6, dy+ 1.02 at the wall and 8.3 at the centre), 32 Fourier modes (dz+ 6.0),
+dt 0.002 (CFL 0.3-0.5), T = 30, statistics over t = 10..30 -- 20 time units, 99 bulk
+flow-throughs, 10001 samples. 0.2 s/step, 100 minutes on one core.
+
+**The reference is the SEM FOSLS DNS run02** (first-order-system least-squares spectral element,
+6 x 18 elements N = 8 x 32 modes, dx+ 11.8, dz+ 6.0, dt 0.0008, the same box and forcing;
+`sem_demo/scratch/_dns_drive`, a local copy of `Google Drive/My Drive/lssem_dns`; its own table
+puts it within 0.1-3.5% of the MKM / LM / VK / Torroja / AKM databases). Window t = 5.2..30, 3101
+samples, u_tau 1.0025, built as the difference of its cumulative statistics files into
+`results/fosls_chan180_stats_t5.2_30.npz`. The K- and E-path minimal-channel runs in
+`sem_demo/results` are fractional-step SEM runs and are NOT used as reference (the K-path field
+at t = 18 remains the initial condition only; its u' peak, 2.845, is 5% above every database).
+
+| quantity | this run | FOSLS DNS run02 | criterion |
+|---|---|---|---|
+| u_tau from the one-sided wall flux, window mean | 0.9950, **Re_tau 179.1 (-0.5%)** | 1.0025 (Re_tau 180.5) | 2% |
+| U+ in the log region 30 < y+ < 100 | +0.15 u_tau mean, 0.26 max (**+1.0% of U+**) | | 3% of U+ |
+| U+ vs the log law 0.41 / 5.2 | +0.64 | (the DNS sits above it too) | |
+| U_c+ | 18.27 | 18.84 | |
+| u_rms+ peak | 2.697 at y+ 15.7 | 2.707 at y+ 13.7: **-0.3%** | 5% |
+| v_rms+ max | 0.805 | 0.857 (-6.1%) | |
+| w_rms+ max | 0.980 | 1.054 (-7.0%) | |
+| -<u'v'>+ max | 0.720 | 0.729 (-1.2%) | |
+| <nu_t>/nu over the window (max in the field) | 0.194 (3-5) | | reported (G3) |
+| **pressure two-colour mode** | **0.00% of p_rms** (1e-4 at every report) | | **< 1%** |
+
+`figures/uchannel_re180_profiles.png`. The wall stress wandered between 0.92 and 1.12 over the
+run (Re_tau 166-202 instantaneous), as a minimal channel does; the bulk velocity stayed within
+15.39-15.84 of the DNS's 15.63 without being forced to. Turbulence sustained throughout: no
+relaminarisation, no growth of anything at the grid scale, the face high-pass share of the
+pressure steady at 0.12-0.20.
+
+**Verdict: V2 met on every criterion** -- wall stress, mean profile, u_rms peak (-0.3% against
+the FOSLS DNS; the earlier "-5.2%" was against the fractional-step K-path field, whose own peak is
+5% high), shear stress, and the pressure-mode criterion at 0.00% over 99 flow-throughs. The
+cross-stream rms are 6-7% low, the usual signature of dx+ 24 (the DNS has 11.8); not a criterion,
+recorded. Companion runs launched: constant mass flow at U_b 15.63 and no model; recorded when done.
+
+**Near-wall instantaneous planes (`plot_utility/plot_uchannel_nearwall.py`, y+ ~ 12,
+`figures/uchannel_re180_nearwall_yp12.png`).** Pressure, streamwise velocity and streamwise vorticity
+fluctuations about the plane mean, in wall units, for our field at t = 30 and the FOSLS DNS
+checkpoint at t = 30 (`_dns_drive/checkpoint_0037500.npz`: 14 split-real fields u v w ox oy oz p
+per spanwise mode; omega_x is a FOSLS primary unknown and is plotted as such). Our planes are
+refined spectrally in z for plotting and both columns use bilinear shading in x; the LES cells are
+dx+ 23.6, the DNS is sampled at 5.9.
+
+| plane y+ ~ 12, one instant, t = 30 both | 2.5D LES | FOSLS DNS |
+|---|---|---|
+| p' rms / u_tau^2 | 1.25 | 1.54 |
+| u' rms / u_tau | 2.12 | 2.66 |
+| omega_x rms nu/u_tau^2 | 0.139 | 0.126 |
+| u' spanwise energy share, modes 1 / 2 / 3 (lambda_z+ 192 / 96 / 64) | 0.35 / 0.33 / 0.18 | (single instant, not tabulated) |
+| u' energy at the streamwise period-2 mode | 0.000 | 0.000 |
+
+Reading: the same objects in both -- a low-speed streak meandering across the box with high-speed
+regions beside it, pressure in patches of O(1-4) u_tau^2 at the streak scale, streamwise vorticity in
+elongated streaks between the velocity streaks -- ours at the LES resolution (smoother, 20% lower u'
+on this plane, pressure 19% lower in rms, vorticity rms 10% higher). No energy at the period-2 grid
+mode in either. Single-plane, single-instant numbers are noisy (24 x 32 cells, strongly correlated);
+the windowed profiles above are the measure. `Stats` now carries p and p'^2 so the next runs give
+p_rms(y) over the window. (An earlier version of this comparison used the fractional-step K-path
+field at t = 18 and the E-path state at t = 15.95 and found their pressure levels differ by 2x from
+each other; neither is the reference and that finding is withdrawn from the comparison.)

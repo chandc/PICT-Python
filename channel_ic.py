@@ -42,8 +42,9 @@ def extract(state=STATE, cache=CACHE):
     s = M.setup()
     z = np.load(state)
     u = np.fft.irfft(z["U"], n=s["nz"], axis=-1)     # (nelem, N+1, N+1, 3, nz)
+    p = np.fft.irfft(z["p"][..., 0, :], n=s["nz"], axis=-1)   # pressure, same transform (added 2026-09-24)
     os.makedirs(os.path.dirname(cache) or ".", exist_ok=True)
-    np.savez_compressed(cache, x=s["X"], y=s["Y"], z=s["zpl"], u=u,
+    np.savez_compressed(cache, x=s["X"], y=s["Y"], z=s["zpl"], u=u, p=p,
                         nu=s["nu"], t=float(z["t"]), Lx=M.LX, Lz=M.LZ)
     return np.load(cache)
 

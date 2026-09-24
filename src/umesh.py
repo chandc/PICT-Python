@@ -389,7 +389,7 @@ def _cluster(n, a, b, beta):
 
 def rect_mesh(nx, ny, x0=0.0, x1=1.0, y0=0.0, y1=1.0, span=1.0, perturb=0.0, seed=0,
               tags=("left", "right", "bottom", "top"), cluster=0.0, diag="alt",
-              cells="tri", wall_layers=0):
+              cells="tri", wall_layers=0, cluster_y=None):
     """Triangulated rectangle: nx by ny quads, each split into two triangles.
 
     `perturb` jitters the INTERIOR nodes by that fraction of the local spacing, which turns an
@@ -411,7 +411,7 @@ def rect_mesh(nx, ny, x0=0.0, x1=1.0, y0=0.0, y1=1.0, span=1.0, perturb=0.0, see
     """
     rng = np.random.default_rng(seed)
     xs = _cluster(nx, x0, x1, cluster)
-    ys = _cluster(ny, y0, y1, cluster)
+    ys = _cluster(ny, y0, y1, cluster if cluster_y is None else cluster_y)   # cluster_y: wall-normal only (channel)
     X, Y = np.meshgrid(xs, ys, indexing="ij")
     if perturb:
         # jitter by the LOCAL spacing, so a clustered mesh is not torn apart near the walls
