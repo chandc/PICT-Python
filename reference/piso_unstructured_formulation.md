@@ -56,6 +56,17 @@ Where:
 From this, the velocity can be isolated algebraically:
 $$ \vec{u}_P^* = \frac{\vec{H}_P - \sum_N a_N \vec{u}_N^*}{a_P} - \frac{V_P}{a_P} (\nabla p^{n-1})_P $$
 
+### Time Discretisation and the Convecting Flux
+
+The transient term is BDF2 ($a_t = 3/(2\Delta t)$, history $2\vec{u}^n - \tfrac12 \vec{u}^{n-1}$), BDF1 on the first step. The convection coefficients $a_N$ are built from a face mass flux, and **which** flux matters for the temporal order:
+
+$$ F_f^{\,conv} = 2 F_f^{\,n} - F_f^{\,n-1} \quad\text{(second-order extrapolation to } t^{n+1}\text{)} $$
+
+Using the flux at the start of the step, $F_f^{\,n}$, is a first-order-in-time linearisation of the convecting velocity. It is invisible on any convection-free test (the unsteady Stokes gate T4 measured order 2.3-2.7 with it) and was caught only by the Orr-Sommerfeld gate T8, where the phase speed of the unstable mode converged at order 1.00 in $\Delta t$. With the extrapolated flux the T8 results are $\Delta t$-independent to the third digit, and the cylinder's shedding forces stop moving between $\Delta t = 0.01$ and $0.005$ (the lagged version converges to them at first order). `PISO.conv_flux_extrap` (default on) selects this; the Rhie-Chow corrector still uses $F^n$ for its time-step-independent damping term, which is a different role.
+
+> [!NOTE]
+> The lift-amplitude change on the cylinder at $\Delta t = 0.01$ was 5%, not the fraction of a percent one might guess from $\omega \Delta t \approx 0.01$: the relevant time scale for the linearisation error is the near-wall convective one, $h/u \sim 0.024$, i.e. a local CFL of about 0.4.
+
 ---
 
 ## 4. Rhie-Chow Interpolation (Interface Fluxes)
@@ -114,6 +125,12 @@ At walls, the velocity is fixed (e.g., $\vec{u} = 0$). The mass flux through the
 > **No Rhie-Chow Damping on Walls!**
 > Applying Rhie-Chow damping on a Dirichlet boundary face artificially alters the fixed physical mass flux, creating phantom mass generation that the Poisson solver smears globally. The flux must be strictly $F_{wall} = \vec{u}_{BC} \cdot \vec{S}_f$.
 
+### Wall Forces (post-processing, not discretisation)
+The force on a no-slip wall is integrated from the wall pressure (owner-cell value, Neumann) and the wall shear taken from the solver's **own discrete wall flux**, $\tau_w = \nu\, u_P / d_n$ with $d_n$ the centroid-to-wall distance and the tangential derivatives dropped (they vanish at a no-slip wall). Reconstructing the shear from the wall cell's cell-centre gradient reads it $d_n/2$ from the wall and under-predicts the viscous drag by 3% on the cylinder at Re 100; the discrete flux is what the momentum balance actually applied, and it puts the steady drag within 0.3% of HydroGym's converged Taylor-Hood value on two different meshes.
+
+### Periodic Boundaries
+Two boundary groups become a periodic seam by pairing faces whose centres differ by the period vector and merging each pair into one interior face: the surviving face keeps its owner, takes the partner's owner as neighbour, and its cell-to-cell vector is $\vec{d} = \vec{x}_{N} - \vec{L} - \vec{x}_{P}$ with $\vec{L}$ the period, so the vector points forward across the seam rather than back across the domain. Every operator that reads geometry through $\vec{d}$, the face weights and $\vec{E}_f, \vec{T}_f$ is then periodic with no further change; the only operators that had to be touched were two that read the neighbour centroid directly. Because the seam faces are ordinary interior faces, there are no ghost cells and the pressure Poisson system keeps its single null vector (`Mesh.make_periodic`).
+
 ### Dong Outflow Boundary Condition
 Open boundaries are notoriously unstable when vortices exit the domain, as localized backflow (inflow) can drag kinetic energy back into the system, causing the solver to blow up.
 
@@ -123,5 +140,66 @@ $$ \nu \frac{\partial \vec{u}}{\partial n} - p \hat{n} = -\frac{1}{2} |\vec{u}|^
 Where $S_0(x)$ is a smoothed step function that activates only during backflow:
 $$ S_0(x) = \frac{1}{2} \left( 1 - \tanh\left(\frac{x}{U_0}\right) \right) $$
 
-- **When fluid exits ($\vec{u} \cdot \hat{n} > 0$)**: $S_0 \approx 0$, recovering the standard traction-free outflow condition.
 - **When fluid enters ($\vec{u} \cdot \hat{n} < 0$)**: $S_0 \approx 1$, applying a heavy artificial dynamic pressure penalty that suppresses the incoming kinetic energy and forces the vortex to cleanly leave the domain without destabilizing the global solve.
+
+---
+
+## 7. The Crucial Role of the Green-Gauss Gradient (Duality vs. Consistency)
+
+A defining characteristic of this solver is the explicit prioritization of **discrete mass-momentum duality** over pointwise numerical consistency. This design choice was the result of extensive investigation into the $\mathcal{O}(1)$ error floor observed on unstructured steady Stokes flow.
+
+```mermaid
+flowchart TD
+    Problem["Pressure Checkerboard Effect"] --> Method1("Staggered Grid")
+    Problem --> Method2("Collocated Grid")
+    
+    Method1 --> Desc1["Velocity on faces, Pressure at centers. Naturally checkerboard-free, but highly complex for arbitrary unstructured grids."]
+    
+    Method2 --> RC["Rhie-Chow Interpolation"]
+    RC --> Desc2["Adds a pressure difference damping term to face fluxes to stabilize continuity."]
+    
+    Desc2 --> Issue["Momentum Equation Vulnerability: If pressure gradient G is not blind to the checkerboard, the velocity receives an O(1) error."]
+    
+    Issue --> Sol1("Least-Squares Gradient")
+    Sol1 --> Desc3["Highly accurate, but physically 'sees' the checkerboard. Transmits O(1) error."]
+    
+    Issue --> Sol2("Dual Green-Gauss Gradient")
+    Sol2 --> Desc4["Swaps interpolation weights to force G = -D^T. Blinds momentum to checkerboard. Recovers 2nd order velocity."]
+    
+    style Sol2 stroke:#333,stroke-width:2px,fill:#bbf
+    style Sol1 stroke:#f66,stroke-width:2px,stroke-dasharray: 5 5
+```
+
+### The Checkerboard Transmission Problem
+In standard collocated Finite Volume schemes, Rhie-Chow interpolation prevents the checkerboard pressure mode from contaminating the *continuity* equation. However, the momentum equation still requires a cell-centered pressure gradient. 
+If the discrete pressure gradient operator ($G$) is not precisely the negative transpose of the discrete divergence operator ($D$), the momentum equation is not "blind" to the checkerboard mode. 
+
+### Why Least-Squares (LSQ) Fails
+Most modern unstructured solvers default to Least-Squares (LSQ) gradients because they guarantee 1st or 2nd-order spatial consistency on arbitrary meshes. 
+
+Mathematically, the LSQ gradient seeks a constant gradient vector $\nabla p_P$ at cell $P$ that minimizes the weighted sum of squared errors between the extrapolated and actual neighbor values:
+$$ E = \sum_N w_N \left( p_N - (p_P + \nabla p_P \cdot \vec{d}_{PN}) \right)^2 $$
+Minimizing $E$ yields a precise geometric tensor that computes a highly accurate local gradient. 
+
+However, because LSQ is highly accurate, it physically "sees" the high-frequency checkerboard pressure mode and computes its gradient perfectly. This transmits the checkerboard error directly into the velocity field as an $\mathcal{O}(1)$ momentum source term, completely destroying velocity convergence (resulting in a hard 0th-order error floor).
+
+### The Dual Green-Gauss Solution ($G = -D^T$)
+To cure this, the solver abandons the consistent LSQ gradient in favor of a **Dual Green-Gauss Gradient** (`GGDualGradient`). 
+
+The standard Green-Gauss gradient computes the gradient via the divergence theorem over the cell volume $V_P$:
+$$ \nabla p_P = \frac{1}{V_P} \sum_{faces} p_f \vec{S}_f $$
+The face pressure $p_f$ is typically interpolated using the standard distance-based geometric weight $w_f = \frac{|\vec{x}_f - \vec{x}_N|}{|\vec{d}_{PN}|}$:
+$$ p_{f,\text{standard}} = w_f p_P + (1 - w_f) p_N $$
+However, inserting this standard interpolation into the sum does **not** yield a gradient operator $G$ that is the exact negative transpose of the divergence operator $D$.
+
+By explicitly **swapping** the geometric interpolation weights:
+$$ p_{f,\text{dual}} = (1 - w_f) p_P + w_f p_N $$
+the Green-Gauss gradient is forced to telescope exactly across the mesh. This mathematically guarantees $G = -D^T$. 
+Because the collocated divergence operator is inherently blind to the checkerboard mode, the dual $G$ operator is identically blind to it as well. The checkerboard mode is trapped entirely within the pressure field, allowing the velocity field to cleanly converge at **2nd order**.
+
+### The Arbitrary Triangle Trade-off
+Extensive effort was spent studying this gradient on arbitrary triangles because the swapped-weight Green-Gauss formulation is mathematically **$\mathcal{O}(0)$ inconsistent** on non-orthogonal, unstructured meshes. The face value approximation is strictly incorrect unless the adjacent cells are perfect mirror images.
+The rigorous testing campaign was required to prove that this severe local truncation error does not ruin the global solution. The data ultimately proved that:
+1. On structured/clustered quads (up to $\beta = 2.0$), the duality dominates, and velocity achieves perfect 2nd-order accuracy.
+2. The local $\mathcal{O}(0)$ inconsistency error scales as $\frac{r-1}{2(r+1)}$ (where $r$ is the stretching ratio) and smoothly vanishes under mesh refinement.
+3. Therefore, trading pointwise consistency (LSQ) for exact global duality (Green-Gauss) is strictly required to achieve a functioning 2nd-order collocated solver.
