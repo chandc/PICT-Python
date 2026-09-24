@@ -2332,3 +2332,44 @@ forces). (3) The two remaining differences are of opposite sign on the two mesh 
 two second-order discretisations converging to the same answer look like. T9 is closed at the
 1% level; the open item is the 2% St deficit that persists on butterflies coarser than 0.012 at
 the wall, a resolution requirement now quantified rather than a scheme defect.
+
+**Fine triangle mesh** (`meshes/cylinder_medium_fine.geo`: HydroGym's generator with n1 35 -> 70,
+n2/n3 unchanged; 25376 tris, 220 wall faces, wall cell 0.009, wake band 0.025, far field 0.31;
+matched to the fine butterfly's 27968 quads / 224 faces / 0.012; `figures/cylinder_meshes_fine_tri_vs_butterfly.png`).
+T = 150, dt = 0.01, corrected flux, 240 ms/step:
+
+| mesh | cells | St | C_D | C_L amp |
+|---|---|---|---|---|
+| HydroGym P2-P1 (reference) | 17258 tris | 0.1791 | 1.4862 | 0.3582 |
+| fine butterfly | 27968 quads | 0.1782 (-0.5%) | 1.4878 (+0.1%) | 0.3520 (-1.7%) |
+| HydroGym tris | 17258 | 0.1780 (-0.6%) | 1.4927 (+0.4%) | 0.3606 (+0.7%) |
+| **fine tris** | 25376 | **0.1785 (-0.3%)** | **1.4851 (-0.07%)** | **0.3611 (+0.8%)** |
+
+Refining the wall from 0.019 to 0.009 on the triangles moves St +0.3%, C_D -0.5% and C_L amplitude
++0.1%: the triangle family is converged at the medium mesh already for the lift and needed the
+refinement only for drag and St. At matched wall resolution and cell count the two mesh families
+now agree with each other to 0.2% in St and C_D and 2.6% in lift amplitude, and both sit within
+0.8% of HydroGym on St and C_D; the lift amplitude straddles the reference (quads -1.7%, tris
++0.8%). Field (`figures/t9_trifine_field_mesh.png`): the same street; the two-colour speckle is
+present at cell level as on every triangle mesh and absent after vertex averaging.
+
+**Quads vs triangles, coarse and fine, side by side** (`figures/t9_quad_vs_tri_coarse_fine.png`,
+`plot_utility/plot_quad_vs_tri_coarse_fine.py`; grids in `figures/cylinder_meshes_medium2x.png` and
+`figures/cylinder_meshes_fine_tri_vs_butterfly.png`):
+
+| | coarse quads | coarse tris | fine quads | fine tris |
+|---|---|---|---|---|
+| cells / wall faces | 6992 / 112 | 17258 / 112 | 27968 / 224 | 25376 / 220 |
+| wall cell | 0.024 | 0.019 | 0.012 | 0.009 |
+| St vs HydroGym | -2.0% | -0.6% | -0.5% | -0.3% |
+| C_D | -0.4% | +0.4% | +0.1% | -0.1% |
+| C_L amp | -7.0% | +0.7% | -1.7% | +0.8% |
+
+The butterfly spends its cells in a radial O-ring and coarsens abruptly at the block boundary at
+1.5; HydroGym's generator grades continuously from the wall into a fine centreline band the length
+of the wake, so at equal cell count the triangles have the finer wake and the quads the more
+orthogonal wall layer. The coarse butterfly's diffuse shear layers and elongated wake vortices are
+its -7% / -2%; both fine meshes resolve the layers with ~10 cells across and carry compact cores to
+the outlet. Both families converge toward the reference; the fine pair agrees to 0.2% in St and
+C_D and brackets the lift amplitude (-1.7% / +0.8%). The two-colour speckle is a cell-level feature
+of every triangle mesh and does not survive vertex averaging.
