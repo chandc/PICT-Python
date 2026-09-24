@@ -2373,3 +2373,65 @@ its -7% / -2%; both fine meshes resolve the layers with ~10 cells across and car
 the outlet. Both families converge toward the reference; the fine pair agrees to 0.2% in St and
 C_D and brackets the lift amplitude (-1.7% / +0.8%). The two-colour speckle is a cell-level feature
 of every triangle mesh and does not survive vertex averaging.
+
+## 48. Inviscid kinetic-energy conservation (T11, 2026-09-24)
+
+Port of the structured code's `test_energy_conservation.py` -> `test_uenergy.py`: fully periodic
+unit box (both seams), nu = 0. (1) OPERATOR: production P = sum u.(C u) of the assembled convection
+operator (implicit upwind part + deferred central/skewness correction, as the solver applies it) on
+a solver-consistent field (one 1e-4 step so div F = 0 to round-off), as eps = P/E per turnover
+(1/max|u|). (2) SOLVER: E(T)/E(0) through full inviscid steps on the 2D Taylor-Green vortex, which
+is an exact STEADY Euler solution, so any change is numerical dissipation.
+
+**Operator** (eps per turnover; positive = dissipative):
+
+| field | mesh | n | central | upwind |
+|---|---|---|---|---|
+| Taylor-Green | quads | 16 / 32 / 64 | -3e-16 / -1e-16 / -2e-16 | 1.77 / 0.89 / 0.44 |
+| Taylor-Green | tris | 16 / 32 / 64 | -2e-16 / -1e-16 / -4e-17 | 1.18 / 0.57 / 0.29 |
+| random solenoidal | quads | 16 / 32 / 64 | +1e-17 / +3e-17 / +4e-17 | 3.39 / 1.75 / 0.89 |
+| random solenoidal | tris | 16 / 32 / 64 | -4.1e-3 / -1.1e-3 / -2.7e-4 | 2.08 / 1.09 / 0.54 |
+
+Central is skew-symmetric to round-off on quads (w = 1/2: sum_f F (u_O^2 - u_N^2)/2 telescopes to
+sum_P u_P^2 div F = 0), for both fields, and on triangles for the symmetric Taylor-Green field. On
+triangles with a general field the skewness correction breaks the symmetry by O(h^2), order 1.9
+per halving, and the sign is anti-dissipative: 0.03% of E per turnover at n = 64. First-order
+upwind removes 44-89% of E per turnover at n = 64, halving per refinement (the structured code's
+second-order upwind removed ~10%); it is what upwinding is, and it is why `central` is not a
+preference.
+
+**Full inviscid steps**, Taylor-Green, T = 0.1, loss rate (1 - E(T)/E(0))/T per turnover:
+
+| mesh | n | dt 0.02 | 0.01 | 0.005 | 0.0025 | 0.00125 |
+|---|---|---|---|---|---|---|
+| quads | 32 | 0.315 | 0.092 | 0.030 | 0.011 | 0.0046 |
+| quads | 64 | 0.307 | 0.081 | 0.022 | 0.0063 | 0.0020 |
+| tris | 32 | 0.360 | 0.117 | 0.050 | 0.034 | 0.029 |
+| tris | 64 | 0.332 | 0.082 | 0.020 | 0.0069 | 0.0057 |
+| upwind, quads 64, dt 0.005 | | | | 0.436 | | |
+
+The full-step loss is TEMPORAL: on 64^2 quads it falls 3.7x, 3.5x, 3.1x per dt halving (second
+order in dt) with no visible spatial floor, so the 2.2% per turnover at dt = 0.005 that matches the
+structured code's ~2% is time integration and splitting, not the operator. Triangles show a spatial
+floor (2.9% per turnover at n = 32, 0.6% at 64, falling ~4x per refinement) -- the skewness/
+checkerboard price on non-bipartite meshes, here at the energy level. Over a full turnover on 64^2
+quads at dt = 0.005 the rate is steady (0.24% per 0.1, 0.44% total), a genuine dissipation rate, not
+a transient. With the LAGGED convecting flux (pre-section-47 default) the loss is 3-4x smaller
+(0.029 / 0.0086 / 0.0030 at dt 0.01 / 0.005 / 0.0025): the first-order lag is slightly
+anti-dissipative, which is another reason its lift-amplitude agreement on the cylinder was
+accidental.
+
+**Where the full-step loss comes from** (64^2 quads, central, T = 0.1, loss rate per turnover):
+
+| dt | Rhie-Chow on, n_corr 2 | Rhie-Chow OFF | RC on, n_corr 4 |
+|---|---|---|---|
+| 0.01 | 0.0808 | 0.0778 | 0.0807 |
+| 0.005 | 0.0218 | 0.0196 | 0.0217 |
+| 0.0025 | 0.0063 | 0.0049 | 0.0063 |
+
+Switching the Rhie-Chow damping off removes only 4-22% of the loss (and the pressure stays clean
+over the short window), and doubling the correctors changes nothing, so the dissipation is the
+time integration itself -- BDF2 plus the PISO velocity-pressure splitting -- at O(dt^2). That is
+the same conclusion the structured code reached ("discretisation error rather than a systematic
+energy source"), here with the split made explicit. T11: PASS -- operator conserving to round-off
+on quads; full step dissipation second order in dt and 0.2% per turnover at dt = 0.00125.
