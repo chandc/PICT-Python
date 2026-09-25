@@ -58,11 +58,20 @@ bandwidth-bound part, not the 3.7x the script prints; take the two as bounds.
 |---|---|---|---|
 | V3 cylinder, butterfly-fine 27968 x 64 modes, dt 0.002, 200 D/U (1e5 steps) | 66 h | 20 h | 10 h |
 | V3 cylinder, 1e5-cell plane x 64 modes, same | ~240 h | ~70 h | ~35 h |
-| channel Re_tau 395, 96x160 x 128 modes, 30 time units | 10 h | 3 h | 1.5 h |
+| channel Re_tau 395, 96x160 x 128 modes, 30 time units (measured 2.1-2.8 s/step on the GB10) | 18-23 h | 5-6 h | 3 h |
 | TGV Re 800/1600, 128^2 x 128, T 20 | 20 min | 6 min | 3 min |
 
 Memory at V3 size (1e5 cells x 128 planes) is ~10 GB, so a 40 GB A100 is enough; more GPUs do
 not help yet (single-device code).
+
+## The Re_tau 395 channel (`A100_channel_re395.ipynb`)
+
+`run_uchannel25.py --device gpu --re-tau 395 --nx 96 --ny 160 --nz 128 --dt 0.001 --T 30 --t-stats 10`:
+minimal box (Lx pi, Lz 0.34 pi; Lx+ 1241, Lz+ 422), dx+ 12.9, dy+ 1.0 at the wall, dz+ 3.3, WALE,
+constant pressure gradient. Initial condition: the Re_tau 180 DNS field with its plane mean
+replaced by the MKM 395 mean (U_b/u_tau 17.54); reference `reference/mkm_chan395/` (Moser, Kim &
+Mansour 1999, Re_tau 392.24, full box 2 pi x pi -- judge the log region and the peaks, the outer
+region is box-dependent). Smoke-tested on the GB10 at this size: 2.1-2.8 s/step.
 
 ## The runs
 

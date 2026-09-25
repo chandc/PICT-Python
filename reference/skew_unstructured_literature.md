@@ -3309,3 +3309,10 @@ butterfly-fine plane; on an A100-80GB between 10 h (bandwidth ratio 7.5 against 
 273 GB/s) and 20 h (the 3.7 the device properties imply, which double-count the GB10's bus). A
 1e5-cell plane, which Re 3900 wants (wall cell ~0.002 D), is 3.5x that: 35-70 h on the A100. The
 package is `upict25_a100.tar.gz` at the repo root.
+
+Re_tau 395 case prepared for it (`run_uchannel25.py --re-tau 395`, MKM 1999 reference in
+`reference/mkm_chan395/`, initial field = the 180 DNS field with the mean shifted to MKM's, minimal
+box 96 x 160 x 128, dt 0.001; notebook `tools/a100/A100_channel_re395.ipynb`). Measured on the GB10 at
+that size: 2.1-2.8 s/step, i.e. 18-23 h for the 30-time-unit run -- the real-mesh rate (~230 ms per
+1e5 cell-modes), not the box rate the first estimate used; 3-6 h expected on an A100. Committed and
+pushed (`8f20e9c`, branch `unstructured`).
