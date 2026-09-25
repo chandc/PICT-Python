@@ -27,6 +27,7 @@ ap.add_argument("--model", default="wale", choices=["wale", "smagorinsky", "none
 ap.add_argument("--forcing", default="cpg", choices=["cpg", "mf"]); ap.add_argument("--Ub", type=float, default=15.63, help="bulk velocity for --forcing mf (DNS: 15.63)")
 ap.add_argument("--tag", default=None); ap.add_argument("--checkpoint", type=int, default=2500); ap.add_argument("--restart", default=None)
 ap.add_argument("--report", type=int, default=500); ap.add_argument("--nsteps", type=int, default=None)
+ap.add_argument("--cfl-max", type=float, default=0.0, help="> 0: CFL-limited time step, dt halves (up to 3 times) whenever the face-flux Courant number would exceed this; 0 = fixed dt")
 ap.add_argument("--device", default="cpu", choices=["cpu", "gpu"], help="gpu: the whole step on CuPy with the block AMG solves (tools/a100/README.md)")
 ap.add_argument("--re-tau", type=float, default=180.0, help="180 (FOSLS DNS reference, DNS initial field) or 395 (MKM 1999 reference; initial field = the 180 DNS field with its mean shifted to the MKM 395 mean)")
 ap.add_argument("--Lx", type=float, default=np.pi, help="streamwise box (default pi, the minimal channel; MKM full box 2 pi)"); ap.add_argument("--Lz", type=float, default=0.34 * np.pi, help="span (default 0.34 pi; MKM full box pi)")
@@ -58,7 +59,7 @@ ys = np.unique(np.round(m.centroid[:, 1], 10)) if not a.mesh else 0.5 * (y_edges
 kd = np.full(m.nbface, DIRICHLET); z0 = np.zeros(m.nbface)
 fx = np.ones(m.ncell) if a.forcing == "cpg" else np.zeros(m.ncell)
 s = PISO25(m, a.nz, LZ, NU, a.dt, BC(m, kd, z0), BC(m, kd, z0), BC(m, kd, z0), BC(m), body_force=(fx, np.zeros(m.ncell), np.zeros(m.ncell)), n_nonorth=n_nonorth, device=a.device, solver=("amg" if a.device == "gpu" else "lu"), mom_rtol=1e-7)
-s.sgs_model = a.model
+s.sgs_model = a.model; s.cfl_max = a.cfl_max
 if a.model == "smagorinsky":
     ywall = np.minimum(m.centroid[:, 1], LY - m.centroid[:, 1]); s.sgs_kw = dict(damping=ywall * RE_TAU)
 if a.forcing == "mf": s.set_mass_flow(a.Ub)
@@ -130,22 +131,25 @@ def checkerboard():
     hp = pp - nb / np.maximum(cnt, 1)[:, None]
     return cbq, cbt, np.sqrt((hp ** 2).mean()) / prms
 def cfl():
-    hx = LX / a.nx; hy = np.sqrt(m.vol); uh, vh, wh = s.host(s.u), s.host(s.v), s.host(s.w)
-    return float(max((np.abs(uh) * a.dt / hx).max(), (np.abs(vh) * a.dt / hy[:, None]).max(), (np.abs(wh) * a.dt / (LZ / a.nz)).max()))
-nsteps = a.nsteps or int(round((a.T - s.time) / a.dt)); stats = Stats(s, edges=(y_edges if a.mesh else None)); t0 = time.time(); hist = []
-for k in range(nsteps):
+    return s.courant()                                                     # the face-flux Courant number the solver limits
+nsteps = a.nsteps or int(round((a.T - s.time) / a.dt)); stats = Stats(s, edges=(y_edges if a.mesh else None)); t0 = time.time(); hist = []; diverged = False
+k = -1
+while True:
+    k += 1
+    if a.nsteps and k >= a.nsteps: break
+    if not a.nsteps and s.time >= a.T - 1e-12: break
     s.step()
-    if not bool(s.xp.isfinite(s.u).all()): print(f"  DIVERGED at step {s.nstep}", flush=True); break
+    if not bool(s.xp.isfinite(s.u).all()): print(f"  DIVERGED at step {s.nstep}, t = {s.time:.4f}, last CFL {s.cfl_last:.2f}", flush=True); diverged = True; break
     if s.time >= a.t_stats - 1e-12: stats.sample()
     tw = wall_stress(); hist.append((s.time, tw, s.bulk_velocity(), s.energy() / (LX * LY * LZ), float(s.nu_t.mean()) / NU, float(s.nu_t.max()) / NU))
     if (k + 1) % a.report == 0:
         cbq, cbt, hp = checkerboard()
-        print(f"  t={s.time:7.3f}  u_tau {np.sqrt(tw):.4f} (Re_tau {np.sqrt(tw)/NU:6.1f})  U_b {hist[-1][2]:.3f}  E/V {hist[-1][3]:.3f}  <nu_t>/nu {hist[-1][4]:.3f} max {hist[-1][5]:.2f}  CFL {cfl():.2f}  p two-colour quad {cbq:.4f} tri {cbt:.4f} hp {hp:.3f}  stats {stats.n}  ({(time.time()-t0)/(k+1)*1e3:.0f} ms/step)", flush=True)
+        print(f"  t={s.time:7.3f}  u_tau {np.sqrt(tw):.4f} (Re_tau {np.sqrt(tw)/NU:6.1f})  U_b {hist[-1][2]:.3f}  E/V {hist[-1][3]:.3f}  <nu_t>/nu {hist[-1][4]:.3f} max {hist[-1][5]:.2f}  CFL {cfl():.2f} dt {s.dt:.5f}  p two-colour quad {cbq:.4f} tri {cbt:.4f} hp {hp:.3f}  stats {stats.n}  ({(time.time()-t0)/(k+1)*1e3:.0f} ms/step)", flush=True)
     if (k + 1) % a.checkpoint == 0: s.save(f"results/{tag}_ckpt.npz")
-s.save(f"results/{tag}_final.npz")
+if not diverged: s.save(f"results/{tag}_final.npz")
 # ---- statistics against the DNS
 pr = stats.profiles(); y = pr["y"]
-if stats.n:
+if stats.n and not diverged:
     h = np.array(hist); win = h[:, 0] >= a.t_stats; ut = np.sqrt(h[win, 1].mean()); re_tau = ut / NU
     # fold onto the lower half
     half = y <= 1.0; yl = y[half]

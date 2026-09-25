@@ -156,7 +156,7 @@ cell-modes at every size, inside the G4 bar, and at 140 on a real stretched mesh
 | TGV 128²×64 | 340 | 63 |
 | TGV 384²×64 | 3,275 | 67 |
 | fine butterfly 27,968 quads × 64 modes, WALE | 1,290 | 140 |
-| channel Re_τ 395, 96×160 × 128 modes | ~1,400 | ~140 |
+| channel Re_τ 395, 96×160 × 128 modes | ~1,400 (A100: 645) | ~140 |
 
 Launch floor ~46 ms per step; the nonlinear term is now 40% of the step. The first A100 profile
 (before the last optimisation) gave 47.6 ms per 10⁵ cell-modes at 384²×64 behind a 237 ms launch
@@ -167,7 +167,7 @@ floor; rerun `tools/a100/profile_step.py` after pulling.
 1. Port the σ-model; gate: TGV Re 800 curve rms at 96²×96 below the implicit run's.
 2. Run the Re_τ 395 channel on the A100 (`tools/a100/A100_channel_re395.ipynb`; MKM 1999
    reference in `reference/mkm_chan395/`; initial field = the 180 DNS field with the mean shifted).
-3. Fuse the nonlinear term's padded-plane gathers on the GPU; CFL-adaptive stepping.
+3. Fuse the nonlinear term's padded-plane gathers on the GPU. (CFL-adaptive stepping done 2026-09-25 [§61]: `--cfl-max`, face-flux Courant number, dt halves up to three times; the Re_τ 395 run at fixed dt 0.001 diverged at C ≈ 1.2 after ten time units.)
 4. A Re 3900 cylinder mesh (wall cell ~0.002 D, 10⁵ cells) for V3.
 5. Fourth-order in-plane reconstruction, only if a transition's peak timing becomes a criterion.
 

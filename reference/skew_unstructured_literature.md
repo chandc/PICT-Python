@@ -3363,3 +3363,25 @@ for the measured 100x difference in energy loss (50). (5) max(dx, dy, dz) as the
 INCREASE nu_t and damp more, the opposite of the review's aim; V^(1/3) reproduced the channel within
 1% (54). The review's one useful recommendation is recorded; the design rules the runs established
 are now in `piso_unstructured_formulation.md` (section "Design rules the LES runs established").
+
+## 61. The Re_tau 395 channel on the A100: a CFL divergence, and the adaptive step (2026-09-25)
+
+First run of `run_uchannel25.py --re-tau 395` on an A100-SXM4-40GB (96 x 160 x 128, WALE, dt 0.001,
+645 ms/step): healthy for ten time units -- u_tau 0.93-1.01, U_b 17.65 -> 17.90 settling toward
+MKM's 17.54 from above, <nu_t>/nu 0.10-0.12, pressure two-colour 0.00% -- then **diverged at step
+10178 (t = 10.18)** with the per-component CFL reading 0.68-0.70 throughout. In the face-flux Courant
+measure (sum over faces of the outgoing flux over the cell volume, plus |w|/dz, times dt) that is
+about 1.2: the Re 180 channel ran at 0.5-0.9 in the same measure and never failed, so the explicit
+central RK3 stage with the explicit WALE term has its practical limit near 1 here, below the 1.73
+of the linear analysis, and a rare local excursion crossed it. The driver's post-processing also
+crashed on the NaN statistics (fixed: a divergence now ends the run cleanly, the last valid
+checkpoint stays).
+
+Adaptive step (`PISO25.cfl_max`, `--cfl-max`): before each step the face-flux Courant number per
+unit dt is measured (one sparse product), and dt is set to the largest of dt0 / 2^m (m <= 3) that
+keeps it below `cfl_max`, shrinking at once and growing one level per step; RK3 has no history so a
+change costs nothing, and the per-dt momentum and pressure families are cached (a level costs one
+extra AMG setup, 0.2 s). On the Re 180 channel the measure reads 0.52 at dt 0.002 (the 0.31 of the
+old per-component reading), and `--cfl-max 0.8` leaves that run alone; on the 395 case it will
+halve dt to 0.0005 (C ~ 0.6) for most of the run: 60k steps, ~11 h on the A100. The notebook
+launches with `--cfl-max 0.8` and resumes the diverged run from its t = 10 checkpoint.

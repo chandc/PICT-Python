@@ -144,6 +144,15 @@ class PISO25:
         self.sgs_nu_field = None
         self.nu_t = xp.zeros((m.ncell, self.nz))
         self._Tf_span = dm.Tf * dm.span
+        # CFL-limited time step (LES plan L4): `cfl_max` > 0 makes step() pick, before each step, the largest of
+        # dt0 / 2^m (m = 0..cfl_levels-1) whose predicted Courant number stays below cfl_max, rising at most
+        # one level per step. RK3 carries no history so a change costs no order; the per-dt factorisations /
+        # AMG families are cached per dt level. The Courant number is the face-flux one, exact on any polygon:
+        #   C = dt [ sum_f max(F_f, 0) / V + |w| / dz ],  taken as the maximum over cells and planes.
+        # Explicit RK3 central convection is stable to about C = 1.7 in this measure; the Re_tau 395 channel at
+        # a fixed dt 0.001 ran at C 0.7 for ten time units and then diverged (record section 61).
+        self.cfl_max = 0.0; self.cfl_levels = 4; self.dt0 = self.dt; self._dt_level = 0; self.cfl_last = 0.0
+        self.Sabs = self._tomat(abs(Sc))
 
     # ---------------------------------------------------------------- host/device
     def asdev(self, a):
@@ -288,7 +297,7 @@ class PISO25:
 
     # ---------------------------------------------------------------- per-mode pieces
     def _mom_solver(self, stage, comp, k, L_h, be):
-        key = (stage, comp, k)
+        key = (stage, comp, k, self.dt)
         if key not in self._mom:
             m = self.m
             A = (sp.diags(m.vol / self.dt) - be * L_h + sp.diags(be * self.nu * self.kz_h[k] ** 2 * m.vol)).tocsc()
@@ -297,7 +306,7 @@ class PISO25:
         return self._mom[key]
 
     def _mom_family(self, stage, comp, L_h, be):
-        key = (stage, comp)
+        key = (stage, comp, self.dt)
         if key not in self._mom_fam:
             from src.umodesolve import ModeFamily
             m = self.m; A0 = (sp.diags(m.vol / self.dt) - be * L_h).tocsr()                # SPD; the k-shift is be*nu*k^2*V
@@ -313,6 +322,7 @@ class PISO25:
         return gam
 
     def _pois_family(self, stage, Dcell_k0):
+        stage = (stage, self.dt)
         if stage not in self._pois_fam:
             from src.umodesolve import ModeFamily
             m = self.m; Dh = self.host(Dcell_k0); gam = self._gam_of(Dh)
@@ -322,7 +332,7 @@ class PISO25:
         return self._pois_fam[stage]
 
     def _pois_solver(self, stage, k, Dcell):
-        key = (stage, k)
+        key = (stage, k, self.dt)
         if key not in self._pois:
             m = self.m; gam = self._gam_of(Dcell)
             Ap, Ap_rhs = laplacian(m, gam, self.bc_p.kind)
@@ -372,11 +382,26 @@ class PISO25:
         return x[:, 0] + 1j * x[:, 1]
 
     # ---------------------------------------------------------------- the step
+    def courant(self, dt=None):
+        """max over cells and planes of dt [ sum_f max(F_f, 0)/V + |w|/dz ] (the face-flux Courant number)."""
+        xp = self.xp; dt = self.dt if dt is None else dt
+        c = 0.5 * (self.Sabs @ xp.abs(self.Ff)) / self.dm.vol[:, None] + xp.abs(self.w) / (self.Lz / self.nz)
+        return float(dt * c.max())
+
+    def _choose_dt(self):
+        if self.cfl_max <= 0: return
+        c1 = self.courant(1.0)                                          # Courant number per unit dt
+        want = 0
+        while want < self.cfl_levels - 1 and c1 * self.dt0 / 2 ** want > self.cfl_max: want += 1
+        self._dt_level = max(want, self._dt_level - 1)                   # shrink at once, grow one level per step
+        self.dt = self.dt0 / 2 ** self._dt_level; self.cfl_last = c1 * self.dt
+
     def step(self):
         xp = self.xp; dm = self.dm
         if not self._flux_init:
             if self.nstep == 0 and not bool(xp.any(self.Ff)) and (bool(xp.any(self.u)) or bool(xp.any(self.v))): self.init_flux()
             self._flux_init = True
+        self._choose_dt()
         m = self.m; dt = self.dt; nk = self.nk; kz = self.kz
         u, v, w, F, p = self.u, self.v, self.w, self.Ff, self.p
         N_prev = None
@@ -518,12 +543,13 @@ class PISO25:
     def save(self, path):
         h = self.host
         np.savez(path, u=h(self.u), v=h(self.v), w=h(self.w), p=h(self.p), Ff=h(self.Ff), time=self.time, nstep=self.nstep,
-                 f_bulk=getattr(self, "f_bulk", 0.0), nz=self.nz, Lz=self.Lz)
+                 f_bulk=getattr(self, "f_bulk", 0.0), nz=self.nz, Lz=self.Lz, dt=self.dt, dt_level=self._dt_level)
 
     def load(self, path):
         d = np.load(path); ad = self.asdev
         self.u[:] = ad(d["u"]); self.v[:] = ad(d["v"]); self.w[:] = ad(d["w"]); self.p[:] = ad(d["p"]); self.Ff[:] = ad(d["Ff"])
         self.time, self.nstep = float(d["time"]), int(d["nstep"]); self._flux_init = True
+        if "dt_level" in d.files: self._dt_level = int(d["dt_level"]); self.dt = self.dt0 / 2 ** self._dt_level
         if hasattr(self, "_mass_flow"):
             self.f_bulk = float(d["f_bulk"]); arr = (self.fx, self.fy, self.fz)[self._mass_flow[1]]; arr[:] = self.f_bulk
 
