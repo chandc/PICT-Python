@@ -105,6 +105,7 @@ class PISO25:
         self.Lu, self.Lv, self.Lw = self._tomat(self.Lu_h), self._tomat(self.Lv_h), self._tomat(self.Lw_h)
         self.Lu_rhs, self.Lv_rhs, self.Lw_rhs = self._dev_rhs(Lu_rhs), self._dev_rhs(Lv_rhs), self._dev_rhs(Lw_rhs)
         self.p_singular = bool((bc_p.kind == NEUMANN).all())
+        self._same_L = bool(np.array_equal(bc_u.kind, bc_v.kind) and np.array_equal(bc_u.kind, bc_w.kind))   # then u, v, w share one momentum family and are solved as one block
         # owner(+)/neighbour(-) scatter of a face quantity into cells (also the divergence, divided by V)
         Sc = (sp.coo_matrix((np.ones(m.nface), (o, np.arange(m.nface))), shape=(m.ncell, m.nface))
               - sp.coo_matrix((np.ones(int(i.sum())), (n[i], np.flatnonzero(i))), shape=(m.ncell, m.nface))).tocsr()
@@ -388,7 +389,25 @@ class PISO25:
             pb = self.beff(self.bc_p, p); gp = self.grad_p(p, pb)                       # (ncell, 2, nz)
             gp3 = (gp[:, 0], gp[:, 1], self.ddz(p))
             stars = []; Dcells = []
-            for comp, (bc, L, L_h, L_rhs, f) in enumerate(comps):
+            if self.solver == "amg" and self._same_L:
+                # one block solve for the three components (6 nk real columns): the same matrix, a third of the launches
+                fam, aP, aC = self._mom_family(s, 0, self.Lu_h, be)
+                bhs = []; xhs = []
+                for comp, (bc, L, L_h, L_rhs, f) in enumerate(comps):
+                    phi = (u, v, w)[comp]; Ld = self.diffusion(phi, L, L_rhs, bc)
+                    b = vol * phi / dt - g * Nk[comp] - z * N_prev[comp] + al * Ld + (al + be) * vol * (f[:, None] - gp3[comp])
+                    phih = self.fft(phi); bhs.append(self.fft(b) - al * self.nu * kz[None, :] ** 2 * vol * phih); xhs.append(phih)
+                bh3 = xp.concatenate(bhs, axis=1); xh3 = xp.concatenate(xhs, axis=1)
+                for it in range(max(1, self.n_inner)):
+                    corrs = []
+                    for comp, (bc, L, L_h, L_rhs, f) in enumerate(comps):
+                        x_phys = self.ifft(xh3[:, comp * nk:(comp + 1) * nk]); pbs = self.beff(bc, x_phys)
+                        corrs.append(self.fft(L_rhs(self.grad(x_phys, pbs), pbs)))
+                    xh3 = fam.solve_complex(bh3 + be * xp.concatenate(corrs, axis=1), X0=xh3, rtol=self.mom_rtol); self.solver_iters.append((s, "mom", fam.iterations))
+                if self.nz % 2 == 0:
+                    for comp in range(3): xh3[:, (comp + 1) * nk - 1] = 0.0
+                stars = [xh3[:, comp * nk:(comp + 1) * nk] for comp in range(3)]; Dcells = [(aP, aC)] * 3
+            for comp, (bc, L, L_h, L_rhs, f) in (enumerate(comps) if not stars else ()):
                 phi = (u, v, w)[comp]
                 Ld = self.diffusion(phi, L, L_rhs, bc)
                 b = vol * phi / dt - g * Nk[comp] - z * N_prev[comp] + al * Ld + (al + be) * vol * (f[:, None] - gp3[comp])

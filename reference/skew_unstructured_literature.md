@@ -3316,3 +3316,32 @@ box 96 x 160 x 128, dt 0.001; notebook `tools/a100/A100_channel_re395.ipynb`). M
 that size: 2.1-2.8 s/step, i.e. 18-23 h for the 30-time-unit run -- the real-mesh rate (~230 ms per
 1e5 cell-modes), not the box rate the first estimate used; 3-6 h expected on an A100. Committed and
 pushed (`8f20e9c`, branch `unstructured`).
+
+**L4 step 3, launch count and reductions (2026-09-25).** Prompted by the first A100 profile
+(A100-SXM4-40GB, cloud host): 47.6 ms per 1e5 cell-modes at 384^2 x 64 -- only 2.6x the GB10 for 5.7x
+the bandwidth -- behind a 237 ms per-step launch floor (four times the GB10's; ~700 kernel
+launches per step from Python at ~300 us each on that host). Three changes, no change of answers:
+(1) `src/ucuda.py` `spmm_shift` and `jacobi_shift`: the shifted family matvec A X + s D X and the
+whole damped-Jacobi sweep as one raw kernel each (were ~6 launches each); (2) the momentum
+equations for u, v, w solved as one block of 6 n_k columns when their operators coincide (channel,
+box) -- one solve, one convergence test, a third of the launches; (3) the column reductions of the
+PCG (three per iteration along the slow axis of the row-major block) as cuBLAS matrix-vector
+products, and the convergence test every second iteration. CPU path unchanged (Taylor-Green E to 9
+digits, channel+WALE to 6, laminar-channel tests pass); GB10 energies and divergence bitwise equal
+to before.
+
+| GB10, 3D TGV | before | after | per 1e5 cell-modes |
+|---|---|---|---|
+| 64^2 x 32 | 77 ms | 47 | 67 |
+| 128^2 x 64 | 480 | 329-340 | 61-63 |
+| 256^2 x 64 | 2,720 | 1,428-1,587 | 66-73 |
+| 384^2 x 64 | 6,762 | 3,275 | 67 |
+| fine butterfly 27968 x 64, WALE, n_nonorth 3 | 2,366 | 1,290 | 140 |
+
+Launch floor 56 -> 46 ms. **The G4 speed criterion (100 ms per step per 1e5 cell-modes) is now met
+at every size on the GB10**, and the real mesh at 140 is within 1.4x. The step's bulk is now the
+nonlinear term (248 of ~640 ms per stage at 384^2: the face gathers on the 3/2-padded planes and
+the pad/truncate FFTs), then the pressure solve (276, 10 iterations); the momentum solves are 55 x 6.
+On the A100 the same changes cut the floor from 237 ms to a third and the large-case rate toward
+25 ms per 1e5 cell-modes (to be measured there); the run-time table of `profile_step.py` remains a
+box-rate estimate -- use `--mesh` for a real mesh.

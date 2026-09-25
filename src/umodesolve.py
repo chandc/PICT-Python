@@ -94,7 +94,7 @@ class ModeFamily:
                 Dl = (lv.R @ Dl @ lv.P).tocsr()
         # coarsest: dense per mode
         if precond == "jacobi":
-            self.coarse_lu = np.zeros((self.nk, 1, 1)); self.presmooth, self.postsmooth = presmooth, postsmooth; self.iterations = 0; self.last_hist = []
+            self.coarse_lu = np.zeros((self.nk, 1, 1)); self.presmooth, self.postsmooth = presmooth, postsmooth; self.iterations = 0; self.last_hist = []; self._ones = None
             self._finish_device(device); return
         c = self.levels[-1]; Ac = c["A"].toarray(); Dc = c["D"].toarray()
         self.coarse = np.stack([Ac + sk * Dc for sk in self.s])                       # (nk, nc, nc)
@@ -102,7 +102,7 @@ class ModeFamily:
             for k in np.flatnonzero(self.s == 0.0): self.coarse[k] += 1e-8 * np.abs(np.diag(Ac)).mean() * np.eye(Ac.shape[0])   # regularise the Neumann k = 0 block
         self.coarse_lu = np.stack([np.linalg.inv(m) for m in self.coarse])              # (nk, nc, nc) explicit inverses, applied as one einsum
         self.presmooth, self.postsmooth = presmooth, postsmooth
-        self.iterations = 0; self.last_hist = []
+        self.iterations = 0; self.last_hist = []; self._ones = None
         self._finish_device(device)
 
     def _finish_device(self, device):
@@ -130,13 +130,32 @@ class ModeFamily:
         return lv["A"] @ X + (lv["D"] @ X) * self.s[None, :] if lv["D"].shape[0] == X.shape[0] else lv["A"] @ X
 
     def _mv(self, lv, X):
+        if self.device == "gpu" and X.dtype == self.xp.float64:
+            from src.ucuda import spmm_shift
+            return spmm_shift(lv["A"], lv["D"], self.s, X)                             # one kernel for A X + s D X
         return lv["A"] @ X + (lv["D"] @ X) * self.s[None, :]
 
     def _jacobi(self, lv, X, B, sweeps):
+        if self.device == "gpu" and X.dtype == self.xp.float64:
+            from src.ucuda import jacobi_shift
+            for _ in range(sweeps):
+                X = jacobi_shift(lv["A"], lv["D"], self.s, lv["diagA"], lv["diagD"], lv["omega"], X, B)   # one kernel per sweep
+            return X
         dk = lv["diagA"][:, None] + lv["diagD"][:, None] * self.s[None, :]
         for _ in range(sweeps):
             X = X + lv["omega"] * (B - self._mv(lv, X)) / dk
         return X
+
+    def _colsum(self, M):
+        """sum over rows of an (N, m) block: on the device a cuBLAS matrix-vector product (the row-major
+        block is a column-major transpose, so this is contiguous), instead of a strided reduction."""
+        if self.device == "gpu":
+            if self._ones is None or self._ones.shape[0] != M.shape[0]: self._ones = self.xp.ones(M.shape[0])
+            return self.xp.dot(self._ones, M)
+        return M.sum(axis=0)
+
+    def _colnorm(self, M):
+        return self.xp.sqrt(self._colsum(M * M))
 
     def vcycle(self, B, level=0):
         lv = self.levels[level]
@@ -151,7 +170,7 @@ class ModeFamily:
         return self._jacobi(lv, X, B, self.postsmooth)
 
     # ------------------------------------------------------------------ block PCG
-    def solve(self, B, X0=None, rtol=1e-8, atol=0.0, maxiter=200, check_every=1):
+    def solve(self, B, X0=None, rtol=1e-8, atol=0.0, maxiter=200, check_every=2):
         """B (N, nk) real block (call twice, or stack real/imag columns with duplicated shifts, for complex).
         Returns X with ||M_k x_k - b_k|| <= rtol ||b_k|| for every k. Host input -> host output; device
         input -> device output. `check_every` > 1 skips the device->host convergence test on some iterations."""
@@ -161,17 +180,17 @@ class ModeFamily:
         proj = (lambda M: M.__setitem__((slice(None), sm), M[:, sm] - M[:, sm].mean(axis=0, keepdims=True))) if self.singular_k0 else (lambda M: None)
         B = B.copy(); proj(B)
         R = B - self._mv(self.levels[0], X); proj(R)
-        bn = xp.maximum(xp.linalg.norm(B, axis=0), 1e-300); tol = xp.maximum(rtol * bn, atol)
-        Z = self.vcycle(R); proj(Z); P = Z.copy(); rz = (R * Z).sum(axis=0); hist = [xp.linalg.norm(R, axis=0) / bn]
+        bn = xp.maximum(self._colnorm(B), 1e-300); tol = xp.maximum(rtol * bn, atol)
+        Z = self.vcycle(R); proj(Z); P = Z.copy(); rz = self._colsum(R * Z); hist = [self._colnorm(R) / bn]
         for it in range(maxiter):
-            if it % check_every == 0 and bool((xp.linalg.norm(R, axis=0) <= tol).all()): break
+            if it % check_every == 0 and bool((self._colnorm(R) <= tol).all()): break
             AP = self._mv(self.levels[0], P); proj(AP)
-            alpha = rz / xp.maximum((P * AP).sum(axis=0), 1e-300)
+            alpha = rz / xp.maximum(self._colsum(P * AP), 1e-300)
             X, R = _axpy2(alpha[None, :], P, X, AP, R)                                  # fused: X += a P ; R -= a AP
             Z = self.vcycle(R); proj(Z)
-            rz_new = (R * Z).sum(axis=0); beta = rz_new / xp.maximum(rz, 1e-300); rz = rz_new
+            rz_new = self._colsum(R * Z); beta = rz_new / xp.maximum(rz, 1e-300); rz = rz_new
             P = _zpbp(Z, beta[None, :], P)                                                # fused: P = Z + b P
-            hist.append(xp.linalg.norm(R, axis=0) / bn)
+            if it % check_every == 0: hist.append(self._colnorm(R) / bn)
         self.iterations = it; self.last_hist = np.array([np.asarray(h.get() if hasattr(h, "get") else h) for h in hist])
         proj(X)
         return (X.get() if (host_in and hasattr(X, "get")) else X)
@@ -179,13 +198,14 @@ class ModeFamily:
     def solve_complex(self, Bc, X0=None, **kw):
         """Bc (N, nk) complex -> (N, nk) complex, real and imaginary parts as two blocks of columns."""
         xp = self.xp; host_in = isinstance(Bc, np.ndarray); Bc = xp.asarray(Bc)
+        m = Bc.shape[1] // self.nk                                   # m blocks of nk modes (e.g. u, v, w together) solved as one
         Bs = xp.concatenate([Bc.real, Bc.imag], axis=1)
-        s_save = self.s; self.s = xp.concatenate([s_save, s_save])
-        coarse_save = self.coarse_lu; self.coarse_lu = xp.concatenate([coarse_save, coarse_save], axis=0)
+        s_save = self.s; self.s = xp.concatenate([s_save] * (2 * m))
+        coarse_save = self.coarse_lu; self.coarse_lu = xp.concatenate([coarse_save] * (2 * m), axis=0)
         sing = self.singular_k0
         # the imaginary part of mode 0 is zero for a real field; keep the mean-projection on column 0 only
         X0s = None if X0 is None else xp.concatenate([xp.asarray(X0).real, xp.asarray(X0).imag], axis=1)
         X = self.solve(Bs, X0s, **kw)
         self.s = s_save; self.coarse_lu = coarse_save; self.singular_k0 = sing
-        out = X[:, :self.nk] + 1j * X[:, self.nk:]
+        h = m * self.nk; out = X[:, :h] + 1j * X[:, h:]
         return (out.get() if (host_in and hasattr(out, "get")) else out)

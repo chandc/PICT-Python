@@ -42,13 +42,16 @@ Correctness on the new device, ~2 minutes:
 
 | case | cell-modes | ms/step | ms per 1e5 cell-modes | stage split (ms): nonlinear / momentum x6 / pressure |
 |---|---|---|---|---|
-| box 128^2 x 64 | 540k | 418 | 77 | 27 / 6 / 50 (8 it) |
-| box 256^2 x 64 | 2.2M | 2,340 | 108 | 115 / 50 / 300 (9 it) |
-| box 384^2 x 64 | 4.9M | 5,429 | 112 | 247 / 140 / 721 (9 it) |
-| **cylinder butterfly-fine 27968 quads x 64, WALE, n_nonorth 3** | 923k | **2,366** | **256** | 168 / 13 / 167 (16 it) |
+| box 128^2 x 64 | 540k | 340 | 63 | 26 / 3 / 31 (8 it) |
+| box 256^2 x 64 | 2.2M | 1,428 | 66 | 110 / 24 / 119 (10 it) |
+| box 384^2 x 64 | 4.9M | 3,275 | 67 | 248 / 55 / 276 (10 it) |
+| **cylinder butterfly-fine 27968 quads x 64, WALE, n_nonorth 3** | 923k | **1,290** | **140** | 151 / 6 / 60 (16 it) |
 
-A real stretched mesh costs 2.3x the box rate: the pressure needs 16 iterations instead of 9 and
-the WALE term rides on the nonlinear phase. The step is bandwidth-bound past a ~56 ms launch floor.
+(After the fused-kernel and block-solve changes of 2026-09-25; the first A100 profile, taken before them, showed 47.6 ms per 1e5 cell-modes at 384^2 x 64 behind a 237 ms launch floor -- rerun `profile_step.py` after pulling.)
+
+A real stretched mesh costs 2x the box rate: the pressure needs 16 iterations instead of 10 and
+the WALE term rides on the nonlinear phase. The step is bandwidth-bound past a ~46 ms launch floor
+on the GB10 (four times that on a cloud A100 host, where the floor matters more).
 **Caveat on the scaling:** the profiler's "nominal bandwidth" comes from the CUDA device
 properties, which report 546 GB/s for the GB10 while its LPDDR5X delivers ~273 (the CSR kernel
 measured 257 GB/s). Against the real figure an A100-80GB (2039 GB/s) is ~7.5x on the
@@ -56,10 +59,10 @@ bandwidth-bound part, not the 3.7x the script prints; take the two as bounds.
 
 | target run | GB10 | A100-80GB, x3.7 | A100-80GB, x7.5 |
 |---|---|---|---|
-| V3 cylinder, butterfly-fine 27968 x 64 modes, dt 0.002, 200 D/U (1e5 steps) | 66 h | 20 h | 10 h |
-| V3 cylinder, 1e5-cell plane x 64 modes, same | ~240 h | ~70 h | ~35 h |
-| channel Re_tau 395, 96x160 x 128 modes, 30 time units (measured 2.1-2.8 s/step on the GB10) | 18-23 h | 5-6 h | 3 h |
-| TGV Re 800/1600, 128^2 x 128, T 20 | 20 min | 6 min | 3 min |
+| V3 cylinder, butterfly-fine 27968 x 64 modes, dt 0.002, 200 D/U (1e5 steps) | 36 h | 10 h | 5 h |
+| V3 cylinder, 1e5-cell plane x 64 modes, same | ~130 h | ~35 h | ~18 h |
+| channel Re_tau 395, 96x160 x 128 modes, 30 time units | ~12 h | ~3.5 h | ~2 h |
+| TGV Re 800/1600, 128^2 x 128, T 20 | 12 min | 4 min | 2 min |
 
 Memory at V3 size (1e5 cells x 128 planes) is ~10 GB, so a 40 GB A100 is enough; more GPUs do
 not help yet (single-device code).

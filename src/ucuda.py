@@ -26,7 +26,36 @@ void spmm_rowmajor(const int nrow, const int nk, const int* __restrict__ indptr,
     Y[t] = acc;
 }
 """
-_kernel = None
+_SHIFT_SRC = r"""
+extern "C" __global__
+void spmm_shift(const int nrow, const int nk, const int* __restrict__ ipA, const int* __restrict__ jA, const double* __restrict__ vA,
+                const int* __restrict__ ipD, const int* __restrict__ jD, const double* __restrict__ vD, const double* __restrict__ s,
+                const double* __restrict__ X, double* __restrict__ Y)
+{   // Y = A X + s_c (D X): the per-mode Helmholtz family in one pass
+    long long t = blockIdx.x * (long long)blockDim.x + threadIdx.x; long long total = (long long)nrow * nk; if (t >= total) return;
+    int row = (int)(t / nk); int c = (int)(t - (long long)row * nk);
+    double acc = 0.0;
+    for (int k = ipA[row]; k < ipA[row + 1]; ++k) acc += vA[k] * X[(long long)jA[k] * nk + c];
+    double accd = 0.0;
+    for (int k = ipD[row]; k < ipD[row + 1]; ++k) accd += vD[k] * X[(long long)jD[k] * nk + c];
+    Y[t] = acc + s[c] * accd;
+}
+extern "C" __global__
+void jacobi_shift(const int nrow, const int nk, const int* __restrict__ ipA, const int* __restrict__ jA, const double* __restrict__ vA,
+                  const int* __restrict__ ipD, const int* __restrict__ jD, const double* __restrict__ vD, const double* __restrict__ s,
+                  const double* __restrict__ diagA, const double* __restrict__ diagD, const double omega,
+                  const double* __restrict__ X, const double* __restrict__ B, double* __restrict__ Xn)
+{   // Xn = X + omega (B - (A + s D) X) / (diagA + s diagD): one damped-Jacobi sweep of the whole family
+    long long t = blockIdx.x * (long long)blockDim.x + threadIdx.x; long long total = (long long)nrow * nk; if (t >= total) return;
+    int row = (int)(t / nk); int c = (int)(t - (long long)row * nk);
+    double acc = 0.0;
+    for (int k = ipA[row]; k < ipA[row + 1]; ++k) acc += vA[k] * X[(long long)jA[k] * nk + c];
+    double accd = 0.0;
+    for (int k = ipD[row]; k < ipD[row + 1]; ++k) accd += vD[k] * X[(long long)jD[k] * nk + c];
+    Xn[t] = X[t] + omega * (B[t] - acc - s[c] * accd) / (diagA[row] + s[c] * diagD[row]);
+}
+"""
+_kernel = None; _kshift = None; _kjac = None
 
 
 def _get_kernel():
@@ -35,6 +64,28 @@ def _get_kernel():
         import cupy as cp
         _kernel = cp.RawKernel(_KERNEL_SRC, "spmm_rowmajor")
     return _kernel
+
+
+def _get_shift():
+    global _kshift, _kjac
+    if _kshift is None:
+        import cupy as cp
+        _kshift = cp.RawKernel(_SHIFT_SRC, "spmm_shift"); _kjac = cp.RawKernel(_SHIFT_SRC, "jacobi_shift")
+    return _kshift, _kjac
+
+
+def spmm_shift(A, D, s, X):
+    """Y = A @ X + s[None, :] * (D @ X) for DevCSR A, D and a row-major float64 block X (N, nk)."""
+    cp = A.cp; nrow = A.shape[0]; nk = X.shape[1]; X = cp.ascontiguousarray(X); Y = cp.empty((nrow, nk), dtype=cp.float64); total = nrow * nk; bs = 256
+    _get_shift()[0](((total + bs - 1) // bs,), (bs,), (np.int32(nrow), np.int32(nk), A.indptr, A.indices, A.vals, D.indptr, D.indices, D.vals, s, X, Y))
+    return Y
+
+
+def jacobi_shift(A, D, s, diagA, diagD, omega, X, B):
+    """One damped-Jacobi sweep on the family (A + s D): returns X + omega (B - (A + s D) X) / (diagA + s diagD)."""
+    cp = A.cp; nrow = A.shape[0]; nk = X.shape[1]; X = cp.ascontiguousarray(X); B = cp.ascontiguousarray(B); Xn = cp.empty_like(X); total = nrow * nk; bs = 256
+    _get_shift()[1](((total + bs - 1) // bs,), (bs,), (np.int32(nrow), np.int32(nk), A.indptr, A.indices, A.vals, D.indptr, D.indices, D.vals, s, diagA, diagD, np.float64(omega), X, B, Xn))
+    return Xn
 
 
 class DevCSR:
