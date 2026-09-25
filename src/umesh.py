@@ -389,7 +389,7 @@ def _cluster(n, a, b, beta):
 
 def rect_mesh(nx, ny, x0=0.0, x1=1.0, y0=0.0, y1=1.0, span=1.0, perturb=0.0, seed=0,
               tags=("left", "right", "bottom", "top"), cluster=0.0, diag="alt",
-              cells="tri", wall_layers=0, cluster_y=None):
+              cells="tri", wall_layers=0, cluster_y=None, wall_layers_y=None):
     """Triangulated rectangle: nx by ny quads, each split into two triangles.
 
     `perturb` jitters the INTERIOR nodes by that fraction of the local spacing, which turns an
@@ -438,8 +438,11 @@ def rect_mesh(nx, ny, x0=0.0, x1=1.0, y0=0.0, y1=1.0, span=1.0, perturb=0.0, see
             # `cells`: "tri" splits every quad; "quad" splits none; "hybrid" keeps the outermost
             # `wall_layers` rows/columns as quads and splits the core. A quad/triangle interface
             # shares one node pair, so the face builder sees an ordinary manifold edge.
-            near_wall = (i < wall_layers or i >= nx - wall_layers
-                         or j < wall_layers or j >= ny - wall_layers)
+            if wall_layers_y is not None:          # channel: quad layers at the y walls only, triangles in the core
+                near_wall = j < wall_layers_y or j >= ny - wall_layers_y
+            else:
+                near_wall = (i < wall_layers or i >= nx - wall_layers
+                             or j < wall_layers or j >= ny - wall_layers)
             if cells == "quad" or (cells == "hybrid" and near_wall):
                 tris.append([a, b, c, d])
             elif diag == "same" or (i + j) % 2 == 0:

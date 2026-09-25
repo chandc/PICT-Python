@@ -1,0 +1,27 @@
+channel Re_tau 180 on meshes/channel_tri_graded.msh mesh (10278 cells, 10278 triangles from y+ 0, orth min 0.866, n_nonorth 1) x 32 modes: dx+ 23.6  dy+ wall 1.00 centre 8.3 (bins)  dz+ 6.0  dt 0.0005  model wale  forcing cpg
+  DNS initial condition: U_bulk 15.683 (DNS 15.63), |u|max 20.35, E3d fraction 0.970
+  t=  1.000  u_tau 0.9213 (Re_tau  165.8)  U_b 15.925  E/V 134.889  <nu_t>/nu 0.028 max 2.93  CFL 0.10  p two-colour quad 0.0000 tri 0.0000 hp 0.707  stats 0  (1151 ms/step)
+  t=  2.000  u_tau 0.9289 (Re_tau  167.2)  U_b 16.180  E/V 139.468  <nu_t>/nu 0.024 max 2.70  CFL 0.09  p two-colour quad 0.0000 tri 0.0000 hp 0.809  stats 0  (1160 ms/step)
+  t=  3.000  u_tau 0.9874 (Re_tau  177.7)  U_b 16.434  E/V 143.465  <nu_t>/nu 0.037 max 4.78  CFL 0.09  p two-colour quad 0.0000 tri 0.0000 hp 0.751  stats 0  (1144 ms/step)
+  t=  4.000  u_tau 1.0507 (Re_tau  189.1)  U_b 16.470  E/V 143.123  <nu_t>/nu 0.042 max 3.63  CFL 0.11  p two-colour quad 0.0000 tri 0.0000 hp 0.680  stats 0  (1112 ms/step)
+  t=  5.000  u_tau 1.0300 (Re_tau  185.4)  U_b 16.489  E/V 143.147  <nu_t>/nu 0.041 max 2.99  CFL 0.11  p two-colour quad 0.0000 tri 0.0000 hp 0.871  stats 0  (1115 ms/step)
+  t=  6.000  u_tau 0.9968 (Re_tau  179.4)  U_b 16.586  E/V 145.547  <nu_t>/nu 0.027 max 2.89  CFL 0.11  p two-colour quad 0.0000 tri 0.0000 hp 0.798  stats 0  (1128 ms/step)
+  t=  7.000  u_tau 1.0040 (Re_tau  180.7)  U_b 16.675  E/V 146.560  <nu_t>/nu 0.041 max 2.67  CFL 0.10  p two-colour quad 0.0000 tri 0.0000 hp 0.686  stats 0  (1133 ms/step)
+  t=  8.000  u_tau 1.0052 (Re_tau  180.9)  U_b 16.778  E/V 148.521  <nu_t>/nu 0.033 max 3.91  CFL 0.11  p two-colour quad 0.0000 tri 0.0000 hp 0.800  stats 0  (1136 ms/step)
+  t=  9.000  u_tau 1.0479 (Re_tau  188.6)  U_b 16.858  E/V 149.516  <nu_t>/nu 0.044 max 3.49  CFL 0.10  p two-colour quad 0.0000 tri 0.0000 hp 0.734  stats 2000  (1135 ms/step)
+  t= 10.000  u_tau 1.0400 (Re_tau  187.2)  U_b 16.905  E/V 150.450  <nu_t>/nu 0.040 max 3.83  CFL 0.10  p two-colour quad 0.0000 tri 0.0000 hp 0.670  stats 4000  (1139 ms/step)
+  t= 11.000  u_tau 1.0440 (Re_tau  187.9)  U_b 16.946  E/V 151.448  <nu_t>/nu 0.037 max 3.98  CFL 0.11  p two-colour quad 0.0000 tri 0.0000 hp 0.703  stats 6000  (1141 ms/step)
+  t= 12.000  u_tau 0.9864 (Re_tau  177.6)  U_b 17.057  E/V 153.836  <nu_t>/nu 0.032 max 2.54  CFL 0.10  p two-colour quad 0.0000 tri 0.0000 hp 0.775  stats 8000  (1134 ms/step)
+  t= 13.000  u_tau 0.9928 (Re_tau  178.7)  U_b 17.219  E/V 157.418  <nu_t>/nu 0.030 max 2.60  CFL 0.11  p two-colour quad 0.0000 tri 0.0000 hp 0.847  stats 10000  (1130 ms/step)
+  t= 14.000  u_tau 1.0419 (Re_tau  187.5)  U_b 17.305  E/V 158.583  <nu_t>/nu 0.035 max 4.28  CFL 0.14  p two-colour quad 0.0000 tri 0.0000 hp 0.590  stats 12000  (1128 ms/step)
+  t= 15.000  u_tau 1.0694 (Re_tau  192.5)  U_b 17.238  E/V 156.008  <nu_t>/nu 0.051 max 4.31  CFL 0.09  p two-colour quad 0.0000 tri 0.0000 hp 0.658  stats 14000  (1124 ms/step)
+  t= 16.000  u_tau 0.9675 (Re_tau  174.1)  U_b 17.361  E/V 159.584  <nu_t>/nu 0.026 max 3.79  CFL 0.09  p two-colour quad 0.0000 tri 0.0000 hp 0.668  stats 16000  (1121 ms/step)
+  t= 17.000  u_tau 1.0592 (Re_tau  190.6)  U_b 17.500  E/V 161.946  <nu_t>/nu 0.042 max 3.38  CFL 0.11  p two-colour quad 0.0000 tri 0.0000 hp 0.632  stats 18000  (1120 ms/step)
+  t= 18.000  u_tau 1.0516 (Re_tau  189.3)  U_b 17.527  E/V 162.462  <nu_t>/nu 0.038 max 3.18  CFL 0.10  p two-colour quad 0.0000 tri 0.0000 hp 0.687  stats 20000  (1118 ms/step)
+  t= 19.000  u_tau 0.9649 (Re_tau  173.7)  U_b 17.633  E/V 165.412  <nu_t>/nu 0.026 max 4.48  CFL 0.10  p two-colour quad 0.0000 tri 0.0000 hp 0.655  stats 22000  (1117 ms/step)
+  t= 20.000  u_tau 1.0126 (Re_tau  182.3)  U_b 17.823  E/V 168.949  <nu_t>/nu 0.033 max 3.50  CFL 0.10  p two-colour quad 0.0000 tri 0.0000 hp 0.646  stats 24000  (1116 ms/step)
+
+RESULT uchan_trigraded_32_wale_cpg_dt5e-4: window t=8.0..20.0 (24000 samples)  u_tau 1.0208  Re_tau 183.7 (+2.1%)  U_b 17.237  U_c+ 19.64  <nu_t>/nu 0.036
+   log region (30 < y+ < 100): U+ - loglaw mean +1.691 u_tau units;  u_rms+ peak 3.037 at y+ 23.7;  v_rms+ max 0.624;  w_rms+ max 0.888;  -<uv>+ max 0.739
+   vs DNS (u_tau 1.0025): U+ difference in the log region mean +1.218 max 1.293;  DNS u_rms+ peak 2.707, ours 3.037 (+12.2%);  DNS -<uv>+ max 0.729, ours 0.739
+   pressure two-colour mode: quad cells 0.00% of p_rms, triangle pairs 0.00% (criterion < 1%), face high-pass share 0.646

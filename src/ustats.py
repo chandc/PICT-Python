@@ -7,15 +7,23 @@ import numpy as np
 
 
 class Stats:
-    def __init__(self, s, coord=1, decimals=10):
+    def __init__(self, s, coord=1, decimals=10, edges=None):
+        """`edges`: bin edges along `coord` for an irregular (e.g. triangle) mesh; the bin coordinate
+        is then the volume-weighted mean centroid coordinate of its cells. Default: one bin per
+        distinct centroid coordinate (a structured-in-y mesh)."""
         self.s = s; m = s.m
-        key = np.round(m.centroid[:, coord], decimals)
-        self.y, inv = np.unique(key, return_inverse=True); self.inv = inv
+        if edges is None:
+            key = np.round(m.centroid[:, coord], decimals)
+            self.y, inv = np.unique(key, return_inverse=True); self.inv = inv
+        else:
+            inv = np.clip(np.digitize(m.centroid[:, coord], edges) - 1, 0, len(edges) - 2); self.inv = inv
+            self.y = np.bincount(inv, weights=m.vol * m.centroid[:, coord], minlength=len(edges) - 1) / np.maximum(np.bincount(inv, weights=m.vol, minlength=len(edges) - 1), 1e-300)
         self.wsum = np.bincount(inv, weights=m.vol, minlength=len(self.y)) * s.nz
         self.n = 0
         self.acc = {k: np.zeros(len(self.y)) for k in ("u", "v", "w", "uu", "vv", "ww", "uv", "p", "pp")}
 
     def _binsum(self, f):
+        f = self.s.host(f) if hasattr(self.s, "host") else f                     # statistics are accumulated on the host
         return np.bincount(self.inv, weights=(self.s.m.vol[:, None] * f).sum(axis=1), minlength=len(self.y))
 
     def sample(self):

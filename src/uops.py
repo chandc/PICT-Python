@@ -209,6 +209,8 @@ def laplacian(mesh, gamma_f, bkind, bval=None):
             # -coef*phi_P half sits in the matrix diagonal, so the RHS carries +coef*phi_b.
             out = out + Bd @ bvalues
         return out
+    # the matrices behind the closure, so a device (CuPy) copy of the same operator can be built
+    rhs_fn.Cx, rhs_fn.Cy, rhs_fn.Bd, rhs_fn.has_bd = Cx, Cy, Bd, bool(len(bd))
 
     return A, rhs_fn
 

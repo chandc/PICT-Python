@@ -27,3 +27,4 @@ SESSION_STATE.md
 reference/gate0*/*.npz
 reference/gate3_serial_petsc*.npz
 results/gate5/
+upict25_a100.tar.gz

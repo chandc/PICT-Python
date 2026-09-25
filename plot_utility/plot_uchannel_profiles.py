@@ -28,5 +28,5 @@ ax[0].set_xlabel("$y^+$"); ax[0].set_ylabel("$U^+$"); ax[0].set_xlim(0.8, 200); 
 ax[1].set_xlabel("$y^+$"); ax[1].set_ylabel("rms / $u_\\tau$"); ax[1].set_xlim(0, 180); ax[1].legend(fontsize=8); ax[1].set_title("u' (solid), v' (dashed), w' (dotted)")
 ax[2].set_xlabel("$y^+$"); ax[2].set_ylabel("$-\\langle u'v'\\rangle / u_\\tau^2$"); ax[2].set_xlim(0, 180); ax[2].legend(fontsize=8); ax[2].set_title("Reynolds shear stress")
 ax[3].axhline(1.0, color="k", lw=0.6); ax[3].set_xlabel("t"); ax[3].set_ylabel("$u_\\tau$ (solid), $\\langle\\nu_t\\rangle/\\nu$ (dashed)"); ax[3].set_title("wall stress and eddy viscosity history"); ax[3].legend(fontsize=8)
-plt.suptitle("Turbulent channel Re$_\\tau$ 180, 2.5D unstructured solver: 24x80 wall-clustered quads x 32 Fourier modes, dt 0.002, DNS initial field, statistics t = 10..30", fontsize=11)
-plt.tight_layout(); out = "figures/uchannel_re180_profiles.png"; plt.savefig(out, dpi=140); print("wrote", out)
+plt.suptitle(_os.environ.get("TITLE", "Turbulent channel Re$_\\tau$ 180, 2.5D unstructured solver: 24x80 wall-clustered quads x 32 Fourier modes, dt 0.002, DNS initial field, statistics t = 10..30"), fontsize=11)
+plt.tight_layout(); out = _os.environ.get("OUT", "figures/uchannel_re180_profiles.png"); plt.savefig(out, dpi=140); print("wrote", out)

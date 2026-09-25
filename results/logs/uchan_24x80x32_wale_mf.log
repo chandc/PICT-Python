@@ -1,0 +1,37 @@
+channel Re_tau 180 on 24x80 quads x 32 modes: dx+ 23.6  dy+ wall 1.02 centre 8.3  dz+ 6.0  dt 0.002  model wale  forcing mf
+  DNS initial condition: U_bulk 15.681 (DNS 15.63), |u|max 20.34, E3d fraction 0.969
+  t=  1.000  u_tau 0.9967 (Re_tau  179.4)  U_b 15.639  E/V 130.078  <nu_t>/nu 0.201 max 5.12  CFL 0.41  p two-colour 0.0001 hp 0.183  stats 0  (206 ms/step)
+  t=  2.000  u_tau 1.0455 (Re_tau  188.2)  U_b 15.615  E/V 129.076  <nu_t>/nu 0.267 max 5.06  CFL 0.42  p two-colour 0.0001 hp 0.192  stats 0  (204 ms/step)
+  t=  3.000  u_tau 1.0157 (Re_tau  182.8)  U_b 15.630  E/V 129.327  <nu_t>/nu 0.206 max 4.23  CFL 0.31  p two-colour 0.0000 hp 0.176  stats 0  (203 ms/step)
+  t=  4.000  u_tau 0.9564 (Re_tau  172.1)  U_b 15.634  E/V 129.290  <nu_t>/nu 0.160 max 4.19  CFL 0.31  p two-colour 0.0000 hp 0.142  stats 0  (202 ms/step)
+  t=  5.000  u_tau 0.9988 (Re_tau  179.8)  U_b 15.629  E/V 129.102  <nu_t>/nu 0.186 max 4.03  CFL 0.40  p two-colour 0.0000 hp 0.175  stats 0  (202 ms/step)
+  t=  6.000  u_tau 1.0017 (Re_tau  180.3)  U_b 15.629  E/V 129.241  <nu_t>/nu 0.181 max 4.11  CFL 0.30  p two-colour 0.0001 hp 0.152  stats 0  (201 ms/step)
+  t=  7.000  u_tau 0.9579 (Re_tau  172.4)  U_b 15.630  E/V 129.778  <nu_t>/nu 0.183 max 4.36  CFL 0.31  p two-colour 0.0001 hp 0.149  stats 0  (201 ms/step)
+  t=  8.000  u_tau 0.9961 (Re_tau  179.3)  U_b 15.630  E/V 129.538  <nu_t>/nu 0.199 max 4.16  CFL 0.31  p two-colour 0.0000 hp 0.140  stats 0  (210 ms/step)
+  t=  9.000  u_tau 1.0158 (Re_tau  182.8)  U_b 15.630  E/V 129.044  <nu_t>/nu 0.237 max 4.64  CFL 0.32  p two-colour 0.0001 hp 0.187  stats 0  (400 ms/step)
+  t= 10.000  u_tau 1.0166 (Re_tau  183.0)  U_b 15.630  E/V 129.279  <nu_t>/nu 0.238 max 5.10  CFL 0.35  p two-colour 0.0001 hp 0.185  stats 1  (384 ms/step)
+  t= 11.000  u_tau 1.0079 (Re_tau  181.4)  U_b 15.630  E/V 129.413  <nu_t>/nu 0.200 max 4.12  CFL 0.31  p two-colour 0.0001 hp 0.136  stats 501  (371 ms/step)
+  t= 12.000  u_tau 0.9852 (Re_tau  177.3)  U_b 15.630  E/V 129.328  <nu_t>/nu 0.224 max 3.84  CFL 0.31  p two-colour 0.0001 hp 0.168  stats 1001  (361 ms/step)
+  t= 13.000  u_tau 0.9929 (Re_tau  178.7)  U_b 15.630  E/V 129.130  <nu_t>/nu 0.174 max 4.51  CFL 0.31  p two-colour 0.0001 hp 0.167  stats 1501  (352 ms/step)
+  t= 14.000  u_tau 0.9849 (Re_tau  177.3)  U_b 15.630  E/V 129.026  <nu_t>/nu 0.166 max 4.46  CFL 0.31  p two-colour 0.0001 hp 0.153  stats 2001  (344 ms/step)
+  t= 15.000  u_tau 0.9819 (Re_tau  176.7)  U_b 15.630  E/V 128.953  <nu_t>/nu 0.186 max 4.88  CFL 0.32  p two-colour 0.0000 hp 0.154  stats 2501  (338 ms/step)
+  t= 16.000  u_tau 0.9828 (Re_tau  176.9)  U_b 15.630  E/V 128.890  <nu_t>/nu 0.171 max 4.78  CFL 0.32  p two-colour 0.0000 hp 0.165  stats 3001  (332 ms/step)
+  t= 17.000  u_tau 0.9682 (Re_tau  174.3)  U_b 15.630  E/V 129.145  <nu_t>/nu 0.169 max 3.99  CFL 0.31  p two-colour 0.0000 hp 0.183  stats 3501  (327 ms/step)
+  t= 18.000  u_tau 0.9526 (Re_tau  171.5)  U_b 15.630  E/V 129.523  <nu_t>/nu 0.174 max 3.59  CFL 0.36  p two-colour 0.0000 hp 0.145  stats 4001  (322 ms/step)
+  t= 19.000  u_tau 0.9921 (Re_tau  178.6)  U_b 15.630  E/V 129.291  <nu_t>/nu 0.203 max 5.11  CFL 0.40  p two-colour 0.0001 hp 0.202  stats 4501  (317 ms/step)
+  t= 20.000  u_tau 1.0185 (Re_tau  183.3)  U_b 15.630  E/V 128.944  <nu_t>/nu 0.206 max 3.78  CFL 0.31  p two-colour 0.0000 hp 0.147  stats 5001  (313 ms/step)
+  t= 21.000  u_tau 1.0344 (Re_tau  186.2)  U_b 15.630  E/V 128.899  <nu_t>/nu 0.196 max 5.04  CFL 0.33  p two-colour 0.0000 hp 0.157  stats 5501  (309 ms/step)
+  t= 22.000  u_tau 1.0180 (Re_tau  183.2)  U_b 15.630  E/V 129.297  <nu_t>/nu 0.202 max 4.12  CFL 0.30  p two-colour 0.0000 hp 0.165  stats 6001  (306 ms/step)
+  t= 23.000  u_tau 1.0019 (Re_tau  180.3)  U_b 15.630  E/V 129.019  <nu_t>/nu 0.189 max 3.82  CFL 0.31  p two-colour 0.0000 hp 0.131  stats 6501  (302 ms/step)
+  t= 24.000  u_tau 0.9385 (Re_tau  168.9)  U_b 15.630  E/V 129.338  <nu_t>/nu 0.179 max 3.77  CFL 0.31  p two-colour 0.0001 hp 0.177  stats 7001  (300 ms/step)
+  t= 25.000  u_tau 1.0398 (Re_tau  187.2)  U_b 15.630  E/V 129.283  <nu_t>/nu 0.197 max 5.10  CFL 0.35  p two-colour 0.0001 hp 0.193  stats 7501  (297 ms/step)
+  t= 26.000  u_tau 0.9491 (Re_tau  170.8)  U_b 15.630  E/V 129.525  <nu_t>/nu 0.169 max 4.83  CFL 0.32  p two-colour 0.0001 hp 0.167  stats 8001  (294 ms/step)
+  t= 27.000  u_tau 0.9863 (Re_tau  177.5)  U_b 15.630  E/V 129.366  <nu_t>/nu 0.191 max 3.91  CFL 0.31  p two-colour 0.0000 hp 0.166  stats 8501  (291 ms/step)
+  t= 28.000  u_tau 0.9792 (Re_tau  176.3)  U_b 15.630  E/V 129.615  <nu_t>/nu 0.191 max 3.69  CFL 0.30  p two-colour 0.0000 hp 0.151  stats 9001  (288 ms/step)
+  t= 29.000  u_tau 0.9997 (Re_tau  180.0)  U_b 15.630  E/V 129.020  <nu_t>/nu 0.226 max 4.52  CFL 0.31  p two-colour 0.0001 hp 0.166  stats 9501  (286 ms/step)
+  t= 30.000  u_tau 1.0153 (Re_tau  182.8)  U_b 15.630  E/V 128.426  <nu_t>/nu 0.192 max 4.73  CFL 0.36  p two-colour 0.0000 hp 0.131  stats 10001  (283 ms/step)
+
+RESULT uchan_24x80x32_wale_mf: window t=10.0..30.0 (10001 samples)  u_tau 0.9937  Re_tau 178.9 (-0.6%)  U_b 15.630  U_c+ 18.17  <nu_t>/nu 0.192
+   log region (30 < y+ < 100): U+ - loglaw mean +0.734 u_tau units;  u_rms+ peak 2.771 at y+ 15.7;  v_rms+ max 0.818;  w_rms+ max 0.931;  -<uv>+ max 0.724
+   vs DNS (u_tau 1.0133): U+ difference in the log region mean +0.236 max 0.310;  DNS u_rms+ peak 2.845, ours 2.771 (-2.6%);  DNS -<uv>+ max 0.737, ours 0.724
+   pressure two-colour mode 0.00% of p_rms (criterion < 1%), face high-pass share 0.131

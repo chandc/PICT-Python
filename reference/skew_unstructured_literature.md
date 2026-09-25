@@ -2592,7 +2592,23 @@ St and Cd inside the 0.3% band; the lift amplitude moves -0.7%, outside it, and 
 HydroGym (-2.4% against -1.7%). The lift amplitude was already the quantity most sensitive to the
 time discretisation (5% between dt 0.01 and 0.005 with the lagged flux, section 45), so a 0.7%
 shift between two second/third-order integrators at the same dt is the temporal error of ONE of
-them showing; which one needs the dt 0.0025 BDF2 and RK3 runs (2.4 h each), not done. Same wall
+them showing. The dt 0.0025 pair (run 2026-09-24) says which -- and that it is not temporal:
+
+| | St | Cd mean | Cl amp |
+|---|---|---|---|
+| BDF2-PISO dt 0.005 | 0.1782 | 1.4878 | 0.3520 |
+| BDF2-PISO dt 0.0025 | 0.1781 | 1.4874 | 0.3518 |
+| RK3 dt 0.005 | 0.1781 | 1.4845 | 0.3495 |
+| RK3 dt 0.0025 | 0.1780 | 1.4829 | 0.3477 |
+
+BDF2 is dt-converged (0.06%). RK3 moves 0.5% in Cl amp and 0.1% in Cd when dt halves -- AWAY from
+BDF2, to a gap of 1.2% / 0.3%. The two schemes share every spatial operator except the Rhie-Chow
+damping: BDF2's Choi term is dt-independent, RK3's per-stage damping is O(dt) and vanishes as dt
+-> 0. So the dt -> 0 limits differ by the Rhie-Chow damping's effect on the shedding amplitude,
+about 1.5% of Cl amp on this mesh -- the price of the collocated pressure smoothing, which BDF2
+carries at every dt and RK3 sheds. Neither is "right"; the spatial limit is the undamped one, and
+RK3 is closer to it. The G1 criterion (within 0.3% of BDF2) is therefore mis-posed for Cl amp
+and is recorded as such; St and Cd meet it. Same wall
 time per step as BDF2-PISO here (139 against ~140 ms: the three Poisson solves cost what the two
 correctors did), 12 shedding periods in the window, log `results/logs/t9_rk3_butterfly_fine.log`,
 fields `results/t9/rk3/butterfly_fine_re100.npz`.
@@ -2600,7 +2616,7 @@ fields `results/t9/rk3/butterfly_fine_re100.npz`.
 **G1 verdict.** T8 met on both counts; T11 met on magnitude (0.04% against 0.2%), and ∝ dt^3 for
 the integrator with the Rhie-Chow damping ∝ dt as the leading full-step term; T4 met for
 convection (order 3), diffusion second order by construction (Crank-Nicolson) at a constant
-1000x below BDF2; T9 met for St and Cd (-0.06%, -0.22%), lift amplitude -0.7% against a 0.3% band -- a dt 0.0025 pair would say whose temporal error it is. Why no dt-independent Rhie-Chow inside RK3: Choi's term makes the damping dt-independent BY
+1000x below BDF2; T9 met for St and Cd (-0.06%, -0.22%); the lift-amplitude gap (-0.7% at dt 0.005, -1.2% at 0.0025) is the dt-independent Rhie-Chow damping that BDF2 keeps and RK3 sheds, not a temporal error (table above). Why no dt-independent Rhie-Chow inside RK3: Choi's term makes the damping dt-independent BY
 DESIGN, and a dt-independent damping is a dt-independent dissipation -- section 49 already
 measured it in BDF2 with the coupling converged (0.14-0.33%/turnover at 64^2, order 0.5-0.7 in
 dt). Inside RK3 the same term, with the per-stage matched pair and either stage step in its
@@ -2809,7 +2825,20 @@ pressure steady at 0.12-0.20.
 the FOSLS DNS; the earlier "-5.2%" was against the fractional-step K-path field, whose own peak is
 5% high), shear stress, and the pressure-mode criterion at 0.00% over 99 flow-throughs. The
 cross-stream rms are 6-7% low, the usual signature of dx+ 24 (the DNS has 11.8); not a criterion,
-recorded. Companion runs launched: constant mass flow at U_b 15.63 and no model; recorded when done.
+recorded.
+
+**Companions (same mesh, dt, window; scored against the FOSLS window):**
+
+| run | Re_tau | U+ log region | u_rms+ peak | v_rms+ | w_rms+ | -<u'v'>+ | U_b | <nu_t>/nu | p two-colour |
+|---|---|---|---|---|---|---|---|---|---|
+| WALE, constant pressure gradient (the run above) | 179.1 | +1.0% | 2.697 (-0.3%) | -6.1% | -7.0% | 0.720 (-1.2%) | 15.62 | 0.19 | 0.00% |
+| WALE, constant mass flow U_b 15.63 | 178.9 (-0.6%) | +1.6% | 2.771 (+2.4%) | -4.6% | -11.7% | 0.724 (-0.6%) | 15.63 (held) | 0.19 | 0.00% |
+| no model (implicit) | 181.1 (+0.6%) | -4.9% | 2.500 (-7.6%) | +0.9% | +0.7% | 0.740 (+1.6%) | 15.00 | 0 | 0.01% |
+
+The constant-mass-flow criterion (Re_tau within 2%) is met at -0.6%. Without a model the mean
+profile drops 5% in the log region and the streamwise peak 8% while the cross-stream components
+come up to the DNS: the 24 x 80 x 32 grid under-resolves the streaks and the model's 0.19 nu
+is doing its job on the mean. All three keep the pressure two-colour mode at 0.00-0.01%.
 
 **Near-wall instantaneous planes (`plot_utility/plot_uchannel_nearwall.py`, y+ ~ 12,
 `figures/uchannel_re180_nearwall_yp12.png`).** Pressure, streamwise velocity and streamwise vorticity
@@ -2836,3 +2865,447 @@ the windowed profiles above are the measure. `Stats` now carries p and p'^2 so t
 p_rms(y) over the window. (An earlier version of this comparison used the fractional-step K-path
 field at t = 18 and the E-path state at t = 15.95 and found their pressure levels differ by 2x from
 each other; neither is the reference and that finding is withdrawn from the comparison.)
+
+## 55. The channel on triangles (2026-09-24)
+
+Asked for: the V2 channel on a triangular unstructured grid. Three meshes, `run_uchannel25.py
+--cells tri | --cells hybrid --wall-layers-y N | --mesh meshes/channel_tri_graded.msh`.
+
+**1. Every quad split (`rect_mesh(cells="tri")`, 3840 cells).** Wall cells are dy+ 0.5 by dx+ 24:
+47:1 triangles, orthogonality 0.085. Diverged at step 11. Not a candidate: the deferred
+non-orthogonal correction contracts at sin(theta) per pass (over-relaxed split |T|/|E| = sin theta)
+and at orth 0.085 that is 0.996 -- the cross term is effectively lagged a whole stage.
+
+**2. Hybrid, quad layers at the walls and triangles in the core (`wall_layers_y`).** Rows of the tanh
+distribution below the switch stay quads:
+
+| wall layers | triangles from y+ | orth min | dt 0.002 | dt 0.001 |
+|---|---|---|---|---|
+| 12 | 20 | 0.214 | diverged step 63 (t 0.13) | |
+| 16 | 32 | 0.281 | diverged step 169 (t 0.34) | diverged step 106 (t 0.11) |
+| 28 | 90 | 0.516 | stable to t 0.8 (400 steps), triangle-pair two-colour 10 -> 19% of p_rms, high-pass share 0.21 -> 0.39 | |
+| 32 | 118 | 0.579 | stable to t 0.8, pair two-colour 10 -> 23% | |
+
+The divergence time does not move with dt: it is not the explicit CFL limit but the same lagged
+cross term as (1), on triangles whose aspect ratio (dx+ 24 over dy+ 4-7) makes the diagonal face
+skew. And where the hybrid mesh does hold (layers 28/32), the two-colour pressure content of the
+triangle pairs -- the half-difference of the two halves of a split quad -- is 10-23% of p_rms and
+rising, against 0.00% on the quad cells of the same mesh: the non-bipartite mechanism of section
+36/41 (the 2D cavity and cylinder speckle), now in a turbulent field. The long layers-28 run (T = 30, statistics t 10-30, against the FOSLS window) is the record of what
+a triangle core does to the channel:
+
+| | Re_tau | U+ log region vs DNS | u_rms+ peak | w_rms+ max | -<u'v'>+ | p two-colour quad / tri pairs |
+|---|---|---|---|---|---|---|
+| all quads (section 54) | 179.1 | +0.15 u_tau | 2.697 (-0.3%) | 0.980 (-7%) | 0.720 | 0.00% / -- |
+| hybrid, triangles from y+ 90 | **170.9 (-5.0%)** | **+1.02 u_tau** | **3.028 (+12%)** | **1.412 (+34%)** | 0.687 (-6%) | 0.61% / **14.4%** |
+
+Same wall layers, same dt, same model; the only change is the core. The wall stress falls 5%,
+the log region rises a full u_tau, the fluctuations inflate, and the triangle pairs carry 14% of
+p_rms in the two-colour mode while the quad cells of the SAME mesh stay at 0.6% -- with the face
+high-pass share of the pressure at 0.37-0.61 against 0.13-0.20 on quads. The V2 pressure-mode
+criterion fails on the triangles and passes on the quads of one mesh.
+
+**3. Isotropic graded triangles (gmsh, `meshes/channel_tri_graded.geo`).** Size h = max(2, min(16,
+54 y)) wall units (h = max(hw, min(hmax, 0.3 d_wall))), frontal-Delaunay, periodic x by gmsh's
+matched-node constraint, 10278 triangles, orthogonality min 0.87 (5th percentile 0.99), wall
+cells h+ 1.8, centre h+ 15, 3032 cells below y+ 10. This is what "an unstructured triangle mesh"
+means in practice: isotropic cells, so the wall layer costs 5x the cells of the stretched quads
+for the same wall spacing. Statistics are binned into the 80 tanh intervals of the quad run.
+At dt 0.002 it diverged at step 6: the explicit stage convection on the buffer-layer cells
+(h+ 2-3 where u+ is 5-10) is at CFL ~1 per component, over the RK3 limit. At dt 0.0005 it runs
+(CFL 0.08 by the sqrt(V) measure), 1.2 s/step; dt 0.001 also holds (400 steps, CFL 0.16, 1.13 s/step) and is the step of the long run (T = 20, statistics from t = 8, ~6 h). With WALE the mean eddy viscosity is 0.03-0.05 nu against 0.15-0.20 nu on the quads: Delta = (V dz)^(1/3) is the cell size, and the isotropic wall triangles are 5-10x smaller in volume than the stretched quads at the same height. Its
+face high-pass pressure share is 0.56-0.68 from the first steps, against 0.13-0.20 on quads:
+the triangle pressure is 3-4x rougher cell to cell, before any turbulence statistics exist.
+
+dt 0.001 diverged at step 855 (t = 0.86) in the long run; the probe at dt 0.0005 ran through
+t = 1.2 (2400 steps) without incident (CFL 0.08-0.10 by sqrt(V), high-pass share 0.70-0.81,
+u_tau drifting to 0.92). So the divergence IS step-size dependent on this mesh, unlike the hybrid
+one -- the explicit stage convection plus the explicit eddy-viscosity term on h+ 2 cells with
+u+ 5-10 -- and the graded triangles need dt 0.0005: 40000 steps at 1.15 s, ~13 h for T = 20.
+Launched (`uchan_trigraded_32_wale_cpg_dt5e-4`, statistics t 8-20).
+
+The long run (dt 0.0005, T = 20, statistics t 8-20, 24000 samples, 13 h on one core;
+`figures/uchannel_re180_quad_vs_tri.png` with the quad and hybrid runs):
+
+| | Re_tau | U+ log region vs DNS | u_rms+ peak | v_rms+ | w_rms+ | -<u'v'>+ | U_b start -> end | face high-pass share of p |
+|---|---|---|---|---|---|---|---|---|
+| quads 24 x 80 (section 54) | 179.1 | +0.15 u_tau | 2.697 (-0.3%) | 0.805 | 0.980 | 0.720 | 15.7 -> 15.6 | 0.13-0.20 |
+| graded triangles 10278 | 183.7 (+2.1%) | **+1.22 u_tau (max 1.29)** | **3.037 (+12%)**, at y+ 24 | **0.624 (-27%)** | 0.888 (-16%) | 0.739 (+1.4%) | **15.7 -> 17.8** | **0.59-0.87** |
+
+Stable for 20 time units, turbulent throughout, and wrong in a way the quads are not: the bulk
+velocity climbs 14% over the run while the wall stress averages 1.04 x the forcing -- with a
+constant pressure gradient the two together are impossible (dU_b/dt = f - tau_w/delta should be
+negative), so the discrete momentum balance does not close on the triangles: there is a spurious
+streamwise momentum source of about 10% of the applied gradient. The face high-pass share of the
+pressure sits at 0.6-0.9 against 0.13-0.20 on quads, the two-colour pressure of a non-bipartite
+mesh (the pair indicator reads 0 here only because a gmsh mesh has no quad pairs to difference);
+the eddy viscosity is 0.036 nu (isotropic wall cells are tiny, so Delta is), leaving the pressure
+mode undamped. The mean profile is 1.2 u_tau high in the log region, the streamwise fluctuation
+12% high with its peak pushed out to y+ 24, the cross-stream ones 16-27% low: the signature of the
+2D triangle results (sections 36, 41) carried into turbulence.
+
+The figure adds one thing the table cannot: on the hybrid mesh the Reynolds shear stress
+profile ZIGZAGS from bin to bin across the triangle core (y+ > 90), alternating +-0.1 around the DNS
+curve, while the same run's quad layers below y+ 90 lie on it -- the two-colour mode is in the
+velocity statistics, not only in the pressure -- and the hybrid's w_rms climbs to 1.4 u_tau in the
+core against 0.6 for the DNS. On the isotropic triangles the shear stress is smooth but falls below
+the DNS from y+ 50 outward, which with the +14% bulk drift is the momentum imbalance seen twice.
+
+**Verdict on triangles for LES:** the V2 criteria fail on every triangle configuration tried, and
+the mechanism is the same one the 2D cavity and cylinder showed -- the two-colour pressure mode of
+a non-bipartite mesh -- now with a momentum-balance consequence. Quads (or a quad wall layer with a
+quad core) are the mesh for wall-bounded LES with this scheme; triangles stay where they were
+validated, laminar external flow with a vertex-averaged post-processing. The plan's exclusion of
+triangle meshes for LES stands, now measured.
+
+
+## 56. HydroGym's NACA0012 control task, decoded, and its rebuild on our solver (2026-09-24)
+
+HydroGym's airfoil environments run only on m-AIA (closed, amd64). What the environment IS comes from
+its published files (`dynamicslab/HydroGym-environments`, `NACA0012Gust_2D_Re100_AOA40/`) and the open
+wrapper (`hydrogym/maia/envs/naca0012.py`, `env_core.py`):
+
+* **Actuation: three synthetic jets around the leading edge** (`lbNoJets 3`, `lbObjectClass 1` flat
+  plate, `lbJetCenter`, `lbJetAngles`, `lbJetRanges`). Placed on their STL (chord 8 cells, AoA 40):
+  jet 1 at x/c 0.084 on the upper (suction) surface, jet 2 at the nose (x/c 0.000), jet 3 at x/c 0.088
+  on the lower surface; slot widths 0.050 / 0.037 / 0.050 c; jet directions 95 / 140 / 185 deg,
+  i.e. along the local surface normal (dot 0.83-1.00). Action a in [-1, 1]^3 scaled by
+  `max_control 0.03` lattice units = **0.52 U_inf** (U_inf 0.0577), tanh-ramped over 95% of the
+  action interval (`lbUseControlRamping`, `lbRampPercentage 0.95`).
+* **Cadence:** 75 LBM steps per action; with c = 8 cells and U_inf 0.0577 cells/step a convective
+  time is 139 steps, so one action per **0.54 c/U**; 200 actions per episode (108 c/U).
+* **Observation:** `observation_type [u, v]` at the probe(s) `pp_probeCoordinates [-1.0, 0.0]`: the
+  velocity one chord upstream. (Not the forces.)
+* **Reward, gust task:** `-|C_L - 1.027| - 0.25 |C_D - 1.081|` (omega 0.25, the unperturbed means of
+  their solver), under a **gust**: inlet velocity x2 at the centre (`lbGustFactor 2.0`), 16 cells = 2c
+  wide (`lbGustRanges`), 4000 LBM steps = 29 c/U long (`lbGustDuration`). The plain `NACA0012` task
+  (L/D reward) exists at Re 100 only for AoA 20 and at Re 1000 for AoA 40.
+
+**Rebuild:** `src/ujets.py` (`JetSet`: slot faces from chord fraction and side, nose slot by distance
+from the LE point, Dirichlet wall velocity along the outward normal, tanh ramp, jet mass flux) and
+`naca_env.py` (`NACAJetEnv`: 2D BDF2-PISO, coarse 8260-quad C-grid `meshes/naca0012_a40_coarse.msh`
+for cost, dt 0.01, 54 substeps per action, probe (u, v) [+ forces], gust or L/D reward with OUR
+unperturbed means, reset from stored shedding snapshots). On the coarse mesh the slots are 4 / 9 / 5
+wall faces (0.045 / 0.041 / 0.060 c). Costs: 52 ms/step here, so ~9 min per 200-action episode per
+environment; the fine 33k mesh is 200-250 ms/step and out of reach for RL.
+
+**Coarse-mesh baseline and the training launch (2026-09-24).** `meshes/naca0012_a40_coarse.msh`
+(`gen_naca_cgrid.py --alpha 40 --ns 97 --nw 71 --neta 36 --d0 0.012`): 8260 quads, 96 wall faces,
+min angle 40 deg, orth min 0.66. Baseline shedding, dt 0.01, window t 72-120:
+
+| | St_c | C_D | C_L mean | C_L amp |
+|---|---|---|---|---|
+| coarse 8260 | 0.2270 | 1.0344 | 0.9762 | 0.121 |
+| fine 33040 (section 46) | 0.2331 | 1.0679 | 1.010 | 0.137 |
+| HydroGym m-AIA config | | 1.081 | 1.027 | |
+
+The coarse grid is 2.6-3.3% low on the forces and 12% low on the lift amplitude: adequate for a
+controller whose reward is a force deviation measured against the SAME solver's baseline (C_D0
+1.0344, C_L0 0.9762 in the reward), not for a force benchmark. Episodes start from one of 10
+phases of the developed shedding (`make_naca_snapshots.py`, `results/naca/a40_coarse_snapshots.npz`).
+Environment check: zero action from a snapshot gives reward -0.12 (the phase-dependent departure
+from the means); jet 1 at +1 for one action raises C_L 0.87 -> 1.22, jet 3 at -1 raises both forces
+and costs -0.81; 2.7 s per action here.
+
+Launched on the Spark (`hgrl`, GB10 for the policy, 8 `SubprocVecEnv` environments on the CPU):
+`train_naca_ppo.py --task gust --obs probe --n-envs 8 --total-steps 40000`, PPO MLP 64x64,
+n_steps 200 (one episode per environment per rollout), lr 3e-4; logs and checkpoints in
+`~/hydrogym_cmp/rl_logs/naca40_gust_probe/` on the Spark. Expected ~8 min per rollout of 1600
+steps, ~3.5 h for 40k. The container's GPU had to be recovered first (`docker restart hgrl`: NVML
+had failed after two days up; the image and container are intact).
+
+**The do-nothing baseline of the gust episode** (jets off, one episode of 200 actions from a
+shedding snapshot, `results/naca/a40_gust_zero_action.npz`): return **-64.3**. The gust
+(free stream x2 at the centre for 29 c/U) triples the loads -- peak C_L 2.96 and C_D 2.73 against
+the means 0.98 / 1.03 -- and the mean |C_L - C_L0| is 0.72 during the gust and 0.10 after it, so
+the return is 70% gust, 30% the shedding itself (which the reward also penalises, at the 0.12
+lift amplitude). The untrained policy's first rollout scored -172: random jets at up to 0.52
+U_inf are worse than doing nothing, as they should be. A learned policy has to beat -64.
+
+## 57. L4 step 1: the per-mode families solved as one block (2026-09-24)
+
+Every implicit system of the 2.5D solver is `(A + s_k D) x_k = b_k` over the modes k: one shared
+sparse matrix, a positive diagonal, a per-mode shift s_k = k_z^2 (times beta nu for momentum).
+`src/umodesolve.ModeFamily` solves the whole family at once: block PCG on the (N, nk) right-hand
+side (each column its own scalars, stop when every column is below rtol), preconditioned by ONE
+algebraic-multigrid hierarchy built from the k = 0 matrix whose level operators are shifted per
+mode exactly, `A_l(k) = A_l + s_k D_l` with `D_l = R_l D_{l-1} P_l` precomputed; damped Jacobi
+with the per-mode diagonal as the smoother (vectorised over modes), a batched dense solve at the
+coarsest level, complex right-hand sides as two real columns. `PISO25(solver="amg")` selects it for
+momentum and pressure (default stays `"lu"`).
+
+**The hierarchy decides it, not the smoother.** On the wall-clustered channel pressure operator
+(96 x 160, cell aspect 6:1 at the wall, 32 modes, rtol 1e-8): smoothed aggregation with block Jacobi
+55 iterations (k = 0) falling to 22 (k = 16); pyamg's own smoothed aggregation with Gauss-Seidel 35;
+**Ruge-Stuben classical coarsening 11 with Gauss-Seidel and 11-13 with block Jacobi**. The
+G4 criterion "pressure to 1e-8 in < 30 iterations on the channel operator" is met with the classical
+hierarchy:
+
+| pressure family, 32 modes, rtol 1e-8 | N | RS + Jacobi 1+1 | RS + Jacobi 2+2 | LU (17 solves) | LU factor |
+|---|---|---|---|---|---|
+| channel 24 x 80 | 1,920 | 8 it, 12 ms | 6 it, 14 ms | 2 ms | 0.04 s |
+| TGV box 64^2 (all-Neumann, singular k = 0) | 4,096 | 7 it, 18 ms | 5 it, 19 ms | 6 ms | 0.17 s |
+| channel 96 x 160 | 15,360 | 13 it, 120 ms | 11 it, 147 ms | 22 ms | 0.59 s |
+| channel 192 x 320 | 61,440 | 17 it, 800 ms | 14 it, 912 ms | 159 ms | 5.1 s |
+| channel 384 x 640 | 245,760 | 18 it, 4.4 s | 15 it, 4.8 s | (not factorised) | |
+
+Iterations grow 8 -> 18 over 128x in N (the hierarchy has 6-9 levels); the answers agree with LU to
+4e-9 relative. **On one CPU core the cached LU solves stay 5-6x faster per step** up to 6e4 cells --
+the factorisation is paid once per run -- so `"lu"` remains the default there. What the block
+form buys is (i) memory and setup at V3 size (the 245k-cell factorisations were not attempted;
+the AMG setup is 0.19 s), and (ii) the shape that moves to a GPU: the whole solve is sparse
+matrix times dense block, diagonal scaling, and column reductions, which is what CuPy and AmgX
+do well; the Python-level cost per cell-mode-iteration measured here is 58 ns, memory-bound numpy.
+
+**Integrated (`PISO25(solver="amg")`, momentum and pressure).** Against the LU path on the 3D
+Taylor-Green (20 steps): max|du| 9e-9 / 3e-9, max|dp| 1e-6 / 5e-7 at 32^2 x 16 / 64^2 x 32, energies
+equal to 9 digits; the perturbed-Poiseuille channel 24 x 80 x 32 agrees to 6 digits in E and 7 in
+max|u|. Iterations per stage: momentum 5 (the second inner pass 0 -- the lagged cross-diffusion
+correction is below rtol), pressure 8. Cost on one core: 100 vs 46 ms/step (32^2 x 16), 642 vs 357
+(64^2 x 32), 349 vs 148 (channel) -- the block path is 2x slower than cached LU here, as the table
+above predicts, and is kept for what comes next. One sign slip on the way: the family is the
+negated operator, so the pressure correction is `fam.solve(-(rhs - corr))`, not minus that.
+
+**Against the G4 bar on one CPU core** (`bench_modesolve.py cpu 32`: the channel pressure family,
+17 rfft modes as 34 real columns, rtol 1e-8, pyamg hierarchy built once):
+
+| plane | N | iterations | solve | per 1e5 cell-modes |
+|---|---|---|---|---|
+| 24 x 80 | 1,920 | 8 | 24 ms | 36 ms |
+| 96 x 160 | 15,360 | 13 | 425 ms | 81 ms |
+| 192 x 320 | 61,440 | 17 | 2.1 s | 100 ms |
+| 384 x 640 | 245,760 | 18 | 9.2 s | 110 ms |
+
+The pressure solve alone sits AT the plan's whole-step bar (100 ms per 1e5 cell-modes) on the CPU
+and a step has twelve such block solves plus the explicit terms, so the CPU is ~15x short of G4's
+speed criterion at V3 size, as expected -- the criterion was written for the GPU. The same code
+runs on CuPy (`device="gpu"`); measured on the Spark below.
+**On the GB10** (`upict25` container from the `lssem-cupy` image, pyamg built in place with g++ and
+python3-dev; `bench_modesolve.py gpu 32`, hierarchy built on the host, levels moved to the device):
+
+| plane | N | iterations | solve GPU | per 1e5 cell-modes GPU | CPU |
+|---|---|---|---|---|---|
+| 24 x 80 | 1,920 | 8 | 24 ms | 37 ms | 36 ms |
+| 96 x 160 | 15,360 | 13 | 73 ms | 14 ms | 81 ms |
+| 192 x 320 | 61,440 | 17 | 431 ms | 21 ms | 100 ms |
+| 384 x 640 | 245,760 | 18 | 2.2 s | 26 ms | 110 ms |
+| 768 x 1280 | 983,040 | 19 | 9.2 s | 27 ms | -- |
+
+Identical iteration counts and residuals (same arithmetic, same hierarchy). Below ~1e4 cells the
+GPU is launch-latency bound (the Python V-cycle issues ~40 small kernels per iteration) and no
+faster than the CPU; above it the pressure block solve settles at **26-27 ms per 1e5 cell-modes**,
+4x the CPU, and flat to 1e6 cells x 34 columns (33M unknowns in 9.2 s). Per iteration that is ~60
+GB/s of effective bandwidth against the GB10's ~270: cupyx's sparse-times-dense is not at the
+roofline, so a 2-4x remains in a fused kernel. Against the G4 bar of 100 ms per step per 1e5
+cell-modes the pressure solve is a quarter of the budget; the momentum families (5 iterations,
+diagonally dominant) are cheaper; the rest of the step -- convection on the padded planes, FFTs,
+gradients, Rhie-Chow -- is still numpy on the host and has to move as well before the criterion
+can be measured on a whole step. That port (an `xp` backend through `PISO25` and the operators it
+calls) is the next item.
+
+**First PPO run, result (40k steps, 25 rollouts, 3.7 h on the Spark):** the mean episode return went
+-172 -> -165 and stayed there; the last rollouts' episodes score -161 to -174 against the do-nothing
+-64. The policy did not learn: from the first rollout the Gaussian's unit initial std saturated the
+jets (mean |a| 0.60-0.65 through the run, i.e. jets at 0.3 U_inf on average, adding the loads the
+reward penalises) and PPO's clipped updates cannot walk the std down fast enough in 25 updates.
+That is the same start-up that cost the cylinder training its first runs. Second run: `log_std_init
+-1.5` (initial std 0.22, jets at ~0.1 U_inf) so the exploration starts inside the range where doing
+less is better than doing more; same everything else. Logs of the first run kept:
+`rl_logs/naca40_gust_probe/`.
+
+**L4 step 2: the whole step on the device (2026-09-24).** `PISO25(device="gpu")`: the solver was
+rewritten against an array-module handle (`self.xp`, numpy or cupy) and a device copy of the mesh
+(`self.dm`), operators (the gradient matrices, Laplacians and their deferred-correction matrices --
+now exposed by `uops.laplacian` -- and the face scatter) and boundary-condition masks; the block AMG
+families live on the device, the pyamg hierarchy is built on the host. Same code on the CPU:
+Taylor-Green energies to all printed digits against the previous version, `test_uchannel_laminar`
+and `test_usgs` pass; on the GB10 the energies and divergence equal the CPU path's.
+
+| 3D TGV, AMG path | CPU (one core) | GB10 | per 1e5 cell-modes, GB10 |
+|---|---|---|---|
+| 32^2 x 16 | 68 ms/step | 143 | 1555 ms |
+| 64^2 x 32 | 572 | 231 | 331 |
+| 128^2 x 64 | | 1,166 | 216 |
+| 256^2 x 64 | | 6,168 | 285 |
+| 384^2 x 64 | | 14,749 | 303 |
+
+**2-3x over the G4 bar** (100 ms per step per 1e5 cell-modes) and only 2.5x faster than one CPU
+core at 64^2 x 32 -- the block pressure solve alone measured 26 ms per 1e5 cell-modes, so the rest
+of the step is where the time goes now. Phase profile on the GB10, per RK stage (each phase timed with device synchronisation):
+
+| 256^2 x 64 | nonlinear (padded planes) | diffusion x3 | momentum solves 3 comps x 2 inner | Rhie-Chow | pressure solve | rest |
+|---|---|---|---|---|---|---|
+| ms | 137 | 35 | 6 x 354 (6 it, AMG V-cycle) | 34 | 495 (9 it) | ~35 |
+
+The momentum solves were the bulk: a diagonally dominant family (V/dt on the diagonal) does not
+need the multigrid cycle, whose ~10 matvecs per iteration cost more than the 5-6 iterations save.
+`ModeFamily(precond="jacobi")` for momentum: the momentum solve
+drops 354 -> 169 ms per stage-component (10 Jacobi-PCG iterations against 6 with AMG, at a sixth
+of the cost each); CPU answers unchanged (E to 8 digits). Whole step: 64^2 x 32 116 ms (166 per 1e5
+cell-modes), 128^2 x 64 673 ms (**125**), 256^2 x 64 4.06 s (188). At 128^2 the bar is within 25%;
+at 256^2 the profile is momentum 6 x 169, pressure 487, nonlinear 137 per stage -- and every one of
+those is a CSR matrix times a row-major block that cupyx runs at ~25 GB/s (17 ms for a 5-point
+65k-row matrix times 66 columns). `src/ucuda.py` `DevCSR`: a CuPy raw kernel
+for CSR x row-major block, one thread per (row, column) so the gathers of X[j, :] coalesce -- 0.81 ms
+against cupyx's 2.02 for the 65k x 66 test (257 GB/s of block reads, at the GB10's bandwidth),
+identical to scipy. Wired into every operator (gradients, Laplacians and their corrections, the face
+scatter) and every multigrid level. Whole step: 64^2 x 32 81 ms (116 per 1e5 cell-modes), **128^2 x 64
+480 ms (89 -- inside the bar)**, 256^2 x 64 3.0 s (139); per stage at 256^2: momentum 6 x 142 ms (10
+Jacobi-PCG iterations: now the un-fused vector updates, not the matvec), pressure 306, nonlinear 112.
+Fusing the two PCG vector updates (`cupy.fuse`) and a separate momentum tolerance
+(`mom_rtol` 1e-7: energy identical to 9 digits against 1e-9 and LU, 4 iterations either way at 64^2):
+
+| 3D TGV, GB10, AMG path, DevCSR, fused PCG | ms/step | per 1e5 cell-modes | G4 bar 100 |
+|---|---|---|---|
+| 64^2 x 32 | 77 | 110 | (launch-latency bound) |
+| 128^2 x 64 | 497 | **92** | met |
+| 256^2 x 64 | 2,720 | 126 | +26% |
+| 384^2 x 64 | 6,762 | 139 | +39% |
+
+Per stage at 256^2 x 64: momentum 6 x 133 ms (10 Jacobi-PCG iterations, ~13 ms each of which the
+matvec is 0.8: the remainder is the per-column reductions and updates on the (N, 66) block),
+pressure 296 (9 iterations), nonlinear 114, everything else 75. Against the CPU: 397 -> 77 ms at
+64^2 x 32 (5x), and the CPU cannot run the larger cases in the same session. **G4 speed criterion:
+met at 128^2 x 64, 26-39% over at 256^2-384^2.** The next factor is inside the PCG iteration
+(transposed block layout so the column reductions are contiguous, or one fused CG kernel), not in
+the operators; recorded as the open item. The three G4 criteria: pressure iterations 8-19 to 1e-8
+(< 30, met); speed as above; a dt change costs nothing by construction (RK3 has no history) --
+not separately measured.
+
+**Second PPO run (initial std 0.22; 40k steps, 3.4 h):** mean return -87.5 -> -82.0, monotone over
+the 25 updates (-87.5, -88.4, -87.7, ..., -83.1, -82.8, -82.4, -82.0); the best final episodes -77.
+Learning, and 2x better than run 1 at every point, but still below the do-nothing -64: the policy's
+own noise (std held at 0.17-0.18 throughout, the entropy did not fall) costs about 20 per episode
+against a controller that would sit still, and 25 clipped updates are not enough to walk it down.
+Continued from its final checkpoint for 80k more steps (`rl_logs/naca40_gust_probe_std022_cont/`).
+What would close the gap faster is an action penalty in the reward or an entropy schedule; HydroGym's
+own m-AIA environment has neither, and the point of this run is to reproduce its task as defined.
+
+**Continuation (80k more steps, 7.0 h, 120k total):** mean return -82 -> -64.2, still falling at
+about 0.4 per update at the end, the last rollout's episodes -57.6 to -63.4 -- **at the do-nothing
+level and crossing it**. The policy that emerged is steady suction on the upper-surface jet
+(mean action -0.20 on jet 1, -0.05 on the nose, 0 on the lower jet; std still 0.20). Continued
+again for 80k (`rl_logs/naca40_gust_probe_std022_cont2/`).
+
+## 58. V1: Taylor-Green Re 1600 on the GB10 (2026-09-25)
+
+The resolution matrix the V1 preview (section 52) asked for, now that the step runs on the device:
+64^2 x 64, 96^2 x 96 and 128^2 x 128 (plane cells x spanwise planes; 33/49/65 modes), no model and
+WALE, dt 0.02, T = 20, RK3 with the block AMG solves (`mom_rtol` 1e-7). Wall time 1.5 / 5 / 14 min
+per run. Reference: the in-house SEM DNS of `les_findings.md` (2 nu Z peak 0.012299 at t = 8.93;
+the published pseudo-spectral value is 0.0128 at t ~ 9.0). `figures/utgv1600_v1.png`.
+
+| run | -dE/dt peak | at t | value vs 0.012299 | time vs 8.93 | resolved eps_d peak | model + numerical share | <nu_t>/nu at the peak |
+|---|---|---|---|---|---|---|---|
+| 64^2 x 64, no model | 0.01303 | 8.4 | +5.9% | -5.9% | 0.01159 | 11% | 0 |
+| 64^2 x 64, WALE | 0.01188 | 8.5 | -3.4% | -4.8% | 0.00435 | 63% | 1.32 |
+| 96^2 x 96, no model | 0.01355 | 8.3 | +10.2% | -7.1% | 0.01258 | 7% | 0 |
+| 96^2 x 96, WALE | 0.01218 | 8.3 | **-1.0%** | -7.1% | 0.00598 | 51% | 0.70 |
+| 128^2 x 128, no model | 0.01197 | 8.4 | -2.7% | -5.9% | 0.01131 | 5.5% | 0 |
+| 128^2 x 128, WALE | 0.01192 | 8.4 | -3.1% | -5.9% | 0.00704 | 41% | 0.42 |
+
+**Value: met** at every resolution with WALE (-1.0 to -3.4%, criterion 5%), and the model's share of
+the peak falls as it should with resolution (63 -> 51 -> 41%) while the no-model run converges onto
+the reference from above (+5.9, +10.2, -2.7%: the 96^2 no-model overshoot is the pile-up at the
+cut-off before it is resolved). **Time: not met.** Every run peaks at t = 8.3-8.5, 5-7% before the
+reference's 8.93, and the offset does not move with resolution (64 -> 128) or with the model. That
+rules out the small scales and the closure; what is left is the time integration (dt 0.02 at
+CFL 0.4 is far inside the RK3 range, but the O(dt) Rhie-Chow stage damping is not zero), the
+reference's own time axis, or the in-plane FV truncation of the large scales, which second-order
+central differencing does not remove by 128^2. The dt test (64^2 x 64 at dt 0.01 and 0.04) is
+running; the WALE curves also show the section-52 shoulder before the peak (t 4.5-7), shrinking
+with resolution.
+
+The dt test settled it and then the reference did: at 64^2 x 64 the peak sits at t = 8.47 / 8.40 /
+8.38 for dt 0.01 / 0.02 / 0.04 -- dt-independent. And the reference is not what the plan said. The
+"0.012299 at t = 8.93" of `les_findings.md` is `results/tgv_diag_re800_88.npz`, the in-house
+spectral-element run at **Re = 800** (nu = 0.00125 in the file; its 2 nu Omega at t = 0 is 0.000938,
+which is Re 800 with Omega = (1/2) int |omega|^2 -- at Re 1600 the initial dissipation is
+0.000469, which is what every run above starts from). So the Re 1600 matrix was scored against a
+Re 800 curve: a lower Reynolds number peaks EARLIER and LOWER (Brachet's series), which is exactly
+the pattern above read backwards -- our Re 1600 peaks were "late" by the DNS's own 6% and "high".
+The published Re 1600 peak (van Rees et al. 2011, the high-order workshop) is about 0.0128 at t of
+about 9, from memory and not on disk, so it is not used as a criterion here. Instead the matrix is
+rerun at Re 800 against the reference we actually have, whose full history is on disk:
+
+**Re 800 matrix against the in-house SEM DNS (88^3-equivalent), full history, T = 15, dt 0.02
+(`figures/utgv800_v1.png`):** DNS 2 nu Omega peak 0.01230 at t = 8.93.
+
+| run | -dE/dt peak | at t (parabolic) | value | time | model + numerical share | <nu_t>/nu | rms error of the -dE/dt curve, t < 12 |
+|---|---|---|---|---|---|---|---|
+| 64^2 x 64, no model | 0.01238 | 8.39 | +0.6% | -6.1% | 4.6% | 0 | 13.5% |
+| 64^2 x 64, WALE | 0.01132 | 8.73 | -7.9% | -2.3% | 45% | 0.60 | 23.4% |
+| 96^2 x 96, no model | 0.01195 | 8.25 | -2.9% | -7.6% | 2.6% | 0 | 8.2% |
+| 96^2 x 96, WALE | 0.01171 | 8.32 | -4.8% | -6.8% | 31% | 0.30 | 13.9% |
+| 128^2 x 128, no model | 0.01144 | 8.42 | -7.0% | -5.7% | 1.2% | 0 | **5.9%** |
+| 128^2 x 128, WALE | 0.01166 | 8.39 | -5.2% | -6.0% | 21% | 0.17 | 10.0% |
+
+Same picture at the right Reynolds number, so the early peak is the solver's, not the reference's.
+The curves say where: the 128^2 no-model run follows the DNS to within 1-2% up to t = 7.5, then the
+DNS keeps rising to 8.93 while ours turns over at 8.4 and sits 10-20% below the DNS from t = 9 on.
+That is the small-scale end of the cascade: the dissipation that the DNS still gains between 8.4 and
+8.9 comes from scales the second-order plane discretisation has already truncated, and the
+post-peak deficit is energy parked at the cut-off. Doubling 64 -> 128 moved the peak value 7% and the
+curve error 13.5 -> 5.9% but not the peak time -- second-order central converges slowly in exactly
+this quantity. WALE at every resolution over-dissipates the LAMINAR phase (a shoulder at t = 4.5-6,
+ratio to the DNS 1.1-1.3 there; 63 -> 21% model share at the peak as the grid refines) and then
+under-dissipates after it; the implicit run is the better LES at 96^2 and 128^2 on this case.
+Variants to locate the timing:
+
+| 64^2 x 64 unless stated, Re 800, no model | -dE/dt peak | at t | E(6)/V (DNS 0.10606) |
+|---|---|---|---|
+| baseline | 0.01238 | 8.39 | 0.10442 |
+| **rotated initial condition** (x -> y -> z -> x: the span carries the w-like component) | 0.01081 | **7.50** | 0.10590 |
+| no spanwise dealiasing | 0.00853 | 5.30, then negative dissipation | 0.11127 |
+| n_inner 1 | 0.01238 | 8.39 | 0.10442 |
+| 32^2 x 32 | 0.01118 | 8.90 | 0.10556 |
+| 48^2 x 96 (span finer than plane) | 0.01129 | 8.12 | 0.10359 |
+| 96^2 x 48 (plane finer than span) | 0.01251 | 8.34 | 0.10560 |
+
+Three things. (1) **The numerics are anisotropic in a way that moves the transition.** The
+Taylor-Green problem is invariant under the cyclic rotation of the axes; the solver is not, and the
+rotated run peaks 0.9 time units earlier and 13% lower than the baseline. In the standard
+orientation w = 0 and every z-dependence is the single exact Fourier mode cos z, so the spectral
+direction is nearly free of error; rotated, the in-plane second-order central scheme carries more
+of the dynamics and its dispersion error is the symmetry-breaking perturbation that brings the
+breakdown forward. (2) The peak time does not converge monotonically with resolution (8.90, 8.39,
+8.25, 8.42 for 32, 64, 96, 128): the coarse grid's own dissipation delays the breakdown, the finer
+grids' dispersion advances it; the 3% time window is not reachable with this plane discretisation
+at these resolutions. (3) The z-dealiasing is essential and correct: without it the run is
+garbage by t = 5 (negative dissipation). n_inner is irrelevant on an orthogonal mesh, as it should
+be. The energy balance of the rotated field is as clean as the standard one (Re 100 check below),
+so this is discretisation error, not a bug in the w-equation.
+
+**V1 verdict.** Peak value within 5% at 96^2 and 128^2 with WALE (-4.8, -5.2%) and the 128^2 implicit
+run within 6% rms over the whole curve to t = 12; peak time 6% early at every resolution, model and
+orientation-dependent -- **not met as posed**, and the reason is the second-order in-plane
+convection (its dispersion error at the breakdown scales), which the model cannot fix and which
+resolution does not remove at a useful rate. Two ways to close it: a fourth-order in-plane
+reconstruction (a substantial change to the FV core), or re-pose the criterion on the curve rms and
+the peak value, which is what the LES literature on this case usually reports. Recorded as open;
+the implicit-LES result (5.9% rms at 128^2 x 128) is the number to carry forward. WALE's laminar
+over-dissipation (the t = 4.5-6 shoulder) is a second, separate finding: the model needs the
+laminar-phase guard (sigma-model behaviour, or a dynamic procedure) before V2-style cases where
+transition matters.
+
+
+
+
+## 59. The A100 package and the run-time estimate (2026-09-25)
+
+`tools/a100/`: Dockerfile (nvidia/cuda 12.4 runtime + numpy, scipy, pyamg, cupy-cuda12x),
+requirements, `make_bundle.sh` (solver, drivers, meshes, reference data -> one 9.5 MB tarball),
+`profile_step.py` (whole-step and per-phase timing on whatever GPU it finds, plus the run-time table
+for the target cases), README with the install, the correctness check, the runs and the memory
+budget. Nothing in the code is architecture-specific: the one raw CUDA kernel compiles at first use.
+`run_uchannel25.py` and `run_ucylinder25.py` gained `--device gpu` (and `--sgs` for the cylinder);
+both smoke-tested on the GB10.
+
+Measured on the GB10: box 128^2 x 64 77 ms per 1e5 cell-modes, 256^2-384^2 x 64 108-112; the
+**fine butterfly (27968 quads) x 64 modes with WALE and three non-orthogonal passes 256** -- a real
+mesh costs 2.3x the box (16 pressure iterations instead of 9, the WALE term). Launch floor 56 ms.
+Estimates for V3 (cylinder Re 3900, dt 0.002, 200 D/U = 1e5 steps): 66 h on the GB10 on the
+butterfly-fine plane; on an A100-80GB between 10 h (bandwidth ratio 7.5 against the GB10's real
+273 GB/s) and 20 h (the 3.7 the device properties imply, which double-count the GB10's bus). A
+1e5-cell plane, which Re 3900 wants (wall cell ~0.002 D), is 3.5x that: 35-70 h on the A100. The
+package is `upict25_a100.tar.gz` at the repo root.

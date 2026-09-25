@@ -20,7 +20,8 @@ def velocity_gradient(s, u=None, v=None, w=None):
 
 def filter_width(s):
     """Delta = (cell volume x dz)^(1/3), (ncell,)."""
-    return (s.m.vol * s.Lz / s.nz) ** (1.0 / 3.0)
+    vol = s.dm.vol if hasattr(s, "dm") else s.m.vol          # device copy when the solver runs on one
+    return (vol * s.Lz / s.nz) ** (1.0 / 3.0)
 
 
 def strain_rate(g):
@@ -36,7 +37,7 @@ def smagorinsky(s, g=None, cs=CS_SMAGORINSKY, damping=None):
     """nu_t = (C_s Delta)^2 |S|; `damping` = y_plus per cell for van Driest, else none."""
     g = velocity_gradient(s) if g is None else g
     D = filter_width(s)
-    if damping is not None: D = D * (1.0 - np.exp(-np.asarray(damping) / A_PLUS))
+    if damping is not None: D = D * (1.0 - np.exp(-(s.asdev(damping) if hasattr(s, "asdev") else np.asarray(damping)) / A_PLUS))
     return (cs * D)[:, None] ** 2 * strain_magnitude(g)
 
 

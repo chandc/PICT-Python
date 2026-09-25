@@ -1,0 +1,37 @@
+channel Re_tau 180 on 24x80 hybrid (2496 cells, 1152 triangles from y+ 90, orth min 0.516, n_nonorth 6) x 32 modes: dx+ 23.6  dy+ wall 1.02 centre 6.0  dz+ 6.0  dt 0.002  model wale  forcing cpg
+  DNS initial condition: U_bulk 15.681 (DNS 15.63), |u|max 20.34, E3d fraction 0.969
+  t=  1.000  u_tau 0.9837 (Re_tau  177.1)  U_b 15.757  E/V 132.711  <nu_t>/nu 0.260 max 8.08  CFL 0.33  p two-colour quad 0.0085 tri 0.2027 hp 0.449  stats 0  (341 ms/step)
+  t=  2.000  u_tau 1.0109 (Re_tau  182.0)  U_b 15.671  E/V 131.169  <nu_t>/nu 0.349 max 11.68  CFL 0.33  p two-colour quad 0.0077 tri 0.1762 hp 0.481  stats 0  (352 ms/step)
+  t=  3.000  u_tau 1.0440 (Re_tau  187.9)  U_b 15.499  E/V 127.606  <nu_t>/nu 0.328 max 9.13  CFL 0.32  p two-colour quad 0.0082 tri 0.1983 hp 0.509  stats 0  (349 ms/step)
+  t=  4.000  u_tau 0.9754 (Re_tau  175.6)  U_b 15.411  E/V 126.170  <nu_t>/nu 0.291 max 8.31  CFL 0.31  p two-colour quad 0.0093 tri 0.1894 hp 0.507  stats 0  (346 ms/step)
+  t=  5.000  u_tau 1.0005 (Re_tau  180.1)  U_b 15.413  E/V 126.311  <nu_t>/nu 0.304 max 8.62  CFL 0.32  p two-colour quad 0.0095 tri 0.2086 hp 0.524  stats 0  (342 ms/step)
+  t=  6.000  u_tau 0.9711 (Re_tau  174.8)  U_b 15.417  E/V 126.530  <nu_t>/nu 0.292 max 9.69  CFL 0.32  p two-colour quad 0.0084 tri 0.1773 hp 0.459  stats 0  (339 ms/step)
+  t=  7.000  u_tau 0.9669 (Re_tau  174.0)  U_b 15.462  E/V 127.561  <nu_t>/nu 0.277 max 8.81  CFL 0.32  p two-colour quad 0.0120 tri 0.1803 hp 0.529  stats 0  (337 ms/step)
+  t=  8.000  u_tau 0.9576 (Re_tau  172.4)  U_b 15.480  E/V 127.983  <nu_t>/nu 0.274 max 8.61  CFL 0.32  p two-colour quad 0.0084 tri 0.1645 hp 0.472  stats 0  (336 ms/step)
+  t=  9.000  u_tau 0.9987 (Re_tau  179.8)  U_b 15.474  E/V 127.143  <nu_t>/nu 0.280 max 7.95  CFL 0.32  p two-colour quad 0.0086 tri 0.1589 hp 0.443  stats 0  (335 ms/step)
+  t= 10.000  u_tau 0.9751 (Re_tau  175.5)  U_b 15.433  E/V 126.796  <nu_t>/nu 0.280 max 7.83  CFL 0.31  p two-colour quad 0.0096 tri 0.1785 hp 0.493  stats 1  (334 ms/step)
+  t= 11.000  u_tau 0.9579 (Re_tau  172.4)  U_b 15.420  E/V 126.413  <nu_t>/nu 0.268 max 8.92  CFL 0.32  p two-colour quad 0.0106 tri 0.1837 hp 0.510  stats 501  (334 ms/step)
+  t= 12.000  u_tau 0.8821 (Re_tau  158.8)  U_b 15.507  E/V 128.084  <nu_t>/nu 0.257 max 8.82  CFL 0.31  p two-colour quad 0.0107 tri 0.1923 hp 0.502  stats 1001  (333 ms/step)
+  t= 13.000  u_tau 0.8562 (Re_tau  154.1)  U_b 15.704  E/V 132.192  <nu_t>/nu 0.250 max 9.36  CFL 0.31  p two-colour quad 0.0138 tri 0.2430 hp 0.607  stats 1501  (334 ms/step)
+  t= 14.000  u_tau 0.9319 (Re_tau  167.7)  U_b 15.820  E/V 133.943  <nu_t>/nu 0.277 max 9.59  CFL 0.32  p two-colour quad 0.0112 tri 0.2344 hp 0.519  stats 2001  (333 ms/step)
+  t= 15.000  u_tau 0.9965 (Re_tau  179.4)  U_b 15.791  E/V 132.985  <nu_t>/nu 0.310 max 8.04  CFL 0.32  p two-colour quad 0.0093 tri 0.1883 hp 0.453  stats 2501  (332 ms/step)
+  t= 16.000  u_tau 0.9811 (Re_tau  176.6)  U_b 15.736  E/V 131.860  <nu_t>/nu 0.303 max 8.82  CFL 0.32  p two-colour quad 0.0083 tri 0.1918 hp 0.472  stats 3001  (334 ms/step)
+  t= 17.000  u_tau 0.9164 (Re_tau  165.0)  U_b 15.749  E/V 132.299  <nu_t>/nu 0.286 max 7.52  CFL 0.33  p two-colour quad 0.0084 tri 0.2029 hp 0.489  stats 3501  (336 ms/step)
+  t= 18.000  u_tau 0.9715 (Re_tau  174.9)  U_b 15.755  E/V 132.447  <nu_t>/nu 0.285 max 8.30  CFL 0.32  p two-colour quad 0.0095 tri 0.1990 hp 0.504  stats 4001  (337 ms/step)
+  t= 19.000  u_tau 1.0056 (Re_tau  181.0)  U_b 15.708  E/V 131.154  <nu_t>/nu 0.301 max 8.03  CFL 0.33  p two-colour quad 0.0085 tri 0.1791 hp 0.452  stats 4501  (337 ms/step)
+  t= 20.000  u_tau 0.9672 (Re_tau  174.1)  U_b 15.644  E/V 130.144  <nu_t>/nu 0.282 max 9.13  CFL 0.32  p two-colour quad 0.0087 tri 0.1938 hp 0.476  stats 5001  (338 ms/step)
+  t= 21.000  u_tau 0.9461 (Re_tau  170.3)  U_b 15.691  E/V 131.191  <nu_t>/nu 0.282 max 9.10  CFL 0.32  p two-colour quad 0.0091 tri 0.1882 hp 0.503  stats 5501  (337 ms/step)
+  t= 22.000  u_tau 0.9485 (Re_tau  170.7)  U_b 15.699  E/V 131.135  <nu_t>/nu 0.280 max 7.96  CFL 0.32  p two-colour quad 0.0101 tri 0.1974 hp 0.495  stats 6001  (337 ms/step)
+  t= 23.000  u_tau 0.9599 (Re_tau  172.8)  U_b 15.711  E/V 131.293  <nu_t>/nu 0.264 max 7.58  CFL 0.32  p two-colour quad 0.0093 tri 0.2033 hp 0.477  stats 6501  (337 ms/step)
+  t= 24.000  u_tau 0.9151 (Re_tau  164.7)  U_b 15.792  E/V 132.783  <nu_t>/nu 0.258 max 7.55  CFL 0.33  p two-colour quad 0.0086 tri 0.1769 hp 0.469  stats 7001  (337 ms/step)
+  t= 25.000  u_tau 0.8940 (Re_tau  160.9)  U_b 15.930  E/V 135.827  <nu_t>/nu 0.254 max 8.16  CFL 0.32  p two-colour quad 0.0144 tri 0.2086 hp 0.553  stats 7501  (337 ms/step)
+  t= 26.000  u_tau 0.8498 (Re_tau  153.0)  U_b 16.106  E/V 139.564  <nu_t>/nu 0.256 max 6.83  CFL 0.33  p two-colour quad 0.0135 tri 0.2227 hp 0.534  stats 8001  (338 ms/step)
+  t= 27.000  u_tau 0.9061 (Re_tau  163.1)  U_b 16.267  E/V 142.005  <nu_t>/nu 0.255 max 7.31  CFL 0.33  p two-colour quad 0.0101 tri 0.1934 hp 0.479  stats 8501  (337 ms/step)
+  t= 28.000  u_tau 1.0132 (Re_tau  182.4)  U_b 16.313  E/V 142.086  <nu_t>/nu 0.296 max 8.37  CFL 0.33  p two-colour quad 0.0101 tri 0.1637 hp 0.437  stats 9001  (337 ms/step)
+  t= 29.000  u_tau 1.0068 (Re_tau  181.2)  U_b 16.199  E/V 139.909  <nu_t>/nu 0.312 max 9.55  CFL 0.33  p two-colour quad 0.0078 tri 0.1558 hp 0.381  stats 9501  (337 ms/step)
+  t= 30.000  u_tau 1.0292 (Re_tau  185.3)  U_b 16.116  E/V 138.213  <nu_t>/nu 0.323 max 8.38  CFL 0.34  p two-colour quad 0.0061 tri 0.1440 hp 0.367  stats 10001  (337 ms/step)
+
+RESULT uchan_24x80x32_wale_cpg_hyb28: window t=10.0..30.0 (10001 samples)  u_tau 0.9496  Re_tau 170.9 (-5.0%)  U_b 15.815  U_c+ 19.90  <nu_t>/nu 0.277
+   log region (30 < y+ < 100): U+ - loglaw mean +1.519 u_tau units;  u_rms+ peak 3.028 at y+ 15.0;  v_rms+ max 0.881;  w_rms+ max 1.412;  -<uv>+ max 0.687
+   vs DNS (u_tau 1.0025): U+ difference in the log region mean +1.023 max 1.172;  DNS u_rms+ peak 2.707, ours 3.028 (+11.9%);  DNS -<uv>+ max 0.729, ours 0.687
+   pressure two-colour mode: quad cells 0.61% of p_rms, triangle pairs 14.40% (criterion < 1%), face high-pass share 0.367
