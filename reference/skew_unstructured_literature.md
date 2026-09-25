@@ -3395,3 +3395,19 @@ what remains to measure is the deterministic policy without its noise, which is 
 return proper (`eval_naca_policy.py`, running). Against the estimate of section 56 (-35 to -45 for
 a good policy) this sits at the weak end; an action penalty or entropy schedule would take it
 further, both outside HydroGym's task definition.
+
+**Deterministic evaluation of the 200k-step policy** (`eval_naca_policy.py`, three snapshot phases,
+each with and without the jets; `figures/naca40_gust_control_eval.png`, `results/naca/eval_cont3.npz`):
+
+| | return | mean |C_L - C_L0| during the gust | after | peak C_L | action (jet 1, 2, 3) |
+|---|---|---|---|---|---|
+| jets off | -64.24 +- 0.05 | 0.71 | 0.10 | 2.97 | 0 |
+| learned policy, no exploration noise | **-30.33 +- 0.15** | **0.21** | 0.09 | 1.87 | -0.275, -0.006, +0.036 |
+
+**A 53% better return and a 70% smaller lift excursion during the gust**, from steady suction on the
+upper-surface jet at 0.14 U_inf with the nose jet off -- the deterministic policy is a constant, the
+noise in training cost the 22 points between -52 and -30. This lands at the good end of the -35 to -45
+estimated in section 56 for what these jets can do against a doubled free stream. It also confirms the
+loophole logic of the cylinder case (section 43): the task as HydroGym defines it has no actuation
+cost, and the optimum found is open-loop steady suction, not gust-reactive control; the after-gust
+shedding penalty is untouched (0.09 vs 0.10).

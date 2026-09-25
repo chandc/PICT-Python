@@ -174,8 +174,9 @@ floor; rerun `tools/a100/profile_step.py` after pulling.
 ## Side result: the NACA0012 gust-control task (HydroGym's AoA 40 case) on our solver
 
 `src/ujets.py`, `naca_env.py`, `train_naca_ppo.py` [§56]: three leading-edge jets as HydroGym's m-AIA
-files define them, PPO with 8 environments on the Spark. 200k steps: mean return −52 against −64 for
-doing nothing and −172 for random jets; the learned policy is steady suction on the upper-surface jet.
+files define them, PPO with 8 environments on the Spark. 200k steps; the deterministic policy scores −30.3 against −64.2 for doing nothing (+53%) and cuts the lift
+excursion during the gust by 70%; it is steady suction on the upper-surface jet at 0.14 U∞, the nose jet off
+(`figures/naca40_gust_control_eval.png`). No actuation cost in HydroGym's task, so open-loop suction wins, as on the cylinder.
 
 ## Not doing
 
