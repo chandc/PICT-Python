@@ -171,6 +171,12 @@ floor; rerun `tools/a100/profile_step.py` after pulling.
 4. A Re 3900 cylinder mesh (wall cell ~0.002 D, 10⁵ cells) for V3.
 5. Fourth-order in-plane reconstruction, only if a transition's peak timing becomes a criterion.
 
+## Side result: the NACA0012 gust-control task (HydroGym's AoA 40 case) on our solver
+
+`src/ujets.py`, `naca_env.py`, `train_naca_ppo.py` [§56]: three leading-edge jets as HydroGym's m-AIA
+files define them, PPO with 8 environments on the Spark. 200k steps: mean return −52 against −64 for
+doing nothing and −172 for random jets; the learned policy is steady suction on the upper-surface jet.
+
 ## Not doing
 
 TVD or limited convection in the LES momentum equations; triangles or tetrahedra for wall-bounded

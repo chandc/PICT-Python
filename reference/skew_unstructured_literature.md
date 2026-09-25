@@ -3385,3 +3385,13 @@ extra AMG setup, 0.2 s). On the Re 180 channel the measure reads 0.52 at dt 0.00
 old per-component reading), and `--cfl-max 0.8` leaves that run alone; on the 395 case it will
 halve dt to 0.0005 (C ~ 0.6) for most of the run: 60k steps, ~11 h on the A100. The notebook
 launches with `--cfl-max 0.8` and resumes the diverged run from its t = 10 checkpoint.
+
+**Third continuation (200k steps total, 2026-09-25; interrupted once by a Spark reboot and resumed
+from the 48k checkpoint):** mean return -53.2 -> -52.1 over the last 32k steps, the final rollout's
+episodes -43.8 to -51.2 -- **20-30% better than doing nothing (-64) with the exploration noise still
+on** (std 0.22). The policy is steady suction on the upper-surface jet at -0.27 (0.14 U_inf), the
+nose jet off, a trace of blowing on the lower jet. The learning has flattened (0.03 per update);
+what remains to measure is the deterministic policy without its noise, which is the controlled
+return proper (`eval_naca_policy.py`, running). Against the estimate of section 56 (-35 to -45 for
+a good policy) this sits at the weak end; an action penalty or entropy schedule would take it
+further, both outside HydroGym's task definition.
