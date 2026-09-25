@@ -3345,3 +3345,21 @@ the pad/truncate FFTs), then the pressure solve (276, 10 iterations); the moment
 On the A100 the same changes cut the floor from 237 ms to a third and the large-case rate toward
 25 ms per 1e5 cell-modes (to be measured there); the run-time table of `profile_step.py` remains a
 box-rate estimate -- use `--mesh` for a real mesh.
+
+## 60. An external review of the LES capability, assessed against the record (2026-09-25)
+
+The review (five points: convective scheme and TVD, pressure-gradient consistency on skewed meshes,
+WALE over Smagorinsky, BDF2 as the time scheme, anisotropic filter width) was written against the
+structured code and the plan as first drafted. Against the measurements: (1) the 2.5D convection is
+explicit central + skewness on the divergence-form face sum, skew-symmetric to round-off on quads
+(section 48), 0.04%/turnover for the full RK3 step (50); there is no TVD path in it -- already the
+state. (2) The dual Green-Gauss gradient's inconsistency is confined to the momentum pressure term
+and measured harmless (16-24); the triangle failure in turbulence is the non-bipartite pressure mode
+and a momentum imbalance (55), which iterating the gradient does not touch -- quads for LES is the
+answer, and is in the plan. (3) WALE is the model in use and its y^3 exponent is verified (52); the
+review misses its measured laminar-phase over-dissipation (58) -- the sigma-model port is the
+actionable item, added to the plan. (4) BDF2 is not the LES scheme: RK3 with per-stage projection,
+for the measured 100x difference in energy loss (50). (5) max(dx, dy, dz) as the filter width would
+INCREASE nu_t and damp more, the opposite of the review's aim; V^(1/3) reproduced the channel within
+1% (54). The review's one useful recommendation is recorded; the design rules the runs established
+are now in `piso_unstructured_formulation.md` (section "Design rules the LES runs established").

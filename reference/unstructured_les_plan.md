@@ -40,6 +40,14 @@ phase starts, nothing committed without asking.
 3. **Wall modelling.** Not in this plan; V2 and V3 are wall-resolved (y⁺ ≈ 1 with the one-sided wall flux). Add only if a Re beyond wall-resolved reach becomes a target.
 4. **Dynamic SGS procedure.** After V1 with WALE; needs a test filter on the mesh (face-neighbour average is the natural one). Gate: Germano identity error reported, C_s within the literature band on V1.
 
+## Open items from the validation runs (2026-09-25)
+
+* **Port the σ-model** (`src/sgs.py` has it): WALE over-dissipates the laminar phase of a transition (§58); σ vanishes for laminar and two-dimensional states by construction. Gate: the Taylor–Green Re 800 curve rms at 96²×96 below the implicit run's.
+* **Fourth-order in-plane reconstruction** if peak timing of a transition becomes a criterion (§58: 6% early, orientation-dependent).
+* **Nonlinear term on the GPU** is now 40% of the step (§57): fuse the padded-plane gathers.
+* **CFL-adaptive stepping** and the dt-jump check (G4's third criterion, holds by construction, unmeasured).
+* **V3 needs its own Re 3900 mesh** and, at the current rate, 10–20 h on an A100 for the fine butterfly (§59).
+
 ## What is deliberately excluded
 
 TVD/limited convection for LES (kept as the Re-1000 laminar-airfoil option only); triangle or tetrahedral

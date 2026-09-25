@@ -182,31 +182,26 @@ The velocity-gradient tensor is the LSQ cell gradient in the plane and spectral 
 
 ---
 
+### Linear solvers and the device (`src/umodesolve.py`, `src/ucuda.py`, LES plan L4)
+
+Every implicit system of the 2.5D step is a family $(A + s_k D)\,x_k = b_k$ over the modes: one shared sparse matrix, a positive diagonal $D$, a shift $s_k = k_z^2$ (times $\beta\nu$ for momentum). `ModeFamily` solves the family as one block: PCG on the $(N, n_k)$ right-hand side with per-column scalars, preconditioned by one Ruge–Stuben AMG hierarchy built from the $k = 0$ matrix whose level operators are shifted per mode exactly ($A_l + s_k D_l$, $D_l = R_l D_{l-1} P_l$), damped Jacobi with the per-mode diagonal, a batched dense coarsest solve. Classical coarsening matters: smoothed aggregation needed 55 iterations on the wall-clustered channel operator, Ruge–Stuben 8–19 from $2\times10^3$ to $10^6$ cells (§57). The diagonally dominant momentum families use Jacobi-PCG alone and are solved for $u, v, w$ together when their operators coincide. On the GPU (`PISO25(device="gpu")`, CuPy) the shifted matvec and the Jacobi sweep are single raw kernels, sparse-times-block products run through `DevCSR` at the device's bandwidth, and the column reductions are cuBLAS products; the CPU path is the same code with numpy and SuperLU (`solver="lu"`, the default there). Measured: 61–73 ms per step per $10^5$ cell-modes on the GB10 at $64^2$–$384^2 \times 64$, 140 on a real stretched mesh with WALE; answers identical to the LU path to the solver tolerance.
+
+### Design rules the LES runs established (§§50–58)
+
+* **Time scheme for LES is RK3 with a projection per stage**, not BDF2-PISO: 0.04% against 3.9% energy loss per turnover at $\Delta t = 0.005$ (§50). BDF2-PISO stays the default for the laminar 2D cases.
+* **Rhie–Chow inside RK3 carries no dt-independent transient term**: Choi's term left a dt-independent 1.2–1.7%/turnover floor; the plain $O(\Delta t)$ stage damping vanishes with the step. Its residual effect on the cylinder lift amplitude is 1.5% (§50).
+* **Quads for wall-bounded LES.** Every triangle configuration failed the channel criteria: the two-colour pressure mode of a non-bipartite mesh appears in the turbulent field (14% of $p_{rms}$ on triangle pairs, a zigzag Reynolds stress) and on isotropic triangles the discrete momentum balance does not close (§55). Triangles stay where they were validated: laminar external flow with vertex-averaged post-processing.
+* **WALE with $\Delta = (V\,\delta z)^{1/3}$** reproduces the Re$_\tau$ 180 channel within 1% in the log region (§54) but over-dissipates the laminar phase of a transition (§58); the $\sigma$-model, which vanishes for laminar and two-dimensional states, is the port to make before transitional cases.
+* **Second-order in-plane convection advances a transition**: the Taylor–Green breakdown comes 6% early at every resolution and depends on the orientation of the plane (§58). A fourth-order in-plane reconstruction is the remedy if peak timing is ever a criterion.
+* **Spanwise dealiasing (3/2 rule) is not optional**: without it the Taylor–Green run is unusable by $t = 5$ (§58).
+
+---
+
 ## 7. The Crucial Role of the Green-Gauss Gradient (Duality vs. Consistency)
 
 A defining characteristic of this solver is the explicit prioritization of **discrete mass-momentum duality** over pointwise numerical consistency. This design choice was the result of extensive investigation into the $\mathcal{O}(1)$ error floor observed on unstructured steady Stokes flow.
 
-```mermaid
-flowchart TD
-    Problem["Pressure Checkerboard Effect"] --> Method1("Staggered Grid")
-    Problem --> Method2("Collocated Grid")
-    
-    Method1 --> Desc1["Velocity on faces, Pressure at centers. Naturally checkerboard-free, but highly complex for arbitrary unstructured grids."]
-    
-    Method2 --> RC["Rhie-Chow Interpolation"]
-    RC --> Desc2["Adds a pressure difference damping term to face fluxes to stabilize continuity."]
-    
-    Desc2 --> Issue["Momentum Equation Vulnerability: If pressure gradient G is not blind to the checkerboard, the velocity receives an O(1) error."]
-    
-    Issue --> Sol1("Least-Squares Gradient")
-    Sol1 --> Desc3["Highly accurate, but physically 'sees' the checkerboard. Transmits O(1) error."]
-    
-    Issue --> Sol2("Dual Green-Gauss Gradient")
-    Sol2 --> Desc4["Swaps interpolation weights to force G = -D^T. Blinds momentum to checkerboard. Recovers 2nd order velocity."]
-    
-    style Sol2 stroke:#333,stroke-width:2px,fill:#bbf
-    style Sol1 stroke:#f66,stroke-width:2px,stroke-dasharray: 5 5
-```
+![Finite Volume Gradient Methods](./gradient_fv_diagram_v7.png)
 
 ### The Checkerboard Transmission Problem
 In standard collocated Finite Volume schemes, Rhie-Chow interpolation prevents the checkerboard pressure mode from contaminating the *continuity* equation. However, the momentum equation still requires a cell-centered pressure gradient. 
@@ -235,6 +230,11 @@ $$ p_{f,\text{dual}} = (1 - w_f) p_P + w_f p_N $$
 the Green-Gauss gradient is forced to telescope exactly across the mesh. This mathematically guarantees $G = -D^T$. 
 Because the collocated divergence operator is inherently blind to the checkerboard mode, the dual $G$ operator is identically blind to it as well. The checkerboard mode is trapped entirely within the pressure field, allowing the velocity field to cleanly converge at **2nd order**.
 
+### Does Dual Green-Gauss Negate the Need for Rhie-Chow?
+A common misconception is that using a checkerboard-blind gradient (like Dual Green-Gauss) eliminates the need for Rhie-Chow interpolation. **This is false.** You strictly need both, because they solve two distinct halves of the collocated grid problem:
+*   **Rhie-Chow stabilizes Continuity**: Without Rhie-Chow, the discrete mass flux calculation allows the checkerboard pressure field to perfectly satisfy mass conservation ($\nabla \cdot \vec{v} = 0$). The Continuity equation itself is oblivious to the massive oscillations. Rhie-Chow actively damps the pressure field via a 4th-order derivative.
+*   **Dual Green-Gauss stabilizes Momentum**: Even if Rhie-Chow provides a perfectly smooth pressure field, if your momentum gradient operator $G$ is not the exact negative transpose of the divergence operator $D$, energy conservation is violated. High-frequency numerical noise leaks directly into the velocity field as an $\mathcal{O}(1)$ error floor.
+*   **Conclusion**: Rhie-Chow ensures mass conservation is stable, and Dual Green-Gauss ensures momentum physically responds to that pressure field consistently without injecting errors.
 ### The Arbitrary Triangle Trade-off
 Extensive effort was spent studying this gradient on arbitrary triangles because the swapped-weight Green-Gauss formulation is mathematically **$\mathcal{O}(0)$ inconsistent** on non-orthogonal, unstructured meshes. The face value approximation is strictly incorrect unless the adjacent cells are perfect mirror images.
 The rigorous testing campaign was required to prove that this severe local truncation error does not ruin the global solution. The data ultimately proved that:
