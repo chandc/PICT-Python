@@ -1,0 +1,8 @@
+  [burst_dt1e3_mac] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.001 steps=2000 start=results/fields/chan_re180_t4.npz
+  [burst_dt1e3_mac] start: 2dx share 0.088%, energy 8.9698e-02, total 1.019e+02  u_tau 0.9566  e_u/v/w 5.105/0.2055/0.6565  |p-pflux| 0.000e+00 (p range 1.873e+01)  p2dx 0.062%  divw/|du/dx| 2.028e-01/3.831e+00
+  [burst_dt1e3_mac] step    100 t=  4.10  2dx share   0.037%  energy 5.8384e-02  amp    0.651x  total 1.560e+02  u_tau 0.9605  e_u/v/w 4.738/0.2468/0.7551  |p-pflux| 2.714e-02  p2dx 0.000%  divw 7.120e-02  0.730 s/step
+  [burst_dt1e3_mac] step    200 t=  4.20  2dx share   0.021%  energy 3.5891e-02  amp    0.400x  total 1.709e+02  u_tau 0.9718  e_u/v/w 4.546/0.2881/0.8445  |p-pflux| 2.605e-02  p2dx 0.000%  divw 8.532e-02  0.704 s/step
+  [burst_dt1e3_mac] step    300 t=  4.30  2dx share   0.009%  energy 2.0199e-02  amp    0.225x  total 2.171e+02  u_tau 0.9902  e_u/v/w 4.594/0.3610/0.9128  |p-pflux| 2.811e-02  p2dx 0.000%  divw 9.903e-02  0.693 s/step
+  [burst_dt1e3_mac] step    400 t=  4.40  2dx share   0.003%  energy 1.0806e-02  amp    0.120x  total 3.624e+02  u_tau 1.0093  e_u/v/w 4.648/0.4340/0.9979  |p-pflux| 3.342e-02  p2dx 0.000%  divw 1.132e-01  0.687 s/step
+  [burst_dt1e3_mac] step    500 t=  4.50  2dx share   0.001%  energy 5.6598e-03  amp    0.063x  total 3.780e+02  u_tau 1.0171  e_u/v/w 4.445/0.4977/1.0870  |p-pflux| 3.250e-02  p2dx 0.000%  divw 1.453e-01  0.686 s/step
+  [burst_dt1e3_mac] ABORT step 600 t=4.600: CFL_y 0.92 exceeds 0.8 (u_max 21.83, v_max 5.14)

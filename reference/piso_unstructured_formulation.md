@@ -1,0 +1,243 @@
+# Collocated PISO Scheme on Unstructured Grids
+
+This document details the formulation of the Pressure-Implicit with Splitting of Operators (PISO) scheme on a collocated, unstructured finite volume grid. It covers the geometric definitions, the Rhie-Chow stabilization required to prevent pressure checkerboarding, non-orthogonal corrections, and boundary conditions.
+
+---
+
+## 1. The Collocated Grid Architecture
+
+In a **collocated grid**, all primary variables (velocity $\vec{u}$, pressure $p$) are stored at the same physical locations: the centroids of the control volumes (cells).
+
+### Geometric Definitions
+For any two adjacent cells $P$ and $N$ sharing a face $f$:
+- **$\vec{x}_P, \vec{x}_N$**: Cell centroid coordinates.
+- **$\vec{x}_f$**: Face centroid coordinates.
+- **$\vec{S}_f = A_f \hat{n}_f$**: Face area vector, where $A_f$ is the area and $\hat{n}_f$ is the unit normal pointing from $P$ to $N$.
+- **$\vec{d} = \vec{x}_N - \vec{x}_P$**: Distance vector connecting the cell centroids.
+- **$w_f = \frac{|\vec{x}_f - \vec{x}_N|}{| \vec{x}_N - \vec{x}_P |}$**: Interpolation weight based on normal-projected distances.
+
+> [!WARNING]
+> **The Checkerboard Problem**
+> On a collocated grid, the discrete continuity equation requires face velocities, while the momentum equation requires cell-centered pressure gradients. A naive central-difference pressure gradient couples $p_{i-1}$ with $p_{i+1}$, entirely skipping $p_i$. This allows a highly oscillatory "checkerboard" pressure field to perfectly satisfy the discrete equations with zero apparent gradient, destroying the solution. 
+
+---
+
+## 2. PISO Algorithm Overview
+
+The PISO algorithm decouples the velocity and pressure fields by predicting a velocity field without knowing the exact pressure, and then iteratively correcting both fields to satisfy mass conservation (continuity).
+
+```mermaid
+flowchart TD
+    Start[Time Step n] --> Predictor[1. Momentum Predictor Step]
+    Predictor --> PISO_Loop{2. PISO Corrector Loop}
+    PISO_Loop --> RhieChow[3. Compute Rhie-Chow Face Fluxes]
+    RhieChow --> Poisson[4. Solve Pressure Poisson Eq.]
+    Poisson --> Correct[5. Correct Velocity and Fluxes]
+    Correct --> Check{Inner Iterations \n n_inner > 0?}
+    Check -- Yes --> RhieChow
+    Check -- No --> End[Proceed to next Time Step]
+```
+
+---
+
+## 3. The Predictor Step (Momentum)
+
+We discretize the momentum equation implicitly for the new velocity $\vec{u}^*$. For a cell $P$:
+
+$$ a_P \vec{u}_P^* + \sum_N a_N \vec{u}_N^* = \vec{H}_P - V_P (\nabla p^{n-1})_P $$
+
+Where:
+- $a_P$ is the central diagonal coefficient (representing inertia and diffusion).
+- $a_N$ are the neighbor coefficients.
+- $\vec{H}_P$ contains explicit source terms and the transient history.
+- $V_P$ is the cell volume.
+- $\nabla p$ is the cell-centered pressure gradient.
+
+From this, the velocity can be isolated algebraically:
+$$ \vec{u}_P^* = \frac{\vec{H}_P - \sum_N a_N \vec{u}_N^*}{a_P} - \frac{V_P}{a_P} (\nabla p^{n-1})_P $$
+
+### Time Discretisation and the Convecting Flux
+
+The transient term is BDF2 ($a_t = 3/(2\Delta t)$, history $2\vec{u}^n - \tfrac12 \vec{u}^{n-1}$), BDF1 on the first step. The convection coefficients $a_N$ are built from a face mass flux, and **which** flux matters for the temporal order:
+
+$$ F_f^{\,conv} = 2 F_f^{\,n} - F_f^{\,n-1} \quad\text{(second-order extrapolation to } t^{n+1}\text{)} $$
+
+Using the flux at the start of the step, $F_f^{\,n}$, is a first-order-in-time linearisation of the convecting velocity. It is invisible on any convection-free test (the unsteady Stokes gate T4 measured order 2.3-2.7 with it) and was caught only by the Orr-Sommerfeld gate T8, where the phase speed of the unstable mode converged at order 1.00 in $\Delta t$. With the extrapolated flux the T8 results are $\Delta t$-independent to the third digit, and the cylinder's shedding forces stop moving between $\Delta t = 0.01$ and $0.005$ (the lagged version converges to them at first order). `PISO.conv_flux_extrap` (default on) selects this; the Rhie-Chow corrector still uses $F^n$ for its time-step-independent damping term, which is a different role.
+
+### RK3 Fractional Step (`time_scheme = "rk3"`, the LES integrator)
+
+The Le & Moin (1991) three-stage scheme is available alongside BDF2-PISO. Stage $k$ advances $\vec u^k \to \vec u^{k+1}$ over $\Delta t_k = (\alpha_k+\beta_k)\Delta t$:
+
+$$ \frac{V}{\Delta t}\vec u^* - \beta_k L\vec u^* = \frac{V}{\Delta t}\vec u^k - \gamma_k N(\vec u^k) - \zeta_k N(\vec u^{k-1}) + \alpha_k L\vec u^k + (\alpha_k+\beta_k)V(\vec f - \nabla p^k) $$
+
+with $\gamma = (8/15, 5/12, 3/4)$, $\zeta = (0, -17/60, -5/12)$, $\alpha = \beta = (4/15, 1/15, 1/6)$. $N(\vec u^k)$ is the central convection assembled on the stage's own divergence-free flux $F^k$ and applied to $\vec u^k$ explicitly, so there is no convecting-flux extrapolation and no linearisation lag; diffusion is Crank-Nicolson. Each stage ends with a Rhie-Chow face flux, one pressure correction with $D = (\alpha_k+\beta_k)V/a_C$, $\vec u^{k+1} = \vec u^* - D\nabla p'$, $F^{k+1} = F^* - F_{p'}$, $p^{k+1} = p^k + p'$. The Rhie-Chow damping inside the stages is the plain $D_f = \Delta t_k V/a_P$ form **without** the time-step-independent transient term: that term cancels the previous damping only when consecutive steps are equal, and with the unequal RK stage steps it left a $\Delta t$-independent dissipation floor (§50 of the record). Measured (§50): convection third order, diffusion second order, energy loss 0.04%/turnover at $\Delta t = 0.005$ on the advected Taylor-Green against 3.9% for BDF2-PISO, Orr-Sommerfeld phase speed $\Delta t$-independent to $4\times10^{-4}$%. The stage convection is explicit, so the CFL limit is about $\sqrt3$ on the stage.
+
+**Initial flux.** `PISO.init_flux()` builds $F_f$ from the initial cell velocity on the first step when $F_f$ is identically zero and the velocity is not (a run from rest is unaffected). Before this every run began with $F_f = 0$, i.e. a first step that convected nothing: a one-off $O(\Delta t)$ error that capped every temporal-order test on a non-trivial initial field at first order, for BDF2 and RK3 alike.
+
+> [!NOTE]
+> The lift-amplitude change on the cylinder at $\Delta t = 0.01$ was 5%, not the fraction of a percent one might guess from $\omega \Delta t \approx 0.01$: the relevant time scale for the linearisation error is the near-wall convective one, $h/u \sim 0.024$, i.e. a local CFL of about 0.4.
+
+---
+
+## 4. Rhie-Chow Interpolation (Interface Fluxes)
+
+To enforce continuity, we need the mass flux at the face: $F_f = \vec{u}_f \cdot \vec{S}_f$.
+Naive linear interpolation of the cell velocities ($\overline{\vec{u}}_f$) re-introduces the checkerboard mode. **Rhie-Chow interpolation** stabilizes this by interpolating the momentum equation itself to the face, ensuring the flux depends on the *compact* pressure difference across the face.
+
+The stabilized face flux is defined as:
+$$ F_f^* = \underbrace{\overline{\vec{u}}_f^* \cdot \vec{S}_f}_{\text{Linear Interpolation}} - \underbrace{D_f \left( \nabla p_{compact} - \overline{\nabla p}_{wide} \right)}_{\text{Rhie-Chow Damping Term}} $$
+
+### The Damping Coefficient ($D_f$)
+$D_f$ represents the inverse momentum matrix diagonal interpolated to the face:
+$$ D_f = \overline{ \left( \frac{V}{a_P} \right) }_f $$
+> [!IMPORTANT]
+> $a_P$ **must** be the raw diagonal from the momentum matrix. Using a modified coefficient like the SIMPLEC row-sum ($a_C$) here breaks the exact algebraic substitution from the momentum equation, leading to catastrophic over-damping.
+
+### The Pressure Gradients
+The damping term subtracts the wide-stencil gradient and replaces it with a compact, face-normal gradient. On highly skewed grids, directional consistency is paramount:
+1. **Wide Gradient**: $\overline{\nabla p}_{wide} = \overline{(\nabla p)}_f \cdot \vec{S}_f$
+2. **Compact Gradient**: Built using the **over-relaxed geometric decomposition** ($\vec{S}_f = \vec{E}_f + \vec{T}_f$):
+   $$ \nabla p_{compact} = |\vec{E}_f| \frac{p_N - p_P}{|\vec{d}|} + \vec{T}_f \cdot \overline{(\nabla p)}_f $$
+   This ensures that the compact and wide gradients represent the exact same directional derivative, avoiding an $\mathcal{O}(1)$ skewness error.
+
+### Discrete Duality ($G = -D^T$)
+To completely prevent the checkerboard mode from leaking back into the velocity field, the pressure gradient operator $G$ in the momentum source must be the exact negative transpose of the divergence operator $D$ used in continuity. 
+This is achieved by using a **Dual Green-Gauss Gradient** (`GGDualGradient`) which swaps the interpolation weights ($p_f = (1-w)p_P + w p_N$) to force the discrete sum to telescope over the mesh exactly.
+
+---
+
+## 5. The Corrector Step (Pressure Poisson)
+
+We seek a pressure correction $p'$ such that the corrected flux $F_f^{**} = F_f^* - D_f (\nabla p')_f$ is perfectly divergence-free ($\sum F_f^{**} = 0$).
+
+This yields the **Pressure Poisson Equation**:
+$$ \sum_{faces} D_f \left( \nabla p' \right)_f = \sum_{faces} F_f^* $$
+
+> [!TIP]
+> **SIMPLEC Coefficient ($a_C$)**
+> While Rhie-Chow uses $a_P$, the Poisson solver uses the SIMPLEC coefficient $a_C = \max(a_P - \sum a_N, \frac{V_P}{\Delta t})$ to define the diffusivity $\Gamma = V_P / a_C$. Because the viscous terms sum to zero, using $a_P$ directly in the pressure equation severely underestimates the pressure response (by ~92x), causing divergence.
+
+Once $p'$ is found, we correct the fields:
+$$ p^{new} = p^{old} + p' $$
+$$ F_f^{**} = F_f^* - D_f (\nabla p')_f $$
+$$ \vec{u}^{**} = \vec{u}^* - \frac{V}{a_P} \nabla p' $$
+
+### Inner Iterations (`n_inner`)
+Because the non-orthogonal cross-diffusion term ($\vec{T}_f \cdot \nabla \phi$) is computed explicitly using the old gradient, lagging it by a time step degrades temporal accuracy to 1st order. PISO executes `n_inner` (typically 2 or 3) loops over the corrector to implicitly converge this cross-term within the time step, restoring 2nd order accuracy in time (BDF2).
+
+---
+
+## 6. Boundary Conditions
+
+### Wall Boundary (Dirichlet Velocity)
+At walls, the velocity is fixed (e.g., $\vec{u} = 0$). The mass flux through the wall is exactly defined by the boundary condition.
+> [!CAUTION]
+> **No Rhie-Chow Damping on Walls!**
+> Applying Rhie-Chow damping on a Dirichlet boundary face artificially alters the fixed physical mass flux, creating phantom mass generation that the Poisson solver smears globally. The flux must be strictly $F_{wall} = \vec{u}_{BC} \cdot \vec{S}_f$.
+
+### Wall Forces (post-processing, not discretisation)
+The force on a no-slip wall is integrated from the wall pressure (owner-cell value, Neumann) and the wall shear taken from the solver's **own discrete wall flux**, $\tau_w = \nu\, u_P / d_n$ with $d_n$ the centroid-to-wall distance and the tangential derivatives dropped (they vanish at a no-slip wall). Reconstructing the shear from the wall cell's cell-centre gradient reads it $d_n/2$ from the wall and under-predicts the viscous drag by 3% on the cylinder at Re 100; the discrete flux is what the momentum balance actually applied, and it puts the steady drag within 0.3% of HydroGym's converged Taylor-Hood value on two different meshes.
+
+### Periodic Boundaries
+Two boundary groups become a periodic seam by pairing faces whose centres differ by the period vector and merging each pair into one interior face: the surviving face keeps its owner, takes the partner's owner as neighbour, and its cell-to-cell vector is $\vec{d} = \vec{x}_{N} - \vec{L} - \vec{x}_{P}$ with $\vec{L}$ the period, so the vector points forward across the seam rather than back across the domain. Every operator that reads geometry through $\vec{d}$, the face weights and $\vec{E}_f, \vec{T}_f$ is then periodic with no further change; the only operators that had to be touched were two that read the neighbour centroid directly. Because the seam faces are ordinary interior faces, there are no ghost cells and the pressure Poisson system keeps its single null vector (`Mesh.make_periodic`).
+
+### Dong Outflow Boundary Condition
+Open boundaries are notoriously unstable when vortices exit the domain, as localized backflow (inflow) can drag kinetic energy back into the system, causing the solver to blow up.
+
+The **Dong Outflow Condition** (Dong et al., JCP 2014) robustly stabilizes open boundaries by acting as a directional valve:
+$$ \nu \frac{\partial \vec{u}}{\partial n} - p \hat{n} = -\frac{1}{2} |\vec{u}|^2 S_0(\vec{u} \cdot \hat{n}) \hat{n} $$
+
+Where $S_0(x)$ is a smoothed step function that activates only during backflow:
+$$ S_0(x) = \frac{1}{2} \left( 1 - \tanh\left(\frac{x}{U_0}\right) \right) $$
+
+- **When fluid enters ($\vec{u} \cdot \hat{n} < 0$)**: $S_0 \approx 1$, applying a heavy artificial dynamic pressure penalty that suppresses the incoming kinetic energy and forces the vortex to cleanly leave the domain without destabilizing the global solve.
+
+---
+
+## 6b. The 2.5D Extension: Fourier Span (`src/upiso25.py`)
+
+For flows with one homogeneous periodic direction the third dimension is spectral: `PISO25` keeps every cell field as an $(N_{cell}, n_z)$ array over planes $z_j = j L_z/n_z$ and every face field as $(N_{face}, n_z)$. Spanwise derivatives are exact, $\widehat{\partial_z \phi}_k = i k_z \hat\phi_k$ with $k_z = 2\pi k/L_z$, $k = 0..n_z/2$ (Nyquist held at zero), and the plane keeps the whole collocated scheme above. Mode 0 is the 2D solver to round-off (§51 of the record).
+
+**Nonlinear term, dealiased.** $N_i = \sum_f F_f\,\phi_{i,f} + V\,\partial_z(w\,\phi_i)$ is evaluated in physical space on $M = 3n_z/2$ planes (fields padded spectrally), with the central-plus-skewness face value in the plane and the spectral derivative in $z$, then truncated to $n_z/2+1$ modes: the 3/2 rule. No upwind matrix is needed because the term is explicit (RK3).
+
+**Per-mode implicit solves.** For each stage, component and mode,
+$$ \Big(\tfrac{V}{\Delta t} - \beta_k (L_{2D} - \nu k_z^2 V)\Big)\hat\phi^* = \widehat{\text{rhs}}, $$
+a real matrix factorised once per (stage, mode) and applied to the complex right-hand side as two real columns. The deferred cross-diffusion of $\phi^*$ is iterated `n_inner` times as in 2D.
+
+**Rhie–Chow per mode.** $\hat F^*_f = \bar{\hat u}_f\cdot S_f - D_f(k)\,\big[(\nabla \hat p)_{compact} - (\nabla\hat p)_{wide}\big]\cdot S_f$ with $D(k) = \Delta t_k V/a_P(k)$, all modes at once as $(N_{face}, n_k)$ complex arrays; boundary Dirichlet values live in mode 0 only. No transient term (§50).
+
+**Pressure per mode.** Continuity $\nabla_{2D}\cdot F + V\,\partial_z w = 0$ gives, per mode,
+$$ \big[\,\mathrm{Lap}(\gamma_k) - k_z^2 D_k V\,\big]\hat p' = V\,\nabla\!\cdot\hat F^* + i k_z V \hat w^*, $$
+a real Helmholtz operator per (stage, mode); mode 0 with all-Neumann pressure is pinned at one cell with the mean removed. Then $\hat u = \hat u^* - D\nabla\hat p'$, $\hat w = \hat w^* - D\, i k_z \hat p'$, $\hat F = \hat F^* - \hat F_{p'}$, $p \mathrel{+}= p'$.
+
+**Cost.** $3 \times n_k \times 4$ factorisations per run (stages × modes × (u, v, w, p)), cached. 64² × 64 modes: 0.73 s/step of which 40% is the mode solves.
+
+### Eddy viscosity (`src/usgs.py`, LES plan L3)
+
+The velocity-gradient tensor is the LSQ cell gradient in the plane and spectral in $z$; $\Delta = (V\,\delta z)^{1/3}$; Smagorinsky ($C_s = 0.17$, optional van Driest) and WALE ($C_w = 0.55$) as in the structured code. The term $\nabla\cdot\big(\nu_t(\nabla u + \nabla u^T)\big)$ is **explicit**, evaluated with the convection on the padded planes (it is a product) and carried by the RK3 $\gamma/\zeta$ weights; molecular viscosity stays Crank–Nicolson implicit. In-plane faces use the Laplacian's split $\nu_f\,[\,|E_f|/d\,(\phi_N - \phi_P) + T_f\cdot\nabla_f\phi\,]$ plus the transpose $\nu_f\,(\partial u_j/\partial x_i)_f S_j$; spanwise $V\,\partial_z[\nu_t(\partial_z u_i + \partial_i w)]$. Measured second order against a manufactured variable-$\nu$ divergence (§52).
+
+### Forcing, statistics, restart (L5)
+
+`set_mass_flow(U_b)` adjusts a uniform body force by $(U_b - \bar U)/\Delta t$ after each step; `Stats` bins cells by a centroid coordinate and accumulates volume-weighted moments over cells, planes and samples; `save/load` restarts are bitwise lossless because RK3 carries no history (§53).
+
+---
+
+### Linear solvers and the device (`src/umodesolve.py`, `src/ucuda.py`, LES plan L4)
+
+Every implicit system of the 2.5D step is a family $(A + s_k D)\,x_k = b_k$ over the modes: one shared sparse matrix, a positive diagonal $D$, a shift $s_k = k_z^2$ (times $\beta\nu$ for momentum). `ModeFamily` solves the family as one block: PCG on the $(N, n_k)$ right-hand side with per-column scalars, preconditioned by one Ruge–Stuben AMG hierarchy built from the $k = 0$ matrix whose level operators are shifted per mode exactly ($A_l + s_k D_l$, $D_l = R_l D_{l-1} P_l$), damped Jacobi with the per-mode diagonal, a batched dense coarsest solve. Classical coarsening matters: smoothed aggregation needed 55 iterations on the wall-clustered channel operator, Ruge–Stuben 8–19 from $2\times10^3$ to $10^6$ cells (§57). The diagonally dominant momentum families use Jacobi-PCG alone and are solved for $u, v, w$ together when their operators coincide. On the GPU (`PISO25(device="gpu")`, CuPy) the shifted matvec and the Jacobi sweep are single raw kernels, sparse-times-block products run through `DevCSR` at the device's bandwidth, and the column reductions are cuBLAS products; the CPU path is the same code with numpy and SuperLU (`solver="lu"`, the default there). Measured: 61–73 ms per step per $10^5$ cell-modes on the GB10 at $64^2$–$384^2 \times 64$, 140 on a real stretched mesh with WALE; answers identical to the LU path to the solver tolerance.
+
+### Design rules the LES runs established (§§50–58)
+
+* **Time scheme for LES is RK3 with a projection per stage**, not BDF2-PISO: 0.04% against 3.9% energy loss per turnover at $\Delta t = 0.005$ (§50). BDF2-PISO stays the default for the laminar 2D cases.
+* **Rhie–Chow inside RK3 carries no dt-independent transient term**: Choi's term left a dt-independent 1.2–1.7%/turnover floor; the plain $O(\Delta t)$ stage damping vanishes with the step. Its residual effect on the cylinder lift amplitude is 1.5% (§50).
+* **Quads for wall-bounded LES.** Every triangle configuration failed the channel criteria: the two-colour pressure mode of a non-bipartite mesh appears in the turbulent field (14% of $p_{rms}$ on triangle pairs, a zigzag Reynolds stress) and on isotropic triangles the discrete momentum balance does not close (§55). Triangles stay where they were validated: laminar external flow with vertex-averaged post-processing.
+* **WALE with $\Delta = (V\,\delta z)^{1/3}$** reproduces the Re$_\tau$ 180 channel within 1% in the log region (§54) but over-dissipates the laminar phase of a transition (§58); the $\sigma$-model, which vanishes for laminar and two-dimensional states, is the port to make before transitional cases.
+* **Second-order in-plane convection advances a transition**: the Taylor–Green breakdown comes 6% early at every resolution and depends on the orientation of the plane (§58). A fourth-order in-plane reconstruction is the remedy if peak timing is ever a criterion.
+* **Spanwise dealiasing (3/2 rule) is not optional**: without it the Taylor–Green run is unusable by $t = 5$ (§58).
+
+---
+
+## 7. The Crucial Role of the Green-Gauss Gradient (Duality vs. Consistency)
+
+A defining characteristic of this solver is the explicit prioritization of **discrete mass-momentum duality** over pointwise numerical consistency. This design choice was the result of extensive investigation into the $\mathcal{O}(1)$ error floor observed on unstructured steady Stokes flow.
+
+![Finite Volume Gradient Methods](./gradient_fv_diagram_v7.png)
+
+### The Checkerboard Transmission Problem
+In standard collocated Finite Volume schemes, Rhie-Chow interpolation prevents the checkerboard pressure mode from contaminating the *continuity* equation. However, the momentum equation still requires a cell-centered pressure gradient. 
+If the discrete pressure gradient operator ($G$) is not precisely the negative transpose of the discrete divergence operator ($D$), the momentum equation is not "blind" to the checkerboard mode. 
+
+### Why Least-Squares (LSQ) Fails
+Most modern unstructured solvers default to Least-Squares (LSQ) gradients because they guarantee 1st or 2nd-order spatial consistency on arbitrary meshes. 
+
+Mathematically, the LSQ gradient seeks a constant gradient vector $\nabla p_P$ at cell $P$ that minimizes the weighted sum of squared errors between the extrapolated and actual neighbor values:
+$$ E = \sum_N w_N \left( p_N - (p_P + \nabla p_P \cdot \vec{d}_{PN}) \right)^2 $$
+Minimizing $E$ yields a precise geometric tensor that computes a highly accurate local gradient. 
+
+However, because LSQ is highly accurate, it physically "sees" the high-frequency checkerboard pressure mode and computes its gradient perfectly. This transmits the checkerboard error directly into the velocity field as an $\mathcal{O}(1)$ momentum source term, completely destroying velocity convergence (resulting in a hard 0th-order error floor).
+
+### The Dual Green-Gauss Solution ($G = -D^T$)
+To cure this, the solver abandons the consistent LSQ gradient in favor of a **Dual Green-Gauss Gradient** (`GGDualGradient`). 
+
+The standard Green-Gauss gradient computes the gradient via the divergence theorem over the cell volume $V_P$:
+$$ \nabla p_P = \frac{1}{V_P} \sum_{faces} p_f \vec{S}_f $$
+The face pressure $p_f$ is typically interpolated using the standard distance-based geometric weight $w_f = \frac{|\vec{x}_f - \vec{x}_N|}{|\vec{d}_{PN}|}$:
+$$ p_{f,\text{standard}} = w_f p_P + (1 - w_f) p_N $$
+However, inserting this standard interpolation into the sum does **not** yield a gradient operator $G$ that is the exact negative transpose of the divergence operator $D$.
+
+By explicitly **swapping** the geometric interpolation weights:
+$$ p_{f,\text{dual}} = (1 - w_f) p_P + w_f p_N $$
+the Green-Gauss gradient is forced to telescope exactly across the mesh. This mathematically guarantees $G = -D^T$. 
+Because the collocated divergence operator is inherently blind to the checkerboard mode, the dual $G$ operator is identically blind to it as well. The checkerboard mode is trapped entirely within the pressure field, allowing the velocity field to cleanly converge at **2nd order**.
+
+### Does Dual Green-Gauss Negate the Need for Rhie-Chow?
+A common misconception is that using a checkerboard-blind gradient (like Dual Green-Gauss) eliminates the need for Rhie-Chow interpolation. **This is false.** You strictly need both, because they solve two distinct halves of the collocated grid problem:
+*   **Rhie-Chow stabilizes Continuity**: Without Rhie-Chow, the discrete mass flux calculation allows the checkerboard pressure field to perfectly satisfy mass conservation ($\nabla \cdot \vec{v} = 0$). The Continuity equation itself is oblivious to the massive oscillations. Rhie-Chow actively damps the pressure field via a 4th-order derivative.
+*   **Dual Green-Gauss stabilizes Momentum**: Even if Rhie-Chow provides a perfectly smooth pressure field, if your momentum gradient operator $G$ is not the exact negative transpose of the divergence operator $D$, energy conservation is violated. High-frequency numerical noise leaks directly into the velocity field as an $\mathcal{O}(1)$ error floor.
+*   **Conclusion**: Rhie-Chow ensures mass conservation is stable, and Dual Green-Gauss ensures momentum physically responds to that pressure field consistently without injecting errors.
+### The Arbitrary Triangle Trade-off
+Extensive effort was spent studying this gradient on arbitrary triangles because the swapped-weight Green-Gauss formulation is mathematically **$\mathcal{O}(0)$ inconsistent** on non-orthogonal, unstructured meshes. The face value approximation is strictly incorrect unless the adjacent cells are perfect mirror images.
+The rigorous testing campaign was required to prove that this severe local truncation error does not ruin the global solution. The data ultimately proved that:
+1. On structured/clustered quads (up to $\beta = 2.0$), the duality dominates, and velocity achieves perfect 2nd-order accuracy.
+2. The local $\mathcal{O}(0)$ inconsistency error scales as $\frac{r-1}{2(r+1)}$ (where $r$ is the stretching ratio) and smoothly vanishes under mesh refinement.
+3. Therefore, trading pointwise consistency (LSQ) for exact global duality (Green-Gauss) is strictly required to achieve a functioning 2nd-order collocated solver.

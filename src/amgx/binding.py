@@ -98,9 +98,40 @@ _PRINT_CB = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int)
 _silent = _PRINT_CB(lambda msg, n: None)
 
 
-_cfg_shared = None
+_cfg_shared = None            # kept for the resources bootstrap
+_cfg_by_rtol = {}             # one config PER TOLERANCE; resources stay shared
 _rsrc_shared = None
 _cfg_rtol = None
+
+
+def reset():
+    """Tear the WHOLE AmgX context down so the next solver starts clean.
+
+    Escalation of last resort: on the R11 butterfly grid, momentum solves
+    started failing at a deterministic step and stayed failed through fresh
+    solver objects -- but the same matrix solved instantly in a fresh
+    PROCESS. The durable state is here: the shared resources and config
+    handles. Every AmgXSolver must be close()d BEFORE calling this.
+    """
+    global _initialised, _cfg_shared, _rsrc_shared, _cfg_by_rtol
+    for cfg, _path in list(_cfg_by_rtol.values()):
+        try:
+            _lib.AMGX_config_destroy(cfg)
+        except Exception:
+            pass
+    _cfg_by_rtol = {}
+    if _rsrc_shared is not None:
+        try:
+            _lib.AMGX_resources_destroy(_rsrc_shared)
+        except Exception:
+            pass
+    _cfg_shared = None
+    _rsrc_shared = None
+    try:
+        _lib.AMGX_finalize()
+    except Exception:
+        pass
+    _initialised = False
 
 
 def _config_with_tolerance(cfg_path, rtol):
@@ -144,25 +175,44 @@ def _init_once(cfg_path, rtol=None):
         except Exception:
             pass          # cosmetic only; never fail a run over logging
         _initialised = True
-    global _cfg_rtol
-    if _cfg_shared is None:
+    # ONE CONFIG PER TOLERANCE, ONE RESOURCES PER PROCESS. The resources object
+    # must be a singleton (a second one throws Cuda 'invalid argument' -- see
+    # the spanwise-study note above), but AMGX_solver_create takes its OWN
+    # config handle, so different tolerances can coexist against the shared
+    # resources. The previous process-wide-config rule made the momentum solver
+    # (rtol 1e-9) and the pressure solver (1e-6) mutually exclusive, and the
+    # loser fell back to scipy -- silently, before the fallback learned to
+    # print.
+    key = None if rtol is None else float(f"{rtol:.6e}")
+    cfg, used_path = _cfg_by_rtol.get(key, (None, None))
+    if cfg is None:
+        # AMGX_CONFIG_TIGHT: a different template for tight-tolerance systems
+        # (the momentum solves at 1e-9). Measured on the real cylinder
+        # operators: momentum under PCG+Jacobi converges in ONE iteration
+        # (0.014 s); under the pressure-tuned aggregation AMG it never
+        # converges (20,000 iters, 56 s) -- and the reverse holds for the
+        # pressure system (AMG 0.062 s vs Jacobi 0.599 s). One template per
+        # tolerance class, not one per process.
+        tight = os.environ.get("AMGX_CONFIG_TIGHT")
+        if tight and rtol is not None and rtol <= 1e-8:
+            cfg_path = tight
         cfg_path = _config_with_tolerance(cfg_path, rtol)
-        _cfg_shared = ctypes.c_void_p()
-        _chk(_lib.AMGX_config_create_from_file(ctypes.byref(_cfg_shared),
+        cfg = ctypes.c_void_p()
+        _chk(_lib.AMGX_config_create_from_file(ctypes.byref(cfg),
                                                cfg_path.encode()), "config_create")
-        _cfg_rtol = rtol
+        used_path = cfg_path
+        _cfg_by_rtol[key] = (cfg, used_path)
+    if _rsrc_shared is None:
+        _cfg_shared = cfg
         _rsrc_shared = ctypes.c_void_p()
-        _chk(_lib.AMGX_resources_create_simple(ctypes.byref(_rsrc_shared), _cfg_shared),
+        _chk(_lib.AMGX_resources_create_simple(ctypes.byref(_rsrc_shared), cfg),
              "resources_create")
-    elif rtol is not None and _cfg_rtol is not None and \
-            abs(rtol - _cfg_rtol) > 1e-15 * max(rtol, _cfg_rtol):
-        # The config is a PROCESS-WIDE singleton, so a second solver cannot quietly get a
-        # different tolerance. Raising beats returning an answer converged to someone else's.
-        raise RuntimeError(
-            f"AmgX config already built for rtol={_cfg_rtol:.3e}; this solver asked for "
-            f"{rtol:.3e}. The config is process-wide, so the two cannot coexist -- use one "
-            f"tolerance per process.")
-    return _cfg_shared, _rsrc_shared
+    return cfg, _rsrc_shared, used_path
+
+
+class NeedsRebuild(Exception):
+    """Raised by solve() when the matrix drifted past drift_tol; the caller
+    rebuilds by constructing a fresh AmgXSolver (in-place setup crashes)."""
 
 
 class AmgXSolver:
@@ -190,7 +240,10 @@ class AmgXSolver:
                 "solver hit its iteration cap at convergence rate 0.90 on this operator.")
 
         self.rtol = rtol
-        self._cfg, self._rsrc = _init_once(cfg_path, rtol)  # shared, NOT per-solver
+        self.config_path = cfg_path
+        # config_path is the TEMPLATE the caller named; config_used is what the
+        # solver actually loaded after tight-tolerance routing + substitution.
+        self._cfg, self._rsrc, self.config_used = _init_once(cfg_path, rtol)
         self._A = ctypes.c_void_p(); self._b = ctypes.c_void_p(); self._x = ctypes.c_void_p()
         self._slv = ctypes.c_void_p()
         m = ctypes.c_int(AMGX_MODE_dDDI)
@@ -213,20 +266,45 @@ class AmgXSolver:
 
     def solve(self, values, b, x0=None):
         vals = np.ascontiguousarray(values, dtype=np.float64)
-        drift = (np.abs(vals - self._ref).max()
-                 / max(np.abs(self._ref).max(), 1e-300))
-        _chk(_lib.AMGX_matrix_replace_coefficients(
-            self._A, self.n, self.nnz,
-            vals.ctypes.data_as(ctypes.c_void_p), None), "replace_coefficients")
+        # SKIP THE UPLOAD WHEN THE MATRIX IS BIT-IDENTICAL to the last one
+        # uploaded. replace_coefficients makes AmgX refresh its Galerkin coarse
+        # operators even when nothing changed -- measured at ~0.4 s per solve
+        # on the 160k cylinder pressure system, which was most of the gap
+        # between the 62 ms shootout solve and the 449 ms in-run solve. The
+        # correctors within a step share one matrix, so this is exact, not an
+        # approximation. self._last tracks the upload; self._ref still tracks
+        # the hierarchy build for the drift rebuild below.
+        _last = getattr(self, "_last", None)
+        if _last is not None and vals.shape == _last.shape and \
+                np.array_equal(vals, _last):
+            drift = 0.0
+        else:
+            drift = (np.abs(vals - self._ref).max()
+                     / max(np.abs(self._ref).max(), 1e-300))
+            _chk(_lib.AMGX_matrix_replace_coefficients(
+                self._A, self.n, self.nnz,
+                vals.ctypes.data_as(ctypes.c_void_p), None), "replace_coefficients")
+            self._last = vals.copy()
         if drift > self.drift_tol:
-            # The hierarchy is stale. Rebuilding costs ~43 ms against a ~28 ms solve, so this
-            # must stay rare -- which it is at ~1e-3 drift per step.
-            _chk(_lib.AMGX_solver_setup(self._slv, self._A), "solver_setup (rebuild)")
-            self._ref = vals.copy()
-            self.rebuilds += 1
+            # The hierarchy is stale. The in-place AMGX_solver_setup rebuild
+            # crashes with a CUDA failure (rc 5) on the 2026-09 builds, for
+            # PBICGSTAB and for PCG+aggregation alike, so the caller must tear
+            # this solver down and construct a fresh one -- the construction
+            # path is the one that demonstrably works.
+            raise NeedsRebuild(f"drift {drift:.3e} > {self.drift_tol}")
 
         rhs = np.ascontiguousarray(b, dtype=np.float64)
-        x = np.ascontiguousarray(np.zeros_like(rhs) if x0 is None else x0, dtype=np.float64)
+        # x MUST BE A COPY, never the caller's x0: vector_download writes the
+        # result into this buffer, and np.ascontiguousarray does NOT copy an
+        # already-contiguous array. With the caller's buffer aliased, a FAILED
+        # solve overwrote the warm start with divergence garbage in place --
+        # so every retry, fresh solver, and even full-context reset then
+        # "failed" too, because each inherited the poisoned x0 (R11, solve
+        # #115: x0 went 2.29 -> 2.2e5 across one rejected solve).
+        x = (np.zeros_like(rhs) if x0 is None
+             else np.array(x0, dtype=np.float64, copy=True))
+        if not x.flags.c_contiguous:
+            x = np.ascontiguousarray(x)
         one = 1
         _chk(_lib.AMGX_vector_upload(self._b, self.n, one,
                                      rhs.ctypes.data_as(ctypes.c_void_p)), "vector_upload b")
@@ -238,6 +316,24 @@ class AmgXSolver:
         it = ctypes.c_int(0)
         _lib.AMGX_solver_get_iterations_number(self._slv, ctypes.byref(it))
         self.iterations = it.value
+        # AMGX_solver_solve returns rc 0 even when the ITERATION diverged --
+        # the rc reports API health only. Divergence lives in the status
+        # handle, and a diverged solve hands back NaN with no error (R11:
+        # one silent NaN solve poisoned every field within a few dozen steps).
+        st = ctypes.c_int(0)
+        _lib.AMGX_solver_get_status(self._slv, ctypes.byref(st))
+        if st.value != 0 or np.isnan(x).any():
+            err = FloatingPointError(
+                f"AmgX solve unhealthy: status={st.value} (0=ok 1=failed "
+                f"2=diverged 3=not converged) after {it.value} iters, NaNs in "
+                f"x: {int(np.isnan(x).sum())}/{x.size} (n={self.n}, "
+                f"rtol={self.rtol}, config={self.config_used})")
+            # The caller holds A and can judge the TRUE residual -- AmgX's
+            # "not converged" means it missed ITS criterion (relative to the
+            # initial residual), which a good warm start makes unattainable.
+            err.x = x
+            err.status = st.value
+            raise err
         return x
 
     def close(self):

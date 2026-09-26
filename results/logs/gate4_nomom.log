@@ -1,0 +1,7 @@
+  wrote reference/gate4_serial_1e-09_10.npz
+--- n=2, momentum NOT distributed ---
+  [PASS] 2 ranks, 10 steps: max relative difference 8.361e-14  (criterion < 1e-12)
+  [PASS] momentum iterations [20, 27, 28, 26, 25, 24]... total ratio 1.00x of serial
+--- n=4, momentum NOT distributed ---
+  [PASS] 4 ranks, 10 steps: max relative difference 8.172e-14  (criterion < 1e-12)
+  [PASS] momentum iterations [20, 27, 28, 26, 25, 24]... total ratio 1.00x of serial

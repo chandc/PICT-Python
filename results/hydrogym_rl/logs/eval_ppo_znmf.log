@@ -1,0 +1,36 @@
+model /work/rl_logs/PPO_Firedrake_cylinder_znmf_20260923_033943/model_final.zip
+stats /work/rl_logs/PPO_Firedrake_cylinder_znmf_20260923_033943/vec_normalize_final.pkl
+  uncontrolled t=  10.0  CD 1.4829  CL rms 0.2573  |a| mean 0.0000  (121 ms/step)
+  uncontrolled t=  20.0  CD 1.4842  CL rms 0.2402  |a| mean 0.0000  (121 ms/step)
+  uncontrolled t=  30.0  CD 1.4868  CL rms 0.2559  |a| mean 0.0000  (121 ms/step)
+  uncontrolled t=  40.0  CD 1.4855  CL rms 0.2532  |a| mean 0.0000  (121 ms/step)
+  uncontrolled t=  50.0  CD 1.4864  CL rms 0.2441  |a| mean 0.0000  (121 ms/step)
+  uncontrolled t=  60.0  CD 1.4865  CL rms 0.2628  |a| mean 0.0000  (122 ms/step)
+  uncontrolled t=  70.0  CD 1.4855  CL rms 0.2390  |a| mean 0.0000  (122 ms/step)
+  uncontrolled t=  80.0  CD 1.4871  CL rms 0.2617  |a| mean 0.0000  (122 ms/step)
+  uncontrolled t=  90.0  CD 1.4853  CL rms 0.2462  |a| mean 0.0000  (122 ms/step)
+  uncontrolled t= 100.0  CD 1.4868  CL rms 0.2509  |a| mean 0.0000  (123 ms/step)
+/usr/local/lib/python3.12/dist-packages/stable_baselines3/common/on_policy_algorithm.py:150: UserWarning: You are trying to run PPO on the GPU, but it is primarily intended to run on the CPU when not using a CNN policy (you are using ActorCriticPolicy which should be a MlpPolicy). See https://github.com/DLR-RM/stable-baselines3/issues/1245 for more info. You can pass `device='cpu'` or `export CUDA_VISIBLE_DEVICES=` to force using the CPU.Note: The model will train, but the GPU utilization will be poor and the training might take longer than on CPU.
+  warnings.warn(
+  controlled t=  10.0  CD 1.4833  CL rms 11.8683  |a| mean 0.0999  (143 ms/step)
+  controlled t=  20.0  CD 1.4846  CL rms 11.8830  |a| mean 0.1000  (142 ms/step)
+  controlled t=  30.0  CD 1.4872  CL rms 11.8831  |a| mean 0.1000  (141 ms/step)
+  controlled t=  40.0  CD 1.4859  CL rms 11.8831  |a| mean 0.1000  (141 ms/step)
+  controlled t=  50.0  CD 1.4868  CL rms 11.8832  |a| mean 0.1000  (140 ms/step)
+  controlled t=  60.0  CD 1.4869  CL rms 11.8837  |a| mean 0.1000  (140 ms/step)
+  controlled t=  70.0  CD 1.4859  CL rms 11.8830  |a| mean 0.1000  (140 ms/step)
+  controlled t=  80.0  CD 1.4875  CL rms 11.8832  |a| mean 0.1000  (140 ms/step)
+  controlled t=  90.0  CD 1.4857  CL rms 11.8830  |a| mean 0.1000  (140 ms/step)
+  controlled t= 100.0  CD 1.4873  CL rms 11.8834  |a| mean 0.1000  (140 ms/step)
+EVAL window t=40..100: uncontrolled CD 1.4863 CL_rms 0.2525 | controlled CD 1.4867 CL_rms 11.8832 | drag reduction -0.0% | action mean +0.0000 rms 0.1000 (MAX_CONTROL 0.1)
+WARNING! There are options you set that were not used!
+WARNING! could be spelling mistake, etc!
+There are 8 unused database options. They are:
+Option left: name:--env value: cylinder_znmf source: command line
+Option left: name:--logdir value: /work/rl_logs/PPO_Firedrake_cylinder_znmf_20260923_033943 source: command line
+Option left: name:--out value: out/eval_ppo_znmf source: command line
+Option left: name:--T value: 100 source: command line
+Option left: name:-env value: cylinder_znmf source: code
+Option left: name:-logdir value: /work/rl_logs/PPO_Firedrake_cylinder_znmf_20260923_033943 source: code
+Option left: name:-out value: out/eval_ppo_znmf source: code
+Option left: name:-T value: 100 source: code

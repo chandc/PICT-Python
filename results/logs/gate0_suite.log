@@ -1,0 +1,35 @@
+  test_chan_channel.py               PASS      1044.4s  4/4
+  test_channel_laminar.py            PASS        48.8s  4/4
+  test_channel_order.py              PASS       223.4s    and opens a gap between them; each corrector shrinks i
+  test_checkpoint.py                 PASS        11.9s  25/25
+  test_duct.py                       PASS         2.6s    [PASS] square duct vs the analytic series: rates 2.06,
+  test_duct_implicit.py              PASS       534.8s  18/18
+  test_energy_conservation.py        PASS        32.9s  6/6
+  test_forces.py                     PASS         0.5s  6/6
+  test_implicit_cross.py             PASS        22.4s  10/10
+  test_mb_adjoint_bc.py              PASS         1.9s  10/10
+  test_mb_adjoint_seam.py            PASS         2.1s  16/16
+  test_mb_adjoint_state.py           PASS         1.6s  9/9
+  test_mb_forces_torch.py            PASS         2.0s  13/13
+  test_multiblock.py                 PASS        94.7s  55/55
+  test_multiblock_gradient.py        PASS         2.1s  4/4
+  test_numerical_dissipation.py      PASS        44.1s  4/4
+  test_obstacle_topology.py          PASS         2.0s            validate 0 problems | flux divergence 3.81e-11
+  test_onset_estimator.py            PASS         0.1s  9/9
+  test_orr_sommerfeld.py             TIMEOUT   1800.0s  
+  test_outflow.py                    TIMEOUT   1800.0s  
+  test_phase3_rigorous.py            PASS       511.8s  23/23
+  test_phase5_order.py               PASS       491.9s  5/5
+  test_phase5_piso.py                PASS        73.4s  10/10
+  test_poiseuille.py                 PASS         4.4s  Poiseuille validation passed
+  test_reentrant_corner_stretched.py PASS         1.0s           7.48e-15, against 3.99e-02 without.
+  test_rhie_chow.py                  PASS       106.0s  28/28
+  test_sgs_models.py                 PASS         0.5s  7/7
+  test_sgs_net_seam.py               PASS         1.6s  5/5
+  test_spatial_order.py              PASS       802.3s  ========================================================
+  test_stokes_channel.py             PASS       626.1s  5/5
+  test_stokes_growth.py              PASS       168.7s  6/6
+  test_van_driest_channel.py         PASS       667.1s  4/4
+  test_variable_viscosity.py         PASS         1.4s  6/6
+
+  31/33 files pass

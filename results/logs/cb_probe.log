@@ -1,0 +1,16 @@
+ValueError: solver is configured differently from the checkpoint (rhie_chow: file=True solver=False). This would be neither a continuation nor a clean new run. Pass the key in `allow=` if THIS change is deliberate -- e.g. allow=('dt',) to restart with a smaller step -- which keeps every other check, including the grid fingerprint, in force. strict=False disables all of them and is almost never what is wanted.
+  variant=noforce    blocks=2 rhie_chow=True force=0.0
+    seeded: 2dx energy 5.7218e-01 (0.56% of fluctuation)
+  variant=oneblock   blocks=1 rhie_chow=True force=1.0
+    seeded: 2dx energy 5.7218e-01 (0.56% of fluctuation)
+  variant=base       blocks=2 rhie_chow=True force=1.0
+    seeded: 2dx energy 5.7218e-01 (0.56% of fluctuation)
+    step   200 t= 0.100  2dx energy 4.2520e-01 (  0.27%)  amplification    0.743x
+    step   200 t= 4.100  2dx energy 7.5268e-01 (  0.48%)  amplification    1.315x
+    step   200 t= 4.100  2dx energy 7.5287e-01 (  0.48%)  amplification    1.316x
+    step   400 t= 0.200  2dx energy 2.7594e-01 (  0.16%)  amplification    0.482x
+    step   400 t= 4.200  2dx energy 5.1979e-01 (  0.30%)  amplification    0.908x
+    step   400 t= 4.200  2dx energy 5.1961e-01 (  0.30%)  amplification    0.908x
+    step   600 t= 0.300  2dx energy 1.7903e-01 (  0.08%)  amplification    0.313x
+    step   600 t= 4.300  2dx energy 3.6933e-01 (  0.17%)  amplification    0.645x
+    step   600 t= 4.300  2dx energy 3.7045e-01 (  0.17%)  amplification    0.647x

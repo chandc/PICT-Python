@@ -30,6 +30,8 @@ tangentially moving lid, since a tangential velocity has no component along the 
 J*grad(xi_ax)) and are never corrected. That is exactly consistent with the pressure matrix,
 which builds no face at the domain boundary and is therefore the zero-flux (Neumann) operator.
 """
+import os
+
 import numpy as np
 from src.phase1_grid_metrics import as_periodic, deriv
 
@@ -111,7 +113,8 @@ def divergence_from_fluxes(F, J, h):
     return d / J
 
 def pressure_face_fluxes(p, J, metrics, h, coef=None, include_orth=True,
-                         include_cross=True, periodic=None, rhie_chow=False):
+                         include_cross=True, periodic=None, rhie_chow=False,
+                         pressure_pinned=()):
     """
     Pressure flux through each INTERIOR face,
 
@@ -136,6 +139,36 @@ def pressure_face_fluxes(p, J, metrics, h, coef=None, include_orth=True,
 
     dp = [deriv(p, h[a], a, per[a]) for a in range(3)]
 
+    # THE RC WIDE HALF NEEDS A BC-CONSISTENT VALUE AT A PHYSICAL BOUNDARY, and `deriv` cannot
+    # supply one: on a non-periodic axis it is np.gradient with edge_order=2, a one-sided
+    # extrapolation of the INTERIOR field that knows nothing about the pressure BC. Using it
+    # makes `compact - wide` an O(1) term instead of O(h^3). A ghost of p_boundary itself --
+    # PICT's getPressureAtWithBounds, OpenFOAM's fixedFluxPressure patch value -- collapses the
+    # central difference to half the one-sided one, which is bounded by construction. See
+    # reference/rhie_chow_boundary.md, and the same fix in Domain.pressure_face_fluxes.
+    #
+    # A SEPARATE ARRAY, not a patched `dp`. `deriv` is shared with the grid metrics, and `dp` is
+    # also consumed by the non-orthogonal cross term below -- neither wants this ghost.
+    dpw = list(dp)
+    # PICT_RC_BOUNDARY=legacy reverts to the pre-fix one-sided edge stencil; the
+    # attribution arm for the cylinders' far-field oscillation. Default path is
+    # bitwise-unchanged. reference/rhie_chow_boundary.md.
+    _mode = os.environ.get("PICT_RC_BOUNDARY", "auto")
+    _pinned = () if _mode == "ghost" else pressure_pinned
+    if rhie_chow and _mode != "legacy":
+        for a in range(3):
+            if per[a]:
+                continue                       # already a true central difference across the seam
+            g = np.array(dp[a], copy=True)
+            for lo_side in (True, False):
+                if (a, 0 if lo_side else 1) in _pinned:
+                    continue                   # pressure pinned there: keep the one-sided stencil
+                sb = [slice(None)] * 3; sn = [slice(None)] * 3
+                sb[a], sn[a] = (0, 1) if lo_side else (-1, -2)
+                d = (p[tuple(sn)] - p[tuple(sb)]) if lo_side else (p[tuple(sb)] - p[tuple(sn)])
+                g[tuple(sb)] = 0.5 * d / h[a]
+            dpw[a] = g
+
     def g_off(a, b):
         ka, kb = _KEYS[a], _KEYS[b]
         return (metrics[ka[0]]*metrics[kb[0]] + metrics[ka[1]]*metrics[kb[1]]
@@ -153,7 +186,7 @@ def pressure_face_fluxes(p, J, metrics, h, coef=None, include_orth=True,
             c_face = 0.5 * (c[lo] + c[hi])
             phi[tuple(interior)] = c_face * (p[hi] - p[lo]) / h[axis]
             if rhie_chow:
-                w = c * dp[axis]                      # the wide stencil, cell-centred
+                w = c * dpw[axis]                     # the wide stencil, cell-centred
                 phi[tuple(interior)] -= 0.5 * (w[lo] + w[hi])
 
         if include_cross:
@@ -169,7 +202,7 @@ def pressure_face_fluxes(p, J, metrics, h, coef=None, include_orth=True,
                 cf = 0.5 * (c[tuple(sl_b)] + c[tuple(sl_a)])
                 wrap = wrap + cf * (p[tuple(sl_a)] - p[tuple(sl_b)]) / h[axis]
                 if rhie_chow:
-                    w = c * dp[axis]
+                    w = c * dpw[axis]
                     wrap = wrap - 0.5 * (w[tuple(sl_b)] + w[tuple(sl_a)])
             if include_cross:
                 others = [a for a in range(3) if a != axis]

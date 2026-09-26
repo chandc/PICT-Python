@@ -1,0 +1,10 @@
+NACA0012 meshes/naca0012_a40_coarse.msh: 8260 cells (8260 quads), 96 wall faces, Re=100.0, dt=0.01, 12000 steps to T=120.0
+  t=  20.00  Cd 1.1550  Cl +1.1344 (amp 51.7507)  Cd_p 0.9629  |u|max 1.336  dCd/dt -3.55e+00  (51.7 ms/step)
+  t=  40.00  Cd 1.0355  Cl +0.9722 (amp 0.1266)  Cd_p 0.8499  |u|max 1.333  dCd/dt -1.01e-03  (51.9 ms/step)
+  t=  60.00  Cd 1.0372  Cl +0.9856 (amp 0.1215)  Cd_p 0.8555  |u|max 1.329  dCd/dt -3.55e-04  (51.9 ms/step)
+  t=  80.00  Cd 1.0326  Cl +0.9703 (amp 0.1211)  Cd_p 0.8477  |u|max 1.331  dCd/dt +1.19e-03  (51.7 ms/step)
+  t= 100.00  Cd 1.0366  Cl +0.9832 (amp 0.1210)  Cd_p 0.8545  |u|max 1.324  dCd/dt -1.75e-03  (51.2 ms/step)
+  t= 120.00  Cd 1.0333  Cl +0.9733 (amp 0.1210)  Cd_p 0.8490  |u|max 1.326  dCd/dt +2.51e-03  (50.7 ms/step)
+  10 periods, mean 4.4061 +- 0.0000
+RESULT meshes/naca0012_a40_coarse.msh: St=0.2270  Cd_mean=1.0344  Cl_rms=0.0852  Cl_amp=0.1211  Cd_p=0.8508  (window t=72.0..120.0)
+  saved results/naca/a40_coarse_re100.npz

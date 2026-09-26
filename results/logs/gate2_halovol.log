@@ -1,0 +1,20 @@
+   1 ranks, 16 blocks, block shape (157, 16, 4)
+     per-rank messages (rank 0): 0
+     TOTAL messages: 0   TOTAL bytes: 0.0 KiB
+     exchanged halo cells 0 = 0.00% of 160,768 interior cells
+   2 ranks, 16 blocks, block shape (157, 16, 4)
+     per-rank messages (rank 0): 2
+     TOTAL messages: 4   TOTAL bytes: 39.2 KiB
+     exchanged halo cells 5,024 = 3.12% of 160,768 interior cells
+   4 ranks, 16 blocks, block shape (157, 16, 4)
+     per-rank messages (rank 0): 2
+     TOTAL messages: 8   TOTAL bytes: 78.5 KiB
+     exchanged halo cells 10,048 = 6.25% of 160,768 interior cells
+   8 ranks, 16 blocks, block shape (157, 16, 4)
+     per-rank messages (rank 0): 2
+     TOTAL messages: 16   TOTAL bytes: 157.0 KiB
+     exchanged halo cells 20,096 = 12.50% of 160,768 interior cells
+  16 ranks, 16 blocks, block shape (157, 16, 4)
+     per-rank messages (rank 0): 2
+     TOTAL messages: 32   TOTAL bytes: 314.0 KiB
+     exchanged halo cells 40,192 = 25.00% of 160,768 interior cells

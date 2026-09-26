@@ -1,0 +1,18 @@
+  [rotational    ] blocks=2 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [rotational    ] start: 2dx share 0.088%, energy 8.9698e-02
+  [rotational    ] step   1000 t=  4.50  2dx share   0.012%  energy 4.5816e-02  amp    0.511x  total 3.864e+02  0.944 s/step
+  [rotational    ] step   2000 t=  5.00  2dx share   0.002%  energy 2.4480e-02  amp    0.273x  total 1.113e+03  0.950 s/step
+  [rotational    ] step   3000 t=  5.50  2dx share   0.002%  energy 3.5618e-02  amp    0.397x  total 1.467e+03  0.949 s/step
+  [rotational    ] step   4000 t=  6.00  2dx share   0.007%  energy 6.1735e-02  amp    0.688x  total 8.518e+02  0.892 s/step
+  [rotational    ] step   5000 t=  6.50  2dx share   0.017%  energy 1.0906e-01  amp    1.216x  total 6.304e+02  0.853 s/step
+  [rotational    ] step   6000 t=  7.00  2dx share   0.011%  energy 6.9013e-02  amp    0.769x  total 6.024e+02  0.829 s/step
+  [rotational    ] step   7000 t=  7.50  2dx share   0.015%  energy 8.6682e-02  amp    0.966x  total 5.650e+02  0.811 s/step
+  [rotational    ] step   8000 t=  8.00  2dx share   0.016%  energy 1.0047e-01  amp    1.120x  total 6.144e+02  0.798 s/step
+  [rotational    ] step   9000 t=  8.50  2dx share   0.012%  energy 1.1442e-01  amp    1.276x  total 9.809e+02  0.785 s/step
+  [rotational    ] step  10000 t=  9.00  2dx share   0.031%  energy 2.0059e-01  amp    2.236x  total 6.430e+02  0.777 s/step
+  [rotational    ] step  11000 t=  9.50  2dx share   0.073%  energy 3.1483e-01  amp    3.510x  total 4.305e+02  0.769 s/step
+  [rotational    ] step  12000 t= 10.00  2dx share   0.111%  energy 4.7968e-01  amp    5.348x  total 4.338e+02  0.762 s/step
+  [rotational    ] step  13000 t= 10.50  2dx share   0.206%  energy 7.5689e-01  amp    8.438x  total 3.671e+02  0.757 s/step
+  [rotational    ] step  14000 t= 11.00  2dx share   0.175%  energy 1.0026e+00  amp   11.177x  total 5.736e+02  0.752 s/step
+  [rotational    ] step  15000 t= 11.50  2dx share   0.297%  energy 1.3218e+00  amp   14.736x  total 4.457e+02  0.748 s/step
+  [rotational    ] step  16000 t= 12.00  2dx share   0.248%  energy 1.3717e+00  amp   15.292x  total 5.535e+02  0.744 s/step

@@ -1,0 +1,4 @@
+--- n=4 ---
+  [PASS] 4 ranks, 10 solver steps bitwise identical to the Gate 0 reference: 640/640 digests match  (owners (0, 0, 0, 0)..., 720 messages)
+--- n=8 ---
+  [PASS] 8 ranks, 10 solver steps bitwise identical to the Gate 0 reference: 640/640 digests match  (owners (0, 0, 1, 1)..., 720 messages)

@@ -1,0 +1,4 @@
+   1 ranks: 11.781 s/step   solve  9.021 s (76.6%)   other  2.760 s   local blocks 16  solves/step 4
+   2 ranks:  5.426 s/step   solve  4.443 s (81.9%)   other  0.983 s   local blocks 8  solves/step 4
+   1 ranks:  5.421 s/step   solve  3.954 s (72.9%)   other  1.467 s   local blocks 16  solves/step 4
+   2 ranks:  6.659 s/step   solve  5.471 s (82.2%)   other  1.188 s   local blocks 8  solves/step 4

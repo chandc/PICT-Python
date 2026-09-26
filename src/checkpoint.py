@@ -209,8 +209,16 @@ def load_fields(path):
     return fields, meta
 
 
-def load(solver, path, strict=True):
-    """Restore a checkpoint into `solver`, which must already be built on the same grid."""
+def load(solver, path, strict=True, allow=()):
+    """Restore a checkpoint into `solver`, which must already be built on the same grid.
+
+    `allow` names configuration keys whose difference is DELIBERATE, so they are exempted from
+    the strict check while everything else -- crucially the grid fingerprint -- keeps working.
+    Restarting with a smaller `dt` is the motivating case and a legitimate one: a channel LES
+    whose wall-normal CFL tightens as the flow spins up has to be continued at a smaller step,
+    and the alternative, strict=False, would silently also stop checking that the checkpoint
+    belongs to this mesh at all.
+    """
     fields, meta = load_fields(path)
 
     if meta["multiblock"] != _is_multiblock(solver):
@@ -239,13 +247,17 @@ def load(solver, path, strict=True):
                 f"would have caught it; pass strict=False if the change is intended.")
     if strict:
         bad = {k: (v, _config_repr(getattr(solver, k))) for k, v in meta["config"].items()
-               if hasattr(solver, k) and _config_repr(getattr(solver, k)) != v}
+               if hasattr(solver, k) and _config_repr(getattr(solver, k)) != v
+               and k not in allow}
         if bad:
             detail = ", ".join(f"{k}: file={a!r} solver={b!r}" for k, (a, b) in bad.items())
             raise ValueError(
                 f"solver is configured differently from the checkpoint ({detail}). "
-                "This would be neither a continuation nor a clean new run; "
-                "pass strict=False if the change is intended.")
+                "This would be neither a continuation nor a clean new run. Pass the key in "
+                "`allow=` if THIS change is deliberate -- e.g. allow=('dt',) to restart with a "
+                "smaller step -- which keeps every other check, including the grid "
+                "fingerprint, in force. strict=False disables all of them and is almost never "
+                "what is wanted.")
 
     mb = meta["multiblock"]
     for f in FIELDS:

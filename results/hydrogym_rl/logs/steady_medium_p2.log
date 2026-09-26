@@ -1,0 +1,15 @@
+HydroGym Cylinder mesh=medium velocity_order=2: cells 17258, velocity dofs 69492, pressure dofs 8744, ranks 1
+  steady Re=40: CL=+0.000019 CD=1.789428
+  steady Re=60: CL=+0.000024 CD=1.530724
+  steady Re=80: CL=+0.000027 CD=1.382226
+  steady Re=100: CL=+0.000030 CD=1.284032
+STEADY mesh=medium order=2: CD=1.284032 CL=+2.96e-05  (8s)
+WARNING! There are options you set that were not used!
+WARNING! could be spelling mistake, etc!
+There are 6 unused database options. They are:
+Option left: name:--mesh value: medium source: command line
+Option left: name:--order value: 2 source: command line
+Option left: name:--steady-only (no value) source: command line
+Option left: name:-mesh value: medium source: code
+Option left: name:-order value: 2 source: code
+Option left: name:-steady-only (no value) source: code

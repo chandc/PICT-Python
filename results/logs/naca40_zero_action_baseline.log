@@ -1,0 +1,9 @@
+  zero action: step 25 t 13.5 cd 1.943 cl 1.783 r -1.033 cumulative -8.30
+  zero action: step 50 t 27.0 cd 1.767 cl 1.385 r -0.592 cumulative -45.67
+  zero action: step 75 t 40.5 cd 1.113 cl 1.166 r -0.209 cumulative -54.03
+  zero action: step 100 t 54.0 cd 1.061 cl 1.046 r -0.076 cumulative -56.25
+  zero action: step 125 t 67.5 cd 1.042 cl 0.987 r -0.013 cumulative -58.20
+  zero action: step 150 t 81.0 cd 1.029 cl 0.938 r -0.039 cumulative -60.23
+  zero action: step 175 t 94.5 cd 1.018 cl 0.899 r -0.081 cumulative -62.21
+  zero action: step 200 t 108.0 cd 1.011 cl 0.873 r -0.109 cumulative -64.27
+RESULT zero action: episode return -64.27; during the gust (t<28.9) mean |dCl| 0.720, after 0.097; peak cl 2.962 peak cd 2.733

@@ -1,0 +1,18 @@
+  restarted: t=380.0, step 38000, 142,624 cells (production mesh)
+  T build: 68 colors x 3 components = 204 assemblies
+  T build: component 0 done
+  T build: component 1 done
+  T build: component 2 done
+  TorchProductionStep built (28s incl. probes)
+  production: 30 steps (1389s)
+    step   5  max|u| 1.3187  div-from-production 3.899e-07  1879s
+    step  10  max|u| 1.3200  div-from-production 5.703e-07  4914s
+    step  15  max|u| 1.3213  div-from-production 7.208e-07  7253s
+    step  20  max|u| 1.3224  div-from-production 8.724e-07  9609s
+    step  25  max|u| 1.3234  div-from-production 1.027e-06  11883s
+    step  30  max|u| 1.3243  div-from-production 1.175e-06  14010s
+  [PASS] 9.4a bounded over 30 steps: max|u| 1.324 (M2 chain instability ABSENT)
+  [PASS] 9.4b tracks production: divergence 1.175e-06 at step 30
+  [PASS] 9.4c no exponential separation: div(30)/div(15) = 1.6
+
+  3/3 checks passed

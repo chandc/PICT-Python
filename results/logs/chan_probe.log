@@ -1,0 +1,11 @@
+  channel Re_tau = 180, 24x80x24 in 2 blocks = 46,080 cells, model = smagorinsky
+  dx+ 23.6   dz+ 8.0   dy+ wall 1.00 max 8.48   8 points under y+ = 10
+  dt = 0.001:  CFL_x 0.15, CFL_y 0.54
+      step       t    u_tau    U+_c    u_b+  nu_t/nu       div   s/step
+       500    0.50      nan     nan     nan    0.446   3.1e-14    0.661
+/Users/danielchan/Dropbox/PICT-Python/run_channel_les.py:118: DeprecationWarning: `trapz` is deprecated. Use `trapezoid` instead, or one of the numerical integration functions in `scipy.integrate`.
+  ub = float(np.trapz(U, yv) / (yv[-1] - yv[0])) if U is not None else float("nan")
+      1000    1.00   0.8142   18.70   15.40    0.445   3.2e-14    0.659
+      1500    1.50   0.8270   18.81   15.40    0.453   3.3e-14    0.658
+      2000    2.00   0.8330   18.86   15.40    0.442   3.2e-14    0.663
+      2500    2.50   0.8336   18.85   15.40    0.420   3.2e-14    0.666

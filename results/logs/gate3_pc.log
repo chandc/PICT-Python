@@ -1,0 +1,6 @@
+  pc=jacobi  ksp=cg      FELL BACK  iters=632     reason INDEFINITE_PC at 598 its
+  pc=jacobi  ksp=minres  FELL BACK  iters=610     reason INDEFINITE_PC at 597 its
+  pc=gamg    ksp=minres  FELL BACK  iters=2000    reason DIVERGED_ITS at 2000 its
+  pc=icc     ksp=cg      FELL BACK  iters=211     reason INDEFINITE_PC at 211 its
+  pc=sor     ksp=cg      FELL BACK  iters=220     reason INDEFINITE_PC at 220 its
+  pc=none    ksp=cg      OK         iters=897   

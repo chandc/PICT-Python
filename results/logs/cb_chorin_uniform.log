@@ -1,0 +1,18 @@
+  [chorin_uniform] uniform-y: interpolated from the stretched state; p_flux/F_prev not carried (mesh-specific)
+  [chorin_uniform] blocks=2 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [chorin_uniform] start: 2dx share 0.083%, energy 9.0976e-02
+  [chorin_uniform] step   1000 t=  0.50  2dx share   0.001%  energy 5.2788e-03  amp    0.058x  total 3.853e+02  0.691 s/step
+  [chorin_uniform] step   2000 t=  1.00  2dx share   0.000%  energy 3.2311e-04  amp    0.004x  total 9.272e+02  0.705 s/step
+  [chorin_uniform] step   3000 t=  1.50  2dx share   0.016%  energy 2.4733e-01  amp    2.719x  total 1.521e+03  0.697 s/step
+/Users/danielchan/Dropbox/PICT-Python/src/piso_multiblock.py:341: RuntimeWarning: divide by zero encountered in divide
+  
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in subtract
+  return out
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:953: RuntimeWarning: invalid value encountered in add
+  return out
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:956: RuntimeWarning: invalid value encountered in multiply
+  include_cross=False, rhie_chow=False):
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:720: RuntimeWarning: invalid value encountered in subtract
+  
+/Users/danielchan/Dropbox/PICT-Python/src/multiblock.py:720: RuntimeWarning: invalid value encountered in add
+  

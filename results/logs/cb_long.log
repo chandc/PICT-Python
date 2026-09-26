@@ -1,0 +1,20 @@
+  [oneblock ] blocks=1 rhie_chow=True force=1.0
+  [oneblock ] seeded 2dx energy 8.9698e-02 (0.09% of fluctuation)
+  [base     ] blocks=2 rhie_chow=True force=1.0
+  [base     ] seeded 2dx energy 8.9698e-02 (0.09% of fluctuation)
+  [oneblock ] step  1000 t=  0.50  2dx 1.3717e-02 (  0.00%)  amp    0.153x   total fluct 3.8271e+02
+  [base     ] step  1000 t=  4.50  2dx 4.5816e-02 (  0.01%)  amp    0.511x   total fluct 3.8638e+02
+  [oneblock ] step  2000 t=  1.00  2dx 2.7232e-03 (  0.00%)  amp    0.030x   total fluct 1.0929e+03
+  [base     ] step  2000 t=  5.00  2dx 2.4480e-02 (  0.00%)  amp    0.273x   total fluct 1.1130e+03
+  [oneblock ] step  3000 t=  1.50  2dx 3.1280e-02 (  0.00%)  amp    0.349x   total fluct 1.5459e+03
+  [base     ] step  3000 t=  5.50  2dx 3.5618e-02 (  0.00%)  amp    0.397x   total fluct 1.4668e+03
+  [oneblock ] step  4000 t=  2.00  2dx 3.1358e-02 (  0.00%)  amp    0.350x   total fluct 9.9250e+02
+  [base     ] step  4000 t=  6.00  2dx 6.1735e-02 (  0.01%)  amp    0.688x   total fluct 8.5181e+02
+  [base     ] step  5000 t=  6.50  2dx 1.0906e-01 (  0.02%)  amp    1.216x   total fluct 6.3041e+02
+  [base     ] step  6000 t=  7.00  2dx 6.9013e-02 (  0.01%)  amp    0.769x   total fluct 6.0241e+02
+  [base     ] step  7000 t=  7.50  2dx 8.6682e-02 (  0.02%)  amp    0.966x   total fluct 5.6498e+02
+  [base     ] step  8000 t=  8.00  2dx 1.0047e-01 (  0.02%)  amp    1.120x   total fluct 6.1442e+02
+  [base     ] step  9000 t=  8.50  2dx 1.1442e-01 (  0.01%)  amp    1.276x   total fluct 9.8086e+02
+  [base     ] step 10000 t=  9.00  2dx 2.0059e-01 (  0.03%)  amp    2.236x   total fluct 6.4295e+02
+  [base     ] step 11000 t=  9.50  2dx 3.1483e-01 (  0.07%)  amp    3.510x   total fluct 4.3053e+02
+  [base     ] step 12000 t= 10.00  2dx 4.7968e-01 (  0.11%)  amp    5.348x   total fluct 4.3382e+02

@@ -1,0 +1,167 @@
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.088%, energy 8.9698e-02, total 1.019e+02  u_tau 0.9566  e_u/v/w 5.105/0.2055/0.6565  |p-pflux| 0.000e+00 (p range 1.873e+01)  p2dx 0.062%  divw/|du/dx| 2.028e-01/3.831e+00
+  [incremental_fixed] PAUSED at step 330 t=4.165 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.024%, energy 8.9698e-02, total 1.706e+02  u_tau 0.9670  e_u/v/w 4.581/0.2722/0.8219  |p-pflux| 0.000e+00 (p range 1.258e+01)  p2dx 0.000%  divw/|du/dx| 6.671e-02/4.117e+00
+  [incremental_fixed] resumed at step 330 t=4.165 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step    500 t=  4.25  2dx share   0.014%  energy 2.5914e-02  amp    0.289x  total 1.795e+02  u_tau 0.9802  e_u/v/w 4.552/0.3222/0.8802  |p-pflux| 0.000e+00  p2dx 0.000%  divw 7.497e-02  1.554 s/step
+  [incremental_fixed] PAUSED at step 684 t=4.342 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.006%, energy 8.9698e-02, total 2.820e+02  u_tau 0.9992  e_u/v/w 4.636/0.3991/0.9497  |p-pflux| 0.000e+00 (p range 2.008e+01)  p2dx 0.000%  divw/|du/dx| 7.976e-02/4.349e+00
+  [incremental_fixed] resumed at step 684 t=4.342 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   1000 t=  4.50  2dx share   0.002%  energy 5.7288e-03  amp    0.064x  total 3.811e+02  u_tau 1.0173  e_u/v/w 4.452/0.5013/1.0949  |p-pflux| 0.000e+00  p2dx 0.000%  divw 1.059e-01  1.553 s/step
+  [incremental_fixed] PAUSED at step 1045 t=4.522 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 3.711e+02  u_tau 1.0180  e_u/v/w 4.381/0.5115/1.1203  |p-pflux| 0.000e+00 (p range 2.170e+01)  p2dx 0.000%  divw/|du/dx| 1.126e-01/4.927e+00
+  [incremental_fixed] resumed at step 1045 t=4.522 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 1405 t=4.702 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 5.094e+02  u_tau 1.0286  e_u/v/w 4.151/0.6004/1.1317  |p-pflux| 0.000e+00 (p range 2.363e+01)  p2dx 0.001%  divw/|du/dx| 1.081e-01/4.877e+00
+  [incremental_fixed] resumed at step 1405 t=4.702 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   1500 t=  4.75  2dx share   0.000%  energy 8.3207e-04  amp    0.009x  total 5.905e+02  u_tau 1.0397  e_u/v/w 4.187/0.6146/1.0945  |p-pflux| 0.000e+00  p2dx 0.001%  divw 1.209e-01  1.558 s/step
+  [incremental_fixed] PAUSED at step 1767 t=4.883 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 9.345e+02  u_tau 1.0643  e_u/v/w 3.958/0.6363/0.9647  |p-pflux| 0.000e+00 (p range 2.320e+01)  p2dx 0.001%  divw/|du/dx| 1.500e-01/5.452e+00
+  [incremental_fixed] resumed at step 1767 t=4.883 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   2000 t=  5.00  2dx share   0.000%  energy 2.0664e-04  amp    0.002x  total 1.119e+03  u_tau 1.0856  e_u/v/w 3.783/0.6482/0.8372  |p-pflux| 0.000e+00  p2dx 0.002%  divw 1.746e-01  1.557 s/step
+  [incremental_fixed] PAUSED at step 2128 t=5.064 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.171e+03  u_tau 1.0860  e_u/v/w 3.592/0.6493/0.8113  |p-pflux| 0.000e+00 (p range 3.215e+01)  p2dx 0.002%  divw/|du/dx| 1.708e-01/5.795e+00
+  [incremental_fixed] resumed at step 2128 t=5.064 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 2490 t=5.245 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.009%, energy 8.9698e-02, total 9.890e+02  u_tau 1.0803  e_u/v/w 3.156/0.5487/0.7724  |p-pflux| 0.000e+00 (p range 2.807e+01)  p2dx 0.006%  divw/|du/dx| 1.989e-01/5.616e+00
+  [incremental_fixed] resumed at step 2490 t=5.245 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   2500 t=  5.25  2dx share   0.014%  energy 1.3693e-01  amp    1.527x  total 9.686e+02  u_tau 1.0803  e_u/v/w 3.141/0.5468/0.7691  |p-pflux| 0.000e+00  p2dx 0.006%  divw 1.993e-01  1.517 s/step
+  [incremental_fixed] PAUSED at step 2504 t=5.252 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.006%, energy 8.9698e-02, total 9.602e+02  u_tau 1.0802  e_u/v/w 3.135/0.5460/0.7678  |p-pflux| 0.000e+00 (p range 2.533e+01)  p2dx 0.004%  divw/|du/dx| 1.996e-01/5.581e+00
+  [incremental_fixed] resumed at step 2504 t=5.252 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 2872 t=5.436 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.004%, energy 8.9698e-02, total 1.184e+03  u_tau 1.0540  e_u/v/w 3.046/0.5222/0.6587  |p-pflux| 0.000e+00 (p range 1.791e+01)  p2dx 0.004%  divw/|du/dx| 1.792e-01/5.132e+00
+  [incremental_fixed] resumed at step 2872 t=5.436 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   3000 t=  5.50  2dx share   0.001%  energy 1.5193e-02  amp    0.169x  total 1.534e+03  u_tau 1.0426  e_u/v/w 2.964/0.5125/0.6569  |p-pflux| 0.000e+00  p2dx 0.005%  divw 1.795e-01  1.569 s/step
+  [incremental_fixed] PAUSED at step 3237 t=5.618 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 1.122e+03  u_tau 1.0281  e_u/v/w 2.644/0.4869/0.6826  |p-pflux| 0.000e+00 (p range 1.852e+01)  p2dx 0.014%  divw/|du/dx| 1.702e-01/5.013e+00
+  [incremental_fixed] resumed at step 3237 t=5.618 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 3241 t=5.620 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 1.111e+03  u_tau 1.0278  e_u/v/w 2.637/0.4860/0.6823  |p-pflux| 0.000e+00 (p range 1.936e+01)  p2dx 0.009%  divw/|du/dx| 1.690e-01/5.006e+00
+  [incremental_fixed] resumed at step 3241 t=5.620 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   3500 t=  5.75  2dx share   0.001%  energy 3.9062e-03  amp    0.044x  total 6.670e+02  u_tau 1.0089  e_u/v/w 2.363/0.4226/0.5903  |p-pflux| 0.000e+00  p2dx 0.003%  divw 1.319e-01  1.549 s/step
+  [incremental_fixed] PAUSED at step 3613 t=5.806 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 7.152e+02  u_tau 1.0018  e_u/v/w 2.357/0.3999/0.5687  |p-pflux| 0.000e+00 (p range 1.526e+01)  p2dx 0.002%  divw/|du/dx| 1.139e-01/4.467e+00
+  [incremental_fixed] resumed at step 3613 t=5.806 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 3991 t=5.995 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 9.045e+02  u_tau 1.0072  e_u/v/w 2.349/0.3235/0.5119  |p-pflux| 0.000e+00 (p range 1.323e+01)  p2dx 0.010%  divw/|du/dx| 1.016e-01/4.178e+00
+  [incremental_fixed] resumed at step 3991 t=5.995 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   4000 t=  6.00  2dx share   0.000%  energy 6.2168e-04  amp    0.007x  total 8.986e+02  u_tau 1.0074  e_u/v/w 2.348/0.3225/0.5094  |p-pflux| 0.000e+00  p2dx 0.010%  divw 1.006e-01  1.583 s/step
+  [incremental_fixed] PAUSED at step 4359 t=6.179 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 8.728e+02  u_tau 1.0090  e_u/v/w 2.607/0.2812/0.4362  |p-pflux| 0.000e+00 (p range 1.145e+01)  p2dx 0.001%  divw/|du/dx| 9.136e-02/3.971e+00
+  [incremental_fixed] resumed at step 4359 t=6.179 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   4500 t=  6.25  2dx share   0.000%  energy 5.7633e-04  amp    0.006x  total 7.079e+02  u_tau 1.0066  e_u/v/w 2.609/0.2678/0.4281  |p-pflux| 0.000e+00  p2dx 0.002%  divw 1.076e-01  1.547 s/step
+  [incremental_fixed] PAUSED at step 4730 t=6.365 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 6.036e+02  u_tau 0.9989  e_u/v/w 2.543/0.2481/0.4345  |p-pflux| 0.000e+00 (p range 1.129e+01)  p2dx 0.000%  divw/|du/dx| 8.994e-02/3.885e+00
+  [incremental_fixed] resumed at step 4730 t=6.365 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   5000 t=  6.50  2dx share   0.000%  energy 6.5318e-05  amp    0.001x  total 5.093e+02  u_tau 0.9947  e_u/v/w 2.494/0.2295/0.4040  |p-pflux| 0.000e+00  p2dx 0.000%  divw 8.631e-02  1.605 s/step
+  [incremental_fixed] PAUSED at step 5083 t=6.541 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 4.577e+02  u_tau 0.9936  e_u/v/w 2.486/0.2213/0.3925  |p-pflux| 0.000e+00 (p range 8.489e+00)  p2dx 0.001%  divw/|du/dx| 8.435e-02/3.562e+00
+  [incremental_fixed] resumed at step 5083 t=6.541 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 5454 t=6.727 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.411e+02  u_tau 0.9841  e_u/v/w 2.343/0.2049/0.3781  |p-pflux| 0.000e+00 (p range 1.059e+01)  p2dx 0.001%  divw/|du/dx| 1.050e-01/4.064e+00
+  [incremental_fixed] resumed at step 5454 t=6.727 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   5500 t=  6.75  2dx share   0.000%  energy 5.0083e-06  amp    0.000x  total 3.438e+02  u_tau 0.9844  e_u/v/w 2.330/0.2018/0.3777  |p-pflux| 0.000e+00  p2dx 0.000%  divw 1.028e-01  1.550 s/step
+  [incremental_fixed] PAUSED at step 5824 t=6.912 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.913e+02  u_tau 0.9677  e_u/v/w 2.178/0.1749/0.3531  |p-pflux| 0.000e+00 (p range 9.800e+00)  p2dx 0.000%  divw/|du/dx| 8.991e-02/3.625e+00
+  [incremental_fixed] resumed at step 5824 t=6.912 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   6000 t=  7.00  2dx share   0.000%  energy 4.7589e-07  amp    0.000x  total 4.022e+02  u_tau 0.9555  e_u/v/w 2.116/0.1649/0.3384  |p-pflux| 0.000e+00  p2dx 0.000%  divw 8.376e-02  1.632 s/step
+  [incremental_fixed] PAUSED at step 6185 t=7.092 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.337e+02  u_tau 0.9464  e_u/v/w 2.003/0.1595/0.3296  |p-pflux| 0.000e+00 (p range 9.425e+00)  p2dx 0.000%  divw/|du/dx| 6.877e-02/3.414e+00
+  [incremental_fixed] resumed at step 6185 t=7.092 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 6187 t=7.093 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.328e+02  u_tau 0.9463  e_u/v/w 2.002/0.1594/0.3294  |p-pflux| 0.000e+00 (p range 9.445e+00)  p2dx 0.000%  divw/|du/dx| 6.870e-02/3.412e+00
+  [incremental_fixed] resumed at step 6187 t=7.093 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   6500 t=  7.25  2dx share   0.000%  energy 1.3203e-06  amp    0.000x  total 2.101e+02  u_tau 0.9364  e_u/v/w 1.989/0.1568/0.3042  |p-pflux| 0.000e+00  p2dx 0.000%  divw 6.272e-02  1.547 s/step
+  [incremental_fixed] PAUSED at step 6561 t=7.280 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.955e+02  u_tau 0.9348  e_u/v/w 2.001/0.1560/0.3020  |p-pflux| 0.000e+00 (p range 1.026e+01)  p2dx 0.000%  divw/|du/dx| 6.294e-02/3.153e+00
+  [incremental_fixed] resumed at step 6561 t=7.280 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 6935 t=7.467 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 2.574e+02  u_tau 0.9263  e_u/v/w 2.034/0.1599/0.3014  |p-pflux| 0.000e+00 (p range 1.082e+01)  p2dx 0.000%  divw/|du/dx| 7.126e-02/3.102e+00
+  [incremental_fixed] resumed at step 6935 t=7.467 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   7000 t=  7.50  2dx share   0.000%  energy 4.5462e-06  amp    0.000x  total 2.218e+02  u_tau 0.9265  e_u/v/w 2.056/0.1609/0.2987  |p-pflux| 0.000e+00  p2dx 0.000%  divw 7.247e-02  1.592 s/step
+  [incremental_fixed] PAUSED at step 7306 t=7.653 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.709e+02  u_tau 0.9297  e_u/v/w 2.289/0.1534/0.2871  |p-pflux| 0.000e+00 (p range 1.069e+01)  p2dx 0.000%  divw/|du/dx| 6.631e-02/2.894e+00
+  [incremental_fixed] resumed at step 7306 t=7.653 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   7500 t=  7.75  2dx share   0.000%  energy 2.3841e-06  amp    0.000x  total 1.279e+02  u_tau 0.9320  e_u/v/w 2.500/0.1486/0.2835  |p-pflux| 0.000e+00  p2dx 0.000%  divw 5.482e-02  1.630 s/step
+  [incremental_fixed] PAUSED at step 7659 t=7.829 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.028e+02  u_tau 0.9351  e_u/v/w 2.710/0.1524/0.2849  |p-pflux| 0.000e+00 (p range 1.011e+01)  p2dx 0.000%  divw/|du/dx| 5.488e-02/2.819e+00
+  [incremental_fixed] resumed at step 7659 t=7.829 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   8000 t=  8.00  2dx share   0.000%  energy 9.0182e-05  amp    0.001x  total 1.616e+02  u_tau 0.9492  e_u/v/w 3.197/0.1756/0.3026  |p-pflux| 0.000e+00  p2dx 0.004%  divw 5.939e-02  1.584 s/step
+  [incremental_fixed] PAUSED at step 8024 t=8.012 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.666e+02  u_tau 0.9501  e_u/v/w 3.224/0.1787/0.3036  |p-pflux| 0.000e+00 (p range 1.070e+01)  p2dx 0.002%  divw/|du/dx| 5.953e-02/3.097e+00
+  [incremental_fixed] resumed at step 8024 t=8.012 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 8378 t=8.189 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.550e+02  u_tau 0.9587  e_u/v/w 3.414/0.2128/0.3585  |p-pflux| 0.000e+00 (p range 1.603e+01)  p2dx 0.004%  divw/|du/dx| 7.907e-02/3.500e+00
+  [incremental_fixed] resumed at step 8378 t=8.189 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   8500 t=  8.25  2dx share   0.000%  energy 1.9007e-04  amp    0.002x  total 4.763e+02  u_tau 0.9602  e_u/v/w 3.360/0.2305/0.4027  |p-pflux| 0.000e+00  p2dx 0.005%  divw 8.056e-02  1.590 s/step
+  [incremental_fixed] PAUSED at step 8742 t=8.371 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 9.575e+02  u_tau 0.9668  e_u/v/w 3.198/0.2676/0.5169  |p-pflux| 0.000e+00 (p range 2.321e+01)  p2dx 0.033%  divw/|du/dx| 1.274e-01/4.247e+00
+  [incremental_fixed] resumed at step 8742 t=8.371 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   9000 t=  8.50  2dx share   0.022%  energy 1.5782e-01  amp    1.760x  total 7.029e+02  u_tau 0.9788  e_u/v/w 3.192/0.2867/0.5520  |p-pflux| 0.000e+00  p2dx 0.003%  divw 1.152e-01  1.565 s/step
+  [incremental_fixed] PAUSED at step 9112 t=8.556 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.007%, energy 8.9698e-02, total 6.967e+02  u_tau 0.9836  e_u/v/w 3.308/0.2955/0.5593  |p-pflux| 0.000e+00 (p range 1.749e+01)  p2dx 0.007%  divw/|du/dx| 1.104e-01/4.102e+00
+  [incremental_fixed] resumed at step 9112 t=8.556 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 9487 t=8.743 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.002%, energy 8.9698e-02, total 9.186e+02  u_tau 0.9999  e_u/v/w 3.445/0.3474/0.6060  |p-pflux| 0.000e+00 (p range 1.706e+01)  p2dx 0.003%  divw/|du/dx| 1.383e-01/4.434e+00
+  [incremental_fixed] resumed at step 9487 t=8.743 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step   9500 t=  8.75  2dx share   0.001%  energy 9.0527e-03  amp    0.101x  total 9.287e+02  u_tau 1.0006  e_u/v/w 3.442/0.3495/0.6087  |p-pflux| 0.000e+00  p2dx 0.012%  divw 1.389e-01  1.588 s/step
+  [incremental_fixed] PAUSED at step 9859 t=8.929 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.106e+03  u_tau 1.0094  e_u/v/w 3.248/0.3540/0.5972  |p-pflux| 0.000e+00 (p range 1.638e+01)  p2dx 0.006%  divw/|du/dx| 1.358e-01/4.575e+00
+  [incremental_fixed] resumed at step 9859 t=8.929 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step  10000 t=  9.00  2dx share   0.001%  energy 6.1558e-03  amp    0.069x  total 1.018e+03  u_tau 1.0028  e_u/v/w 3.111/0.3552/0.6258  |p-pflux| 0.000e+00  p2dx 0.004%  divw 1.553e-01  1.566 s/step
+  [incremental_fixed] PAUSED at step 10227 t=9.113 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 8.928e+02  u_tau 1.0000  e_u/v/w 2.860/0.3921/0.6786  |p-pflux| 0.000e+00 (p range 1.667e+01)  p2dx 0.007%  divw/|du/dx| 1.362e-01/4.892e+00
+  [incremental_fixed] resumed at step 10227 t=9.113 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step  10500 t=  9.25  2dx share   0.002%  energy 1.5213e-02  amp    0.170x  total 8.452e+02  u_tau 1.0139  e_u/v/w 2.806/0.4103/0.6929  |p-pflux| 0.000e+00  p2dx 0.011%  divw 1.344e-01  1.552 s/step
+  [incremental_fixed] PAUSED at step 10600 t=9.300 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.002%, energy 8.9698e-02, total 9.179e+02  u_tau 1.0216  e_u/v/w 2.845/0.4177/0.6737  |p-pflux| 0.000e+00 (p range 1.443e+01)  p2dx 0.012%  divw/|du/dx| 1.337e-01/4.990e+00
+  [incremental_fixed] resumed at step 10600 t=9.300 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] PAUSED at step 10965 t=9.482 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 1.099e+03  u_tau 1.0500  e_u/v/w 3.015/0.4198/0.6709  |p-pflux| 0.000e+00 (p range 2.050e+01)  p2dx 0.005%  divw/|du/dx| 1.665e-01/5.035e+00
+  [incremental_fixed] resumed at step 10965 t=9.482 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step  11000 t=  9.50  2dx share   0.001%  energy 1.5351e-02  amp    0.171x  total 1.067e+03  u_tau 1.0507  e_u/v/w 2.974/0.4198/0.6649  |p-pflux| 0.000e+00  p2dx 0.002%  divw 1.612e-01  1.553 s/step
+  [incremental_fixed] PAUSED at step 11337 t=9.668 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 7.853e+02  u_tau 1.0383  e_u/v/w 2.658/0.4138/0.6490  |p-pflux| 0.000e+00 (p range 1.529e+01)  p2dx 0.003%  divw/|du/dx| 1.476e-01/4.977e+00
+  [incremental_fixed] resumed at step 11337 t=9.668 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step  11500 t=  9.75  2dx share   0.001%  energy 4.1823e-03  amp    0.047x  total 8.252e+02  u_tau 1.0399  e_u/v/w 2.683/0.4334/0.6792  |p-pflux| 0.000e+00  p2dx 0.006%  divw 1.776e-01  1.532 s/step
+  [incremental_fixed] PAUSED at step 11712 t=9.856 -> results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] blocks=2 scheme=incremental rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [incremental_fixed] start: 2dx share 0.002%, energy 8.9698e-02, total 1.112e+03  u_tau 1.0472  e_u/v/w 2.758/0.4432/0.6836  |p-pflux| 0.000e+00 (p range 1.633e+01)  p2dx 0.006%  divw/|du/dx| 1.778e-01/5.183e+00
+  [incremental_fixed] resumed at step 11712 t=9.856 from results/fields/probe_incremental_fixed_latest.npz
+  [incremental_fixed] step  12000 t= 10.00  2dx share   0.001%  energy 7.2926e-03  amp    0.081x  total 1.014e+03  u_tau 1.0430  e_u/v/w 2.671/0.4309/0.5927  |p-pflux| 0.000e+00  p2dx 0.001%  divw 1.429e-01  1.589 s/step
+  [incremental_fixed] DONE at step 12000 t=10.000

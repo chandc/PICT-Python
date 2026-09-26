@@ -1,0 +1,5 @@
+device cpu, 32 modes (17 rfft modes -> 34 real columns), pressure family, rtol 1e-8
+    24x  80  N    1920   8 it  setup  0.12 s  solve     23.5 ms  ->   35.96 ms per 1e5 cell-modes  (max rel res 7.8e-10)
+    96x 160  N   15360  13 it  setup  0.02 s  solve    425.1 ms  ->   81.40 ms per 1e5 cell-modes  (max rel res 3.8e-09)
+   192x 320  N   61440  17 it  setup  0.06 s  solve   2092.7 ms  ->  100.18 ms per 1e5 cell-modes  (max rel res 2.9e-09)
+   384x 640  N  245760  18 it  setup  0.21 s  solve   9169.4 ms  ->  109.74 ms per 1e5 cell-modes  (max rel res 6.5e-09)

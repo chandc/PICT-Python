@@ -1,0 +1,18 @@
+  [chorin        ] blocks=2 rhie_chow=True force=1.0 dt=0.0005 steps=16000
+  [chorin        ] start: 2dx share 0.088%, energy 8.9698e-02
+  [chorin        ] step   1000 t=  4.50  2dx share   0.002%  energy 5.7541e-03  amp    0.064x  total 3.660e+02  0.931 s/step
+  [chorin        ] step   2000 t=  5.00  2dx share   0.000%  energy 1.8006e-04  amp    0.002x  total 1.022e+03  0.939 s/step
+  [chorin        ] step   3000 t=  5.50  2dx share   0.003%  energy 5.1341e-02  amp    0.572x  total 1.495e+03  0.935 s/step
+  [chorin        ] step   4000 t=  6.00  2dx share   0.000%  energy 1.6229e-03  amp    0.018x  total 7.469e+02  0.882 s/step
+  [chorin        ] step   5000 t=  6.50  2dx share   0.000%  energy 1.5167e-03  amp    0.017x  total 1.222e+03  0.846 s/step
+  [chorin        ] step   6000 t=  7.00  2dx share   0.000%  energy 7.3324e-05  amp    0.001x  total 8.499e+02  0.822 s/step
+  [chorin        ] step   7000 t=  7.50  2dx share   0.000%  energy 2.0445e-06  amp    0.000x  total 3.134e+02  0.804 s/step
+  [chorin        ] step   8000 t=  8.00  2dx share   0.000%  energy 5.8300e-10  amp    0.000x  total 1.419e+02  0.792 s/step
+  [chorin        ] step   9000 t=  8.50  2dx share   0.000%  energy 1.2403e-08  amp    0.000x  total 1.037e+02  0.780 s/step
+  [chorin        ] step  10000 t=  9.00  2dx share   0.000%  energy 2.2255e-07  amp    0.000x  total 3.384e+02  0.771 s/step
+  [chorin        ] step  11000 t=  9.50  2dx share   0.000%  energy 3.3529e-06  amp    0.000x  total 2.975e+02  0.764 s/step
+  [chorin        ] step  12000 t= 10.00  2dx share   0.000%  energy 3.4529e-05  amp    0.000x  total 3.284e+02  0.759 s/step
+  [chorin        ] step  13000 t= 10.50  2dx share   0.000%  energy 9.2381e-04  amp    0.010x  total 4.307e+02  0.753 s/step
+  [chorin        ] step  14000 t= 11.00  2dx share   0.000%  energy 1.3576e-03  amp    0.015x  total 1.045e+03  0.748 s/step
+  [chorin        ] step  15000 t= 11.50  2dx share   0.000%  energy 1.2316e-03  amp    0.014x  total 7.815e+02  0.743 s/step
+  [chorin        ] step  16000 t= 12.00  2dx share   0.000%  energy 1.0434e-04  amp    0.001x  total 5.853e+02  0.739 s/step

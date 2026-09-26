@@ -22,6 +22,8 @@ EXACTLY, with no cross terms (Cartesian) and no boundary conditions (periodic) t
 Warped multi-block additionally needs the implicit cross operator across seams; walls need the
 face-type registry. Both are separate increments.
 """
+import os
+
 import numpy as np
 import scipy.sparse.linalg as spla
 
@@ -33,7 +35,34 @@ class MultiBlockPISO:
     def __init__(self, domain, nu, dt, corrector_steps=2, tol=1e-4, time_scheme='bdf2',
                  scheme='rotational', picard_iters=2, implicit_cross=False,
                  rhie_chow=False, persistent_flux=False, ddt_corr=False,
-                 preconditioner='jacobi', linear_backend='scipy'):
+                 preconditioner='jacobi', linear_backend='scipy',
+                 distribute_momentum=None):
+        # DISTRIBUTING THE MOMENTUM SOLVE IS CONDITIONAL ON RANK COUNT, because measured fairly
+        # it is not a win everywhere -- it is a large win above 8 ranks and a large LOSS below.
+        #
+        # Replicating means every rank solving the whole system, which is not a decomposition at
+        # all, and replicated momentum holds 14.1 MB per rank so the copies saturate the memory
+        # bus as ranks multiply. That argument is right, and it is only half the picture. Both
+        # arms, in-container, same PICT_MOM_TOL, median of 3 reps on the cylinder:
+        #
+        #   ranks     replicated      distributed      momentum bucket        overall
+        #     2         1.44x            1.21x         0.318 -> 0.974 s        -19.2%
+        #     4         2.31x            2.19x         0.358 -> 0.415 s         -5.4%
+        #     8         2.69x            3.08x         0.441 -> 0.233 s        +12.7%
+        #    12         1.93x            2.45x         0.742 -> 0.254 s        +21.1%
+        #    16         1.76x            2.49x         0.524 -> 0.207 s        +29.4%
+        #
+        # Per-rep spreads do not overlap at any rank count, so the crossover between 4 and 8 is
+        # real and not noise. The 2-rank case is the surprise and is NOT understood: the momentum
+        # bucket triples. Until it is, the threshold is set from the measurement rather than from
+        # a model of why.
+        #
+        # An earlier note here claimed distribution was a win unconditionally, from a comparison
+        # that had tied the solve tolerance to the decomposition. `None` means "decide from the
+        # rank count"; pass True or False to override, which is what the scaling studies do.
+        if distribute_momentum is None:
+            _size = getattr(getattr(domain, "comm", None), "size", 1)
+            distribute_momentum = _size >= 8
         self.d = domain
         # nu MAY BE A FIELD: a scalar for molecular viscosity, or a per-block array of
         # nu_eff = nu + nu_t(x) for an eddy-viscosity closure. `nu_at(b)` and `nu_flat` are what
@@ -75,8 +104,126 @@ class MultiBlockPISO:
         # its hierarchy across steps; falls back to scipy off-GPU. See
         # src/linsolve.py and src/amgx/README.md.
         self.linear_backend = linear_backend
+        # THE PRESSURE PRECONDITIONER IS JACOBI BY DEFAULT, and the reason is CORRECTNESS
+        # before speed. bjacobi factorises one diagonal block PER RANK, so the preconditioner --
+        # and therefore the Krylov path, and therefore which of many valid within-tolerance
+        # solutions is reached -- depends on the decomposition. linsolve.py calls it "the last
+        # partition-dependent thing left"; measured on Gate 3's cylinder, 10 steps:
+        #
+        #   preconditioner   serial its   2 ranks vs serial   8 ranks vs serial
+        #   bjacobi              ~310        5.412e-07           1.242e-07
+        #   jacobi              ~1060        1.146e-13           9.305e-14
+        #
+        # Six orders of magnitude, and below Gate 3's < 1e-12 criterion. That criterion was
+        # thought incoherent and was nearly relaxed; it was achievable all along, and what
+        # failed it was this preconditioner. `redundant` gets the same property and is unusable
+        # -- eight full factorisations of a 158,720^2 matrix OOM at 8 ranks (signal 9).
+        #
+        # IT MUST BE THE SAME ON BOTH PATHS. Setting only PICT_MPI_PC leaves the serial
+        # reference on bjacobi, which changes the preconditioner and the partitioning together
+        # -- the exact confound the bitwise gates exist to isolate. This one value feeds both,
+        # which is also why the default is NOT rank-dependent the way `distribute_momentum` is:
+        # a threshold would put serial and distributed on different preconditioners and bring
+        # the 1e-07 discrepancy straight back.
+        #
+        # IT COSTS TIME AT LOW RANK COUNTS, and the bill is paid deliberately. bjacobi at ONE
+        # rank is full-matrix ILU, which is far stronger than diagonal scaling: ~310 pressure
+        # iterations against ~1060. Measured s/step, pinned to X925 cores:
+        #
+        #   ranks   bjacobi   jacobi   change
+        #     1       2.190    3.733   +70.5%   <-- the price
+        #     8       0.985    1.095   +11.2%
+        #
+        # RETRACTED: an earlier version of this comment reported jacobi as 6-8% FASTER at 8
+        # ranks. That measurement ran while another user's process held a core at 100%, and
+        # `--cpu-set` confines our ranks to those cores without reserving them -- so we
+        # time-shared, and pinning removed the OS's ability to migrate away. Everything from
+        # that window ran ~2.6x slow and the sign of the 8-rank comparison flipped. Re-measured
+        # idle, 3 non-overlapping reps each: jacobi [1.092, 1.095, 1.100] against bjacobi
+        # [0.984, 0.985, 0.990]. **Jacobi is slower at every rank count.**
+        #
+        # It is still the right default, for the reason at the top of this block and not for
+        # speed: it is what makes Gates 3 and 4 agree to ~1e-14 instead of ~1e-7 across rank
+        # counts. That is a correctness property and no timing changes it. The 11% is the bill.
+        #
+        # Set PICT_PRES_PC=bjacobi for a serial or few-rank production run where the bitwise
+        # cross-rank guarantee is not needed.
+        #
+        # DO NOT READ THE SPEEDUP RATIO AS PROGRESS. With jacobi at both ends the 8-rank
+        # speedup reads 8.736/2.212 = 3.95x against bjacobi's 5.698/2.354 = 2.42x, which looks
+        # like Gate 6 almost passing. It is not: the ABSOLUTE 8-rank step improved 6%, and the
+        # ratio moved because the BASELINE got slower. Same shape of error as tying the
+        # momentum tolerance to the decomposition in Gate 4.
         self._pcache = SolveCache(backend=linear_backend,
-                                  precond=preconditioner)
+                                  precond=preconditioner,
+                                  petsc_pc=__import__("os").environ.get(
+                                      "PICT_PRES_PC", "jacobi"))
+        # GATE 4: a SEPARATE cache for the momentum systems. Separate rather than shared
+        # because SolveCache keys its factorisation on the SPARSITY PATTERN, and the momentum
+        # and pressure operators have different ones -- sharing would thrash the cache and
+        # rebuild a preconditioner every call, which is exactly what the cache exists to avoid.
+        # It also keeps their iteration counts separately attributable, which Gate 4 needs.
+        _env = __import__("os").environ
+        # THE MOMENTUM SYSTEM DOES NOT GO TO AmgX, and this is measured, not a precaution.
+        # On the jet-resolved cylinder (130,592 cells), per-step bucket times:
+        #
+        #     system     scipy      AmgX        verdict
+        #     pressure   2.816 s    0.182 s     15x -- this is what the GPU is for
+        #     momentum   0.125 s    0.149 s     AmgX is SLOWER
+        #
+        # AmgX offers nothing on the momentum operator: it is diagonally dominant from the
+        # time-derivative term and converges in ~1 iteration on the CPU. The shootout said the
+        # same ("momentum wants Jacobi, 1 iteration, 0.014 s").
+        #
+        # And it is the ONLY system that fails. Every AMGX REJECT carries rtol=1e-09 -- the
+        # momentum tolerance -- with a true residual of 7.1e+06 against |b| = 2.97e+03, i.e.
+        # BiCGStab breaking down rather than converging slowly, then 500 wasted iterations
+        # before the guard rejects it. The pressure system at 1e-6 never fails.
+        #
+        # Ruled out first, each by its own run: the preconditioner (BLOCK_JACOBI and
+        # MULTICOLOR_DILU give an identical failure count), the convergence criterion
+        # (RELATIVE_INI_CORE vs RELATIVE_MAX, identical), the mode constant, the config files,
+        # and drift rebuilds. The count was identical under every one, which is what finally
+        # said the variable was not in the config.
+        #
+        # PICT_MOM_BACKEND overrides if a future operator ever justifies the GPU here.
+        _mom_backend = _env.get("PICT_MOM_BACKEND") or (
+            "scipy" if linear_backend == "amgx" else linear_backend)
+        self._mcache = SolveCache(backend=_mom_backend,
+                                  precond=preconditioner,
+                                  distribute=distribute_momentum,
+                                  # JACOBI HERE TOO, for the same partition-independence
+                                  # reason as the pressure cache above -- and it was found the
+                                  # hard way. Defaulting only the PRESSURE preconditioner left
+                                  # Gate 3 passing at 2 and 4 ranks (3.2e-14, 3.1e-14) and
+                                  # FAILING at 8 with 5.178e-08, which is bit for bit the number
+                                  # Gate 4 reports. Gate 4 measures the momentum solve: the
+                                  # residual discrepancy was momentum's own bjacobi blocks.
+                                  petsc_pc=__import__("os").environ.get(
+                                      "PICT_MOM_PC", "jacobi"))
+        # THE MOMENTUM SOLVE IS SOLVED MUCH TIGHTER THAN THE PRESSURE ONE, and it is nearly
+        # free to do so: the time-derivative diagonal makes it converge in ~11 iterations a
+        # step against the pressure system's ~1573, so tightening it by five orders costs a
+        # handful of iterations.
+        #
+        # It is necessary because distributing it made its iteration PATH partition-dependent.
+        # Serial and distributed reach different -- both valid -- solutions within tolerance,
+        # and that difference is injected every step and amplified: at rtol 1e-9 the ten-step
+        # trajectories separated by 1.8e-7. Solving to near machine precision removes the
+        # momentum system as a source of serial/distributed divergence, leaving the pressure
+        # solve, which already reaches 7.8e-14.
+        # 1e-14 WAS ONLY NEEDED WHILE MOMENTUM WAS DISTRIBUTED. Distributing it made its
+        # iteration path partition-dependent, so serial and parallel reached different
+        # within-tolerance solutions and the trajectory difference grew to 1.8e-7; solving to
+        # near machine precision removed it as a source of divergence. REPLICATED, every rank
+        # does bit-identical arithmetic whatever the tolerance, so the tight setting buys
+        # nothing and costs iterations -- 11-16 per step at 1e-9 became 20-27 at 1e-14.
+        # ONE TOLERANCE FOR BOTH CONFIGURATIONS. Making it conditional -- 1e-14 distributed,
+        # 1e-9 replicated -- meant every subsequent comparison ran the distributed path five
+        # orders tighter than the replicated one and then concluded distribution was slower.
+        # That is not a comparison. The tolerance is a separate question from the decomposition
+        # and is set by the caller.
+        self.momentum_tol = float(__import__("os").environ.get("PICT_MOM_TOL", 1e-9))
         self.persistent_flux = persistent_flux
         self.ddt_corr = ddt_corr
         self.F_prev = None          # previous step's face flux, for ddt_corr
@@ -97,7 +244,20 @@ class MultiBlockPISO:
         # remaining suspect. This factor relaxes that copy WITHOUT touching the prescribed
         # pressure, which is what separates it from kind="convective" -- that changes the
         # pressure treatment too, and diverged to 45.6 in four time units.
-        self.dong_copy = 1.0
+        self.dong_copy = float(os.environ.get("PICT_DONG_COPY", "1.0"))
+        # Smooth the Dong velocity copy along the face's in-plane tangential
+        # axis with a [1/4, 1/2, 1/4] filter. The verbatim per-node copy has no
+        # tangential coupling, so an odd-even (Nyquist-in-theta) boundary mode
+        # reflects itself back every step; measured on the Re=100 cylinder it
+        # saturates as azimuthal striping of |u'| ~ 0.7 filling the outflow
+        # block from the arc junction inward (figures/junction_zoom.png). The
+        # filter annihilates exactly that mode at its source and leaves smooth
+        # fields second-order untouched. Block-edge nodes are left unfiltered
+        # -- the seam exchange owns them. OPT-IN (PICT_DONG_SMOOTH=1): with the
+        # filter on, the 4-block dong split-equals-whole check fails at 2.6 --
+        # an unexplained structural interaction, so it must not be a default
+        # until that is understood.
+        self.dong_smooth = os.environ.get("PICT_DONG_SMOOTH", "0") == "1"
         self._dong_prev = None
         self._prec = None
         self.corrector_steps = corrector_steps
@@ -159,6 +319,16 @@ class MultiBlockPISO:
             out[b] = vec[o:o + n].reshape(bl.shape); o += n
         return out
 
+    @property
+    def t_solve(self):
+        """Seconds spent inside linear solves since construction (see SolveCache.t_solve)."""
+        return self._pcache.t_solve
+
+    @property
+    def n_solve(self):
+        """Number of linear solves since construction."""
+        return self._pcache.n_solve
+
     def step(self):
         """Advance one step and advance the clock (see _step_impl for the Picard loop)."""
         out = self._step_impl()
@@ -168,11 +338,31 @@ class MultiBlockPISO:
 
     def _step_impl(self):
         """Repeat the Picard linearisation if asked; time advances ONCE across the repeats."""
+        # Faces whose pressure the solve PINS (Dong Dirichlet rows), stamped on
+        # the domain once for the BC-aware Rhie-Chow edge treatment in
+        # pressure_face_fluxes. Outflow specs are static after setup.
+        if not hasattr(self.d, "pressure_pinned"):
+            from src.multiblock import face_axis_side
+            self.d.pressure_pinned = frozenset(
+                (sp[0],) + face_axis_side(sp[1]) for sp in self.outflow
+                if (sp[3] if len(sp) > 3 else "convective") == "dong")
         if self.picard_iters <= 1:
             return self._step_once()
         u0 = (dict(self.u), dict(self.v), dict(self.w))
         p0 = dict(self.p)
         prev0 = self.u_prev
+        # p_flux AND F_prev ARE STATE, and every sweep writes them. Restoring u, p and u_prev
+        # alone (as this loop did until 2026-09-06) let `p_flux += phi_tot` run once per SWEEP
+        # while `p += phi_tot` ran once per STEP after the restore, so under incremental and
+        # rotational the projection pressure the Rhie-Chow term reads drifted away from the
+        # pressure the predictor felt by one first-sweep increment per step, without bound:
+        # measured |p - p_flux| = 7.5 after 10 steps on the Re_tau=180 channel (pressure range
+        # 19), against 6.6e-03 from the rotational term itself with picard_iters=1. chorin was
+        # immune -- it REPLACES p_flux every sweep -- which is the whole of the scheme
+        # dependence the checkerboard A/B measured. reference/channel_checkerboard_remediation.md.
+        pflux0 = {b: a.copy() for b, a in self.p_flux.items()}
+        Fprev0 = (None if self.F_prev is None
+                  else {b: [f.copy() for f in fl] for b, fl in self.F_prev.items()})
         convect, out = None, None
         for _k in range(self.picard_iters):
             if _k > 0:
@@ -180,6 +370,9 @@ class MultiBlockPISO:
                 # latest u* -- that is what removes the O(dt) lag in the convecting velocity
                 self.u, self.v, self.w = dict(u0[0]), dict(u0[1]), dict(u0[2])
                 self.p, self.u_prev = dict(p0), prev0
+                self.p_flux = {b: a.copy() for b, a in pflux0.items()}
+                self.F_prev = (None if Fprev0 is None
+                               else {b: [f.copy() for f in fl] for b, fl in Fprev0.items()})
             out = self._step_once(convect)
             new_convect = (dict(self.u), dict(self.v), dict(self.w))
             # Stop once the convecting velocity stops moving by an amount the pressure solve
@@ -248,6 +441,32 @@ class MultiBlockPISO:
             for arr, bc in ((self.u, self.u_bc), (self.v, self.v_bc), (self.w, self.w_bc)):
                 bc[b][bs] = bc[b][bs] - t * (bc[b][bs] - arr[b][isl])
                 arr[b][bs] = bc[b][bs]
+            if kind == "dong" and self.dong_smooth:
+                # TANGENTIAL-ONLY smoothing. The first version filtered the raw
+                # components and broke the split-equals-whole check at 2.6 and
+                # ground the pressure solve: the filter perturbed the NORMAL
+                # component, which is the prescribed face flux and the Dong
+                # pressure input. Decomposing on the face normals and filtering
+                # only the tangential part leaves flux and Dong pressure
+                # bit-identical while still killing the odd-even tangential
+                # striping the verbatim copy reflects back each step.
+                _, mbm = d.block_metrics_cached(b)
+                keyn = ("xi", "eta", "zeta")[axis]
+                nxf = mbm[f"{keyn}_x"][bs]; nyf = mbm[f"{keyn}_y"][bs]
+                nzf = mbm[f"{keyn}_z"][bs]
+                nrmf = np.sqrt(nxf**2 + nyf**2 + nzf**2)
+                nxf, nyf, nzf = nxf / nrmf, nyf / nrmf, nzf / nrmf
+                ub, vb, wb = self.u[b][bs], self.v[b][bs], self.w[b][bs]
+                un_b = ub * nxf + vb * nyf + wb * nzf
+                tu, tv, tw = ub - un_b * nxf, vb - un_b * nyf, wb - un_b * nzf
+                if tu.shape[0] >= 3:
+                    for tt in (tu, tv, tw):
+                        tt[1:-1] = 0.25 * tt[:-2] + 0.5 * tt[1:-1] + 0.25 * tt[2:]
+                for arr, bc, tcomp, nc in ((self.u, self.u_bc, tu, nxf),
+                                           (self.v, self.v_bc, tv, nyf),
+                                           (self.w, self.w_bc, tw, nzf)):
+                    bc[b][bs] = tcomp + un_b * nc
+                    arr[b][bs] = bc[b][bs]
         # Flux balancing is needed ONLY for the singular all-Neumann system. A Dong outlet
         # carries a Dirichlet pressure, which makes the system non-singular, so its flux must
         # NOT be rescaled -- mass leaves as the solution dictates.
@@ -284,7 +503,7 @@ class MultiBlockPISO:
         Jg = self._flat({b: self.Js[b] for b in range(nb)})
 
         if self.scheme in ('incremental', 'rotational'):
-            g = {b: d.gradient(b, self.p) for b in range(nb)}
+            g = d.map_blocks(lambda b: d.gradient(b, self.p), self.p)
             gp = [self._flat({b: g[b][c] for b in range(nb)}) for c in range(3)]
         else:
             gp = None
@@ -319,19 +538,25 @@ class MultiBlockPISO:
             x = phi_n
             for _dc in range(self.momentum_dc_iters):
                 if self.momentum_dc_iters > 1 or self._nu_nonzero():
-                    cd = {b: d.cross_diffusion(b, cur) for b in range(nb)}
+                    cd = d.map_blocks(lambda b: d.cross_diffusion(b, cur), cur)
                     rhs = base + Jg * (self.nu_flat() * self._flat(cd))
                 if has_wall:
                     # Dirichlet elimination, as the single-block solver does: solve only for
                     # the interior and move the known wall values across to the RHS.
                     phi_b = self._flat(bcs)[self.bnd]
-                    Pm = make_precond(A_ii, self.preconditioner)
-                    xi, info = spla.bicgstab(A_ii, rhs[self.interior] - A_ib @ phi_b, M=Pm,
-                                             x0=x[self.interior], rtol=self.tol, maxiter=20000)
+                    # THROUGH THE CACHE, not spla directly. Gate 3 distributed the pressure
+                    # solve, but the momentum solves called scipy straight and so never reached
+                    # the PETSc path at all -- the "distributed solver" was distributing one of
+                    # the two systems. Routing them through the same dispatch is what Gate 4
+                    # is. Serially this is the identical call: SolveCache's scipy branch is
+                    # bicgstab with the same preconditioner.
+                    xi = self._mcache.solve(A_ii, rhs[self.interior] - A_ib @ phi_b,
+                                            x0=x[self.interior], symmetric=False,
+                                            rtol=self.momentum_tol, maxiter=20000)
                     x = np.zeros(A.shape[0]); x[self.interior] = xi; x[self.bnd] = phi_b
                 else:
-                    x, info = spla.bicgstab(A, rhs, x0=x, M=make_precond(A, self.preconditioner),
-                                            rtol=self.tol, maxiter=20000)
+                    x = self._mcache.solve(A, rhs, x0=x, symmetric=False,
+                                           rtol=self.momentum_tol, maxiter=20000)
                 cur = self._unflat(x)
             star.append(self._unflat(x))
         us, vs, ws = star
@@ -368,21 +593,27 @@ class MultiBlockPISO:
         built = False
         for _ in range(self.corrector_steps):
             divF = {}
-            for b in range(nb):
+            # pcur has no b dependence; it was rebuilt identically on every iteration of the
+            # block loop. Hoisting it is required for the distributed form -- it is one of the
+            # field sets whose halos must be exchanged BEFORE the loop, not inside it.
+            pcur = None
+            if self.rhie_chow and not (built and self.persistent_flux):
+                pcur = ({bb: self.p_flux[bb] for bb in range(nb)}
+                        if self.persistent_flux
+                        else {bb: self.p_flux[bb] + phi_tot[bb] for bb in range(nb)})
+
+            def _flux_of(b):
                 # PERSISTENT FLUX: the corrector already writes a compact pressure correction
                 # into Fb below; rebuilding it here from the cell velocity throws that away,
                 # and the cell velocity was corrected with the WIDE gradient which annihilates
                 # the node-to-node mode. See reference/pressure_checkerboard.md.
-                if not (built and self.persistent_flux):
+                if True:
                     Fb[b] = d.face_fluxes(b, us, vs, ws)
                     if self.rhie_chow:
                         # p_flux, NOT p: under 'rotational' p also carries -nu*div(u*), which
                         # the flux never had. Feeding that back made the term remove flux that
                         # was never added, and the loop diverged (|RC|/|F| 0.02 -> 1.36 -> 58,
                         # NaN by step 83) while divF stayed at 1e-12 throughout.
-                        pcur = ({bb: self.p_flux[bb] for bb in range(nb)}
-                                if self.persistent_flux
-                                else {bb: self.p_flux[bb] + phi_tot[bb] for bb in range(nb)})
                         rc = d.pressure_face_fluxes(b, pcur, coef[b], coef,
                                                     include_cross=False, rhie_chow=True)
                         Fb[b] = [Fb[b][a] - rc[a] for a in range(3)]
@@ -424,7 +655,21 @@ class MultiBlockPISO:
                                 sl[ax] = 0 if side == 0 else blk.shape[ax]
                                 corr[ax][tuple(sl)] = 0.0
                             Fb[b] = [Fb[b][a] + corr[a] for a in range(3)]
-                divF[b] = d.divergence(b, Fb[b], self.Js[b])
+                return Fb[b]
+
+            if not (built and self.persistent_flux):
+                # COLLECTIVE, hoisted out of the block loop. face_fluxes, face_interp and
+                # pressure_face_fluxes all pad, so every field they read must be exchanged
+                # before any rank evaluates a block.
+                need = [us, vs, ws]
+                if pcur is not None:
+                    need += [pcur, coef]
+                if self.ddt_corr and self.F_prev is not None:
+                    need += [self.u, self.v, self.w]
+                Fb.update(d.map_blocks(_flux_of, need))
+            # divergence reads no neighbour data -- it is the one operator in this loop that
+            # does not pad -- so it needs no exchange, only the gather.
+            divF = d.map_blocks(lambda b: d.divergence(b, Fb[b], self.Js[b]))
             built = True
             if div_star is None:
                 div_star = {b: divF[b].copy() for b in range(nb)}   # predictor divergence
@@ -437,7 +682,11 @@ class MultiBlockPISO:
                 rhs = rhs - 0.0
             b_free = rhs[free] - (M_fD @ pD_val if M_fD is not None else 0.0)
             if self.implicit_cross:
-                sol = self._solve_cross(M, M_ff, free, rhs, coef, Jg)
+                if os.environ.get("PICT_CROSS_DC", "1") != "0":
+                    sol = self._solve_cross_dc(M, M_ff, M_fD, pD, pD_val,
+                                               free, rhs, coef, Jg)
+                else:
+                    sol = self._solve_cross(M, M_ff, free, rhs, coef, Jg)
             elif M_fD is not None:
                 sol = self._pcache.solve(M_ff, b_free, symmetric=False,
                                          rtol=self.tol, maxiter=20000, singular=False)
@@ -448,8 +697,12 @@ class MultiBlockPISO:
             if M_fD is not None:
                 pv[pD] = pD_val
             pp = self._unflat(pv)
+            # COMPUTE distributed, then APPLY locally. The correction mutates us/vs/ws, which
+            # the global assembly reads in full, so the gradient is gathered first and the
+            # arithmetic below then runs on data every rank holds.
+            gpp = d.map_blocks(lambda b: d.gradient(b, pp), pp)
             for b in range(nb):
-                gx, gy, gz = d.gradient(b, pp)
+                gx, gy, gz = gpp[b]
                 us[b] = us[b] - coef[b] * gx
                 vs[b] = vs[b] - coef[b] * gy
                 ws[b] = ws[b] - coef[b] * gz
@@ -459,14 +712,16 @@ class MultiBlockPISO:
                     upd = self._unflat(fl)
                     for b in range(nb):
                         arr[b] = upd[b]
+            Phis = d.map_blocks(
+                lambda b: d.pressure_face_fluxes(b, pp, coef[b], coef,
+                                                 include_cross=self.implicit_cross),
+                [pp, coef])
             for b in range(nb):
                 # The flux correction must use the SAME operator the pressure was solved
                 # with. Correcting with the orthogonal part only, while solving the full
                 # operator, leaves the corrected flux non-solenoidal -- measured divergence
                 # 3.2e-02 against 1.5e-13 for the single-block solver.
-                Phi = d.pressure_face_fluxes(b, pp, coef[b], coef,
-                                             include_cross=self.implicit_cross)
-                Fb[b] = [Fb[b][a] - Phi[a] for a in range(3)]
+                Fb[b] = [Fb[b][a] - Phis[b][a] for a in range(3)]
                 phi_tot[b] = phi_tot[b] + pp[b]
 
         # the projection pressure -- what the face flux actually carries. Equal to self.p
@@ -635,4 +890,152 @@ class MultiBlockPISO:
         sol, info = spla.bicgstab(op, rhs[free], M=prec, rtol=self.tol, maxiter=20000)
         if info != 0:
             sol, info = spla.lgmres(op, rhs[free], M=prec, rtol=self.tol, maxiter=5000)
+        return sol
+
+    def _solve_cross_dc(self, M, M_ff, M_fD, pD, pD_val, free, rhs, coef, Jg):
+        """Deferred correction for the non-orthogonal pressure operator.
+
+        Solve  M p = rhs + J div(Phi_cross(p))  by LAGGING the cross flux:
+        each outer sweep is one orthogonal solve (the fast backend path, AmgX
+        when available) plus one cross-flux evaluation on the lagged p. The
+        matrix-free full-operator Krylov above pays a cross evaluation PER
+        MATVEC and was measured 70+ minutes inside a single solve on the
+        butterfly grid; a sweep here costs one cross evaluation total.
+
+        Iterates until the relative change in p drops below PICT_CROSS_DC_TOL
+        (default 1e-3) or PICT_CROSS_DC_ITERS sweeps (default 6). The point
+        of the cross terms on this grid is STABILITY -- the orthogonal-only
+        projection leaves unremoved divergence in the sheared trapezoid
+        corners and the field doubles per step from t~0.1 -- so a partially
+        converged correction that breaks that feedback loop is already the
+        product; exactness beyond it buys nothing the correctors don't.
+        """
+        d, nb = self.d, len(self.d.blocks)
+        singular = M_fD is None
+        base = rhs[free] - (M_fD @ pD_val if M_fD is not None else 0.0)
+        tol_dc = float(os.environ.get("PICT_CROSS_DC_TOL", "1e-3"))
+        it_max = int(os.environ.get("PICT_CROSS_DC_ITERS", "6"))
+
+        # Blocks whose cross metrics are IDENTICALLY zero (the tensor wake --
+        # ~45% of the cells) contribute nothing to the cross flux; evaluating
+        # them anyway was pure cost. Exact-math skip: the threshold admits
+        # only metric products at rounding level relative to the diagonal.
+        xb = getattr(self, "_cross_blocks", None)
+        if xb is None:
+            KEYS = (("xi_x", "xi_y", "xi_z"), ("eta_x", "eta_y", "eta_z"),
+                    ("zeta_x", "zeta_y", "zeta_z"))
+            xb = set()
+            for b in range(nb):
+                _, mb = d.block_metrics_cached(b)
+                diag = max(float(np.abs(sum(mb[KEYS[a][c]] ** 2 for c in range(3))).max())
+                           for a in range(3))
+                off = max(float(np.abs(sum(mb[KEYS[a1][c]] * mb[KEYS[a2][c]]
+                                           for c in range(3))).max())
+                          for a1 in range(3) for a2 in range(3) if a1 != a2)
+                if off > 1e-13 * diag:
+                    xb.add(b)
+            self._cross_blocks = xb
+
+        # PICT_CROSS_CORNER_SKIP="x0,y0;x1,y1,...:radius": zero the cross-flux
+        # divergence inside small discs -- a DIAGNOSTIC for the standing
+        # junction vorticity dot: the cross flux's metrics come from
+        # padded_geometry, whose coordinates are EXTRAPOLATED at pad corners
+        # (the failure mode pressure_face_fluxes' own comment warns about),
+        # so the one cell where a seam ends on a domain boundary integrates
+        # an inconsistent cross stencil every step. Zeroing it there swaps
+        # that O(1) inconsistency for a bounded orthogonal-only truncation
+        # in the same cell. Off by default.
+        cmask = getattr(self, "_cross_corner_mask", None)
+        if cmask is None:
+            spec = os.environ.get("PICT_CROSS_CORNER_SKIP")
+            if spec:
+                pts_s, rad_s = spec.split(":")
+                pts = [tuple(float(x) for x in p.split(",")) for p in pts_s.split(";")]
+                rad = float(rad_s)
+                cmask = {}
+                for b in range(nb):
+                    blk = self.d.blocks[b]
+                    keepm = np.ones(blk.shape)
+                    for cx, cy in pts:
+                        rr = np.sqrt((blk.x - cx) ** 2 + (blk.y - cy) ** 2)
+                        keepm[rr < rad] = 0.0
+                    cmask[b] = keepm
+            else:
+                cmask = False
+            self._cross_corner_mask = cmask
+
+        def cross_rhs(vfull):
+            pb = self._unflat(vfull)
+            dc = {}
+            for b in range(nb):
+                if b in xb:
+                    Phi = d.pressure_face_fluxes(b, pb, coef[b], coef,
+                                                 include_orth=False,
+                                                 include_cross=True)
+                    dc[b] = d.divergence(b, Phi, self.Js[b])
+                    if cmask is not False:
+                        dc[b] = dc[b] * cmask[b]
+                else:
+                    dc[b] = np.zeros(self.d.blocks[b].shape)
+            out = base + (Jg * self._flat(dc))[free]
+            if singular:
+                out = out - out.mean()                    # compatibility
+            return out
+
+        v = np.zeros(M.shape[0])
+        if M_fD is not None:
+            v[pD] = pD_val
+        # SEED the lagged cross term with the previous STEP's converged
+        # pressure FOR THE SAME SLOT. The step makes picard_iters x
+        # corrector_steps of these solves and consecutive calls solve
+        # DIFFERENT systems (|p| 6.3e3 vs 1.1e3 for the two correctors), so a
+        # shared seed is useless -- but the same slot one step earlier is
+        # nearly identical (measured |p| 6.256e3 -> 6.257e3). With the right
+        # seed the first sweep starts at the converged answer and DC exits
+        # immediately; the sweeps were 24 inner pressure solves per step and
+        # 65% of R11's runtime.
+        nslots = max(1, self.picard_iters) * max(1, self.corrector_steps)
+        self._dc_call = getattr(self, "_dc_call", -1) + 1
+        slot = self._dc_call % nslots
+        seeds = self._dc_seeds = getattr(self, "_dc_seeds", {})
+        seed = seeds.get(slot)
+        b_free = cross_rhs(seed) if seed is not None else base
+        sol0 = None
+        if seed is not None:
+            # baseline and warm start from the seed, so a solve that lands on
+            # it is recognised as converged on the FIRST sweep
+            v[free] = seed[free]
+            sol0 = np.array(seed[free], copy=True)
+
+        # Intermediate sweeps solve LOOSELY (standard inexact outer
+        # iteration); the one final solve below is at full tolerance on the
+        # latest lagged operator, so the returned pressure meets self.tol
+        # regardless of how sloppy the journey was.
+        loose = max(self.tol, float(os.environ.get("PICT_CROSS_DC_INNER",
+                                                   "1e-4")))
+        if getattr(self, "_pcache_dc", None) is None:
+            self._pcache_dc = SolveCache(backend=self._pcache.backend,
+                                         precond=self._pcache.precond,
+                                         petsc_pc=self._pcache.petsc_pc)
+        sol = sol0
+        for k in range(it_max):
+            sol = self._pcache_dc.solve(M_ff, b_free, x0=sol,
+                                        symmetric=singular, rtol=loose,
+                                        maxiter=20000, singular=singular)
+            prev = v[free].copy()
+            v[free] = sol
+            self.cross_dc_iters = k + 1
+            if np.linalg.norm(v[free] - prev) <= \
+                    tol_dc * max(np.linalg.norm(v[free]), 1e-300):
+                break
+            b_free = cross_rhs(v)
+        # final: full tolerance, REUSING the last sweep's RHS -- a one-iterate
+        # older cross lag (same order as the sweep truncation itself), zero
+        # extra cross evaluations, and a warm start that already solves this
+        # system to `loose`, so it is a ~10 ms polish, not a 46 ms solve.
+        sol = self._pcache.solve(M_ff, b_free, x0=sol,
+                                 symmetric=singular, rtol=self.tol,
+                                 maxiter=20000, singular=singular)
+        v[free] = sol
+        seeds[slot] = v.copy()
         return sol

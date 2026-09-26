@@ -1,0 +1,9 @@
+  4 pressure systems captured in one step
+   sys 0: n=160,767 sym=True sing=True rtol=1e-06  ||r||/||b||  scipy 9.99e-07   petsc 2.64e-01  (60 its, fell_back=False)
+           max|x_scipy - x_petsc| = 2.918e+02   |x|max = 6.123e+03
+   sys 1: n=160,767 sym=True sing=True rtol=1e-06  ||r||/||b||  scipy 9.85e-07   petsc 1.33e-02  (112 its, fell_back=False)
+           max|x_scipy - x_petsc| = 1.468e-05   |x|max = 1.269e-03
+   sys 2: n=160,767 sym=True sing=True rtol=1e-06  ||r||/||b||  scipy 9.95e-07   petsc 3.02e-01  (62 its, fell_back=False)
+           max|x_scipy - x_petsc| = 2.917e+02   |x|max = 6.113e+03
+   sys 3: n=160,767 sym=True sing=True rtol=1e-06  ||r||/||b||  scipy 9.98e-07   petsc 1.03e-02  (113 its, fell_back=False)
+           max|x_scipy - x_petsc| = 9.908e-06   |x|max = 1.078e-03

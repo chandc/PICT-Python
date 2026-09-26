@@ -1,0 +1,8 @@
+--- n=2 ---
+  [PASS] BC rows by inspection (2 rank(s)): 2,048 eliminated rows, 2,048 geometric wall nodes, 0 missing, 0 spurious, interior+bnd == n_cells: True
+  [FAIL] 2 ranks, 10 steps: max relative difference 1.780e-07  (criterion < 1e-12)
+  [FAIL] momentum iterations [36, 36, 38, 38, 36, 36]... total ratio 2.78x of serial
+--- n=4 ---
+  [PASS] BC rows by inspection (4 rank(s)): 2,048 eliminated rows, 2,048 geometric wall nodes, 0 missing, 0 spurious, interior+bnd == n_cells: True
+  [FAIL] 4 ranks, 10 steps: max relative difference 2.624e-07  (criterion < 1e-12)
+  [FAIL] momentum iterations [40, 38, 36, 36, 36, 36]... total ratio 2.81x of serial

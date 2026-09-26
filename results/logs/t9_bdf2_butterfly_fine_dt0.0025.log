@@ -1,0 +1,19 @@
+T9 meshes/cylinder_butterfly_fine.msh: 27968 cells (27968 quads), 224 wall faces, Re=100.0, dt=0.0025, 60000 steps to T=150.0
+  t=  10.00  Cd 1.5667  Cl -0.0075 (amp 5.6602)  Cd_p 1.1504  |u|max 1.328  dCd/dt -6.54e+01  (295.9 ms/step)
+  t=  20.00  Cd 1.3330  Cl +0.0067 (amp 0.1068)  Cd_p 0.9892  |u|max 1.345  dCd/dt +1.96e-03  (294.9 ms/step)
+  t=  30.00  Cd 1.4110  Cl +0.0123 (amp 0.2307)  Cd_p 1.0514  |u|max 1.353  dCd/dt +8.73e-03  (291.1 ms/step)
+  t=  40.00  Cd 1.4603  Cl -0.0349 (amp 0.3032)  Cd_p 1.0899  |u|max 1.373  dCd/dt +2.15e-03  (285.3 ms/step)
+  t=  50.00  Cd 1.4807  Cl -0.0096 (amp 0.3405)  Cd_p 1.1062  |u|max 1.374  dCd/dt +1.75e-03  (279.2 ms/step)
+  t=  60.00  Cd 1.4847  Cl +0.0364 (amp 0.3482)  Cd_p 1.1091  |u|max 1.372  dCd/dt +1.55e-04  (314.5 ms/step)
+  t=  70.00  Cd 1.4878  Cl +0.0220 (amp 0.3510)  Cd_p 1.1118  |u|max 1.377  dCd/dt -5.89e-04  (307.9 ms/step)
+  t=  80.00  Cd 1.4867  Cl -0.0283 (amp 0.3516)  Cd_p 1.1107  |u|max 1.382  dCd/dt +1.36e-03  (300.9 ms/step)
+  t=  90.00  Cd 1.4878  Cl -0.0330 (amp 0.3517)  Cd_p 1.1117  |u|max 1.379  dCd/dt -1.82e-03  (296.2 ms/step)
+  t= 100.00  Cd 1.4874  Cl +0.0154 (amp 0.3518)  Cd_p 1.1114  |u|max 1.385  dCd/dt +2.02e-03  (292.1 ms/step)
+  t= 110.00  Cd 1.4872  Cl +0.0391 (amp 0.3518)  Cd_p 1.1111  |u|max 1.381  dCd/dt -1.90e-03  (289.3 ms/step)
+  t= 120.00  Cd 1.4881  Cl -0.0001 (amp 0.3518)  Cd_p 1.1120  |u|max 1.380  dCd/dt +1.50e-03  (286.8 ms/step)
+  t= 130.00  Cd 1.4867  Cl -0.0391 (amp 0.3518)  Cd_p 1.1106  |u|max 1.375  dCd/dt -8.62e-04  (284.4 ms/step)
+  t= 140.00  Cd 1.4884  Cl -0.0152 (amp 0.3518)  Cd_p 1.1122  |u|max 1.375  dCd/dt +9.10e-05  (280.6 ms/step)
+  t= 150.00  Cd 1.4866  Cl +0.0331 (amp 0.3518)  Cd_p 1.1107  |u|max 1.378  dCd/dt +6.91e-04  (277.3 ms/step)
+  9 periods, mean 5.6134 +- 0.0000
+RESULT meshes/cylinder_butterfly_fine.msh: St=0.1781  Cd_mean=1.4874  Cl_rms=0.2489  Cl_amp=0.3518  Cd_p=1.1113  (window t=90.0..150.0)
+  saved results/t9/rk3/butterfly_fine_re100_bdf2_dt0.0025.npz

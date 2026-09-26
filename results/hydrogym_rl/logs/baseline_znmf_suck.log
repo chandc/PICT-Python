@@ -1,0 +1,4 @@
+  suck t= 10.0 CD(last 10) 1.3195 CL rms 0.2967 (123 ms/step)
+  suck t= 20.0 CD(last 10) 1.2748 CL rms 0.1319 (124 ms/step)
+  suck t= 30.0 CD(last 10) 1.3646 CL rms 0.2244 (125 ms/step)
+BASELINE suck: mean CD over t=0..30: 1.3196   last 60%: 1.3281   CL rms 0.1937   return sum(-dt*CD) -39.59

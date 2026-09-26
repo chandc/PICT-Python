@@ -1,0 +1,15 @@
+{
+  "cases": [
+    {
+      "name": "cylinder_re100",
+      "nblocks": 16,
+      "ncells": 160768,
+      "nsteps": 10,
+      "grid_fingerprint": "e7a59005e2228ee384afbe7809fbc340",
+      "seconds_per_step": 6.9287892707999985,
+      "total_seconds": 69.28789270799999
+    }
+  ],
+  "host": "mac.lan",
+  "captured": "2026-09-04T22:30:17Z"
+}

@@ -1,0 +1,167 @@
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.088%, energy 8.9698e-02, total 1.019e+02  u_tau 0.9566  e_u/v/w 5.105/0.2055/0.6565  |p-pflux| 0.000e+00 (p range 1.873e+01)  p2dx 0.062%  divw/|du/dx| 2.028e-01/3.831e+00
+  [rotational_fixed] PAUSED at step 333 t=4.166 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.024%, energy 8.9698e-02, total 1.707e+02  u_tau 0.9671  e_u/v/w 4.579/0.2729/0.8231  |p-pflux| 1.301e-02 (p range 1.238e+01)  p2dx 0.000%  divw/|du/dx| 6.661e-02/4.116e+00
+  [rotational_fixed] resumed at step 333 t=4.166 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step    500 t=  4.25  2dx share   0.014%  energy 2.5927e-02  amp    0.289x  total 1.795e+02  u_tau 0.9802  e_u/v/w 4.552/0.3222/0.8802  |p-pflux| 1.052e-02  p2dx 0.000%  divw 7.482e-02  1.552 s/step
+  [rotational_fixed] PAUSED at step 692 t=4.346 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.005%, energy 8.9698e-02, total 2.886e+02  u_tau 1.0000  e_u/v/w 4.639/0.4022/0.9531  |p-pflux| 1.458e-02 (p range 1.985e+01)  p2dx 0.000%  divw/|du/dx| 7.978e-02/4.365e+00
+  [rotational_fixed] resumed at step 692 t=4.346 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   1000 t=  4.50  2dx share   0.002%  energy 5.7378e-03  amp    0.064x  total 3.811e+02  u_tau 1.0173  e_u/v/w 4.452/0.5013/1.0949  |p-pflux| 1.670e-02  p2dx 0.000%  divw 1.055e-01  1.557 s/step
+  [rotational_fixed] PAUSED at step 1052 t=4.526 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 3.694e+02  u_tau 1.0181  e_u/v/w 4.370/0.5130/1.1242  |p-pflux| 1.519e-02 (p range 2.139e+01)  p2dx 0.001%  divw/|du/dx| 1.128e-01/4.929e+00
+  [rotational_fixed] resumed at step 1052 t=4.526 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 1413 t=4.706 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 5.152e+02  u_tau 1.0294  e_u/v/w 4.155/0.6020/1.1285  |p-pflux| 1.744e-02 (p range 2.243e+01)  p2dx 0.000%  divw/|du/dx| 1.083e-01/4.871e+00
+  [rotational_fixed] resumed at step 1413 t=4.706 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   1500 t=  4.75  2dx share   0.000%  energy 8.3527e-04  amp    0.009x  total 5.905e+02  u_tau 1.0397  e_u/v/w 4.187/0.6146/1.0946  |p-pflux| 1.701e-02  p2dx 0.001%  divw 1.204e-01  1.551 s/step
+  [rotational_fixed] PAUSED at step 1776 t=4.888 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 9.504e+02  u_tau 1.0651  e_u/v/w 3.949/0.6378/0.9578  |p-pflux| 2.743e-02 (p range 2.269e+01)  p2dx 0.001%  divw/|du/dx| 1.543e-01/5.465e+00
+  [rotational_fixed] resumed at step 1776 t=4.888 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   2000 t=  5.00  2dx share   0.000%  energy 2.0732e-04  amp    0.002x  total 1.119e+03  u_tau 1.0856  e_u/v/w 3.783/0.6482/0.8372  |p-pflux| 3.749e-02  p2dx 0.002%  divw 1.738e-01  1.537 s/step
+  [rotational_fixed] PAUSED at step 2140 t=5.070 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.180e+03  u_tau 1.0856  e_u/v/w 3.575/0.6486/0.8110  |p-pflux| 7.242e-02 (p range 3.527e+01)  p2dx 0.002%  divw/|du/dx| 1.703e-01/5.794e+00
+  [rotational_fixed] resumed at step 2140 t=5.070 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 2485 t=5.242 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.003%, energy 8.9698e-02, total 9.991e+02  u_tau 1.0803  e_u/v/w 3.164/0.5496/0.7740  |p-pflux| 3.594e-02 (p range 2.722e+01)  p2dx 0.006%  divw/|du/dx| 1.977e-01/5.627e+00
+  [rotational_fixed] resumed at step 2485 t=5.242 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 2499 t=5.249 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.016%, energy 8.9698e-02, total 9.706e+02  u_tau 1.0803  e_u/v/w 3.142/0.5469/0.7694  |p-pflux| 3.185e-02 (p range 2.594e+01)  p2dx 0.006%  divw/|du/dx| 1.985e-01/5.594e+00
+  [rotational_fixed] resumed at step 2499 t=5.249 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   2500 t=  5.25  2dx share   0.014%  energy 1.3696e-01  amp    1.527x  total 9.685e+02  u_tau 1.0802  e_u/v/w 3.141/0.5467/0.7691  |p-pflux| 3.219e-02  p2dx 0.006%  divw 1.985e-01  1.736 s/step
+  [rotational_fixed] PAUSED at step 2870 t=5.435 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.004%, energy 8.9698e-02, total 1.180e+03  u_tau 1.0541  e_u/v/w 3.046/0.5222/0.6588  |p-pflux| 2.595e-02 (p range 1.805e+01)  p2dx 0.006%  divw/|du/dx| 1.789e-01/5.127e+00
+  [rotational_fixed] resumed at step 2870 t=5.435 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   3000 t=  5.50  2dx share   0.001%  energy 1.5106e-02  amp    0.168x  total 1.533e+03  u_tau 1.0426  e_u/v/w 2.964/0.5124/0.6568  |p-pflux| 2.606e-02  p2dx 0.005%  divw 1.787e-01  1.598 s/step
+  [rotational_fixed] PAUSED at step 3238 t=5.619 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 1.119e+03  u_tau 1.0280  e_u/v/w 2.642/0.4865/0.6822  |p-pflux| 3.791e-02 (p range 1.880e+01)  p2dx 0.013%  divw/|du/dx| 1.691e-01/5.010e+00
+  [rotational_fixed] resumed at step 3238 t=5.619 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 3242 t=5.621 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.001%, energy 8.9698e-02, total 1.108e+03  u_tau 1.0277  e_u/v/w 2.635/0.4856/0.6819  |p-pflux| 3.754e-02 (p range 1.947e+01)  p2dx 0.008%  divw/|du/dx| 1.679e-01/5.003e+00
+  [rotational_fixed] resumed at step 3242 t=5.621 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   3500 t=  5.75  2dx share   0.001%  energy 3.8855e-03  amp    0.043x  total 6.670e+02  u_tau 1.0088  e_u/v/w 2.364/0.4226/0.5903  |p-pflux| 2.343e-02  p2dx 0.003%  divw 1.314e-01  1.564 s/step
+  [rotational_fixed] PAUSED at step 3613 t=5.806 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 7.148e+02  u_tau 1.0017  e_u/v/w 2.357/0.3999/0.5688  |p-pflux| 2.556e-02 (p range 1.528e+01)  p2dx 0.002%  divw/|du/dx| 1.135e-01/4.467e+00
+  [rotational_fixed] resumed at step 3613 t=5.806 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 3985 t=5.992 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 9.078e+02  u_tau 1.0070  e_u/v/w 2.349/0.3242/0.5134  |p-pflux| 2.288e-02 (p range 1.317e+01)  p2dx 0.030%  divw/|du/dx| 1.019e-01/4.188e+00
+  [rotational_fixed] resumed at step 3985 t=5.992 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   4000 t=  6.00  2dx share   0.000%  energy 6.1251e-04  amp    0.007x  total 8.976e+02  u_tau 1.0074  e_u/v/w 2.348/0.3225/0.5093  |p-pflux| 2.269e-02  p2dx 0.010%  divw 1.002e-01  1.559 s/step
+  [rotational_fixed] PAUSED at step 4356 t=6.178 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 8.720e+02  u_tau 1.0090  e_u/v/w 2.606/0.2813/0.4360  |p-pflux| 2.274e-02 (p range 1.117e+01)  p2dx 0.000%  divw/|du/dx| 9.094e-02/3.969e+00
+  [rotational_fixed] resumed at step 4356 t=6.178 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   4500 t=  6.25  2dx share   0.000%  energy 5.2395e-04  amp    0.006x  total 7.018e+02  u_tau 1.0064  e_u/v/w 2.609/0.2676/0.4275  |p-pflux| 2.241e-02  p2dx 0.002%  divw 1.062e-01  1.546 s/step
+  [rotational_fixed] PAUSED at step 4720 t=6.360 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 5.994e+02  u_tau 0.9991  e_u/v/w 2.549/0.2488/0.4340  |p-pflux| 2.140e-02 (p range 1.074e+01)  p2dx 0.001%  divw/|du/dx| 8.917e-02/3.877e+00
+  [rotational_fixed] resumed at step 4720 t=6.360 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   5000 t=  6.50  2dx share   0.000%  energy 5.3431e-05  amp    0.001x  total 5.052e+02  u_tau 0.9946  e_u/v/w 2.493/0.2295/0.4038  |p-pflux| 2.367e-02  p2dx 0.000%  divw 8.599e-02  1.549 s/step
+  [rotational_fixed] PAUSED at step 5088 t=6.544 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 4.500e+02  u_tau 0.9933  e_u/v/w 2.484/0.2209/0.3917  |p-pflux| 2.333e-02 (p range 8.484e+00)  p2dx 0.000%  divw/|du/dx| 8.407e-02/3.563e+00
+  [rotational_fixed] resumed at step 5088 t=6.544 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 5458 t=6.729 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.365e+02  u_tau 0.9840  e_u/v/w 2.341/0.2049/0.3770  |p-pflux| 2.525e-02 (p range 1.075e+01)  p2dx 0.001%  divw/|du/dx| 1.046e-01/4.057e+00
+  [rotational_fixed] resumed at step 5458 t=6.729 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   5500 t=  6.75  2dx share   0.000%  energy 3.3126e-06  amp    0.000x  total 3.396e+02  u_tau 0.9841  e_u/v/w 2.329/0.2021/0.3764  |p-pflux| 2.477e-02  p2dx 0.000%  divw 1.024e-01  1.557 s/step
+  [rotational_fixed] PAUSED at step 5831 t=6.915 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.982e+02  u_tau 0.9664  e_u/v/w 2.175/0.1749/0.3504  |p-pflux| 2.296e-02 (p range 9.504e+00)  p2dx 0.000%  divw/|du/dx| 9.008e-02/3.598e+00
+  [rotational_fixed] resumed at step 5831 t=6.915 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   6000 t=  7.00  2dx share   0.000%  energy 5.7016e-07  amp    0.000x  total 4.112e+02  u_tau 0.9551  e_u/v/w 2.116/0.1652/0.3364  |p-pflux| 2.384e-02  p2dx 0.000%  divw 8.370e-02  1.554 s/step
+  [rotational_fixed] PAUSED at step 6202 t=7.101 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.361e+02  u_tau 0.9455  e_u/v/w 2.001/0.1596/0.3261  |p-pflux| 2.312e-02 (p range 9.523e+00)  p2dx 0.000%  divw/|du/dx| 6.824e-02/3.391e+00
+  [rotational_fixed] resumed at step 6202 t=7.101 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 6204 t=7.102 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.352e+02  u_tau 0.9454  e_u/v/w 2.000/0.1596/0.3260  |p-pflux| 2.314e-02 (p range 9.658e+00)  p2dx 0.000%  divw/|du/dx| 6.817e-02/3.389e+00
+  [rotational_fixed] resumed at step 6204 t=7.102 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   6500 t=  7.25  2dx share   0.000%  energy 1.1287e-06  amp    0.000x  total 2.210e+02  u_tau 0.9365  e_u/v/w 1.995/0.1566/0.3028  |p-pflux| 2.172e-02  p2dx 0.000%  divw 6.271e-02  1.546 s/step
+  [rotational_fixed] PAUSED at step 6578 t=7.289 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.975e+02  u_tau 0.9343  e_u/v/w 2.005/0.1556/0.2996  |p-pflux| 2.342e-02 (p range 1.036e+01)  p2dx 0.000%  divw/|du/dx| 6.247e-02/3.145e+00
+  [rotational_fixed] resumed at step 6578 t=7.289 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 6952 t=7.476 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 2.649e+02  u_tau 0.9256  e_u/v/w 2.021/0.1592/0.2999  |p-pflux| 2.787e-02 (p range 1.132e+01)  p2dx 0.000%  divw/|du/dx| 7.073e-02/3.088e+00
+  [rotational_fixed] resumed at step 6952 t=7.476 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   7000 t=  7.50  2dx share   0.000%  energy 5.0477e-06  amp    0.000x  total 2.358e+02  u_tau 0.9256  e_u/v/w 2.033/0.1598/0.2983  |p-pflux| 2.274e-02  p2dx 0.000%  divw 7.141e-02  1.595 s/step
+  [rotational_fixed] PAUSED at step 7306 t=7.653 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.611e+02  u_tau 0.9284  e_u/v/w 2.250/0.1508/0.2830  |p-pflux| 2.129e-02 (p range 1.068e+01)  p2dx 0.000%  divw/|du/dx| 6.536e-02/2.866e+00
+  [rotational_fixed] resumed at step 7306 t=7.653 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   7500 t=  7.75  2dx share   0.000%  energy 2.2584e-06  amp    0.000x  total 1.265e+02  u_tau 0.9311  e_u/v/w 2.482/0.1462/0.2770  |p-pflux| 2.289e-02  p2dx 0.000%  divw 5.421e-02  1.586 s/step
+  [rotational_fixed] PAUSED at step 7674 t=7.837 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.124e+02  u_tau 0.9347  e_u/v/w 2.710/0.1503/0.2822  |p-pflux| 2.399e-02 (p range 1.045e+01)  p2dx 0.000%  divw/|du/dx| 5.465e-02/2.817e+00
+  [rotational_fixed] resumed at step 7674 t=7.837 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   8000 t=  8.00  2dx share   0.000%  energy 6.6813e-05  amp    0.001x  total 1.812e+02  u_tau 0.9479  e_u/v/w 3.126/0.1754/0.3062  |p-pflux| 2.272e-02  p2dx 0.005%  divw 5.920e-02  1.568 s/step
+  [rotational_fixed] PAUSED at step 8043 t=8.021 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 1.964e+02  u_tau 0.9497  e_u/v/w 3.173/0.1809/0.3100  |p-pflux| 2.330e-02 (p range 1.164e+01)  p2dx 0.001%  divw/|du/dx| 6.020e-02/3.162e+00
+  [rotational_fixed] resumed at step 8043 t=8.021 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 8412 t=8.206 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 4.769e+02  u_tau 0.9605  e_u/v/w 3.344/0.2113/0.3860  |p-pflux| 2.306e-02 (p range 1.362e+01)  p2dx 0.005%  divw/|du/dx| 9.089e-02/3.698e+00
+  [rotational_fixed] resumed at step 8412 t=8.206 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   8500 t=  8.25  2dx share   0.000%  energy 4.0035e-04  amp    0.004x  total 5.809e+02  u_tau 0.9612  e_u/v/w 3.281/0.2254/0.4093  |p-pflux| 2.616e-02  p2dx 0.004%  divw 1.005e-01  1.583 s/step
+  [rotational_fixed] PAUSED at step 8784 t=8.392 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.002%, energy 8.9698e-02, total 1.055e+03  u_tau 0.9650  e_u/v/w 3.135/0.2524/0.5103  |p-pflux| 2.942e-02 (p range 1.815e+01)  p2dx 0.041%  divw/|du/dx| 1.429e-01/4.108e+00
+  [rotational_fixed] resumed at step 8784 t=8.392 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   9000 t=  8.50  2dx share   0.001%  energy 8.2679e-03  amp    0.092x  total 6.429e+02  u_tau 0.9700  e_u/v/w 3.116/0.2616/0.5279  |p-pflux| 2.299e-02  p2dx 0.001%  divw 9.615e-02  1.587 s/step
+  [rotational_fixed] PAUSED at step 9142 t=8.571 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 5.955e+02  u_tau 0.9725  e_u/v/w 3.211/0.2774/0.5337  |p-pflux| 3.173e-02 (p range 1.781e+01)  p2dx 0.009%  divw/|du/dx| 9.716e-02/3.946e+00
+  [rotational_fixed] resumed at step 9142 t=8.571 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step   9500 t=  8.75  2dx share   0.002%  energy 1.6128e-02  amp    0.180x  total 8.651e+02  u_tau 0.9883  e_u/v/w 3.556/0.3278/0.6291  |p-pflux| 3.532e-02  p2dx 0.006%  divw 1.472e-01  1.554 s/step
+  [rotational_fixed] PAUSED at step 9514 t=8.757 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.002%, energy 8.9698e-02, total 8.700e+02  u_tau 0.9897  e_u/v/w 3.565/0.3304/0.6317  |p-pflux| 3.483e-02 (p range 1.704e+01)  p2dx 0.008%  divw/|du/dx| 1.510e-01/4.716e+00
+  [rotational_fixed] resumed at step 9514 t=8.757 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 9867 t=8.933 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 9.121e+02  u_tau 1.0137  e_u/v/w 3.684/0.3696/0.6757  |p-pflux| 2.247e-02 (p range 1.227e+01)  p2dx 0.002%  divw/|du/dx| 1.286e-01/4.915e+00
+  [rotational_fixed] resumed at step 9867 t=8.933 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step  10000 t=  9.00  2dx share   0.000%  energy 3.6853e-03  amp    0.041x  total 8.415e+02  u_tau 1.0226  e_u/v/w 3.646/0.3838/0.7172  |p-pflux| 2.500e-02  p2dx 0.004%  divw 1.264e-01  1.557 s/step
+  [rotational_fixed] PAUSED at step 10229 t=9.114 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 7.023e+02  u_tau 1.0358  e_u/v/w 3.519/0.4080/0.7752  |p-pflux| 2.366e-02 (p range 1.606e+01)  p2dx 0.002%  divw/|du/dx| 1.314e-01/4.932e+00
+  [rotational_fixed] resumed at step 10229 t=9.114 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step  10500 t=  9.25  2dx share   0.000%  energy 4.0840e-04  amp    0.005x  total 3.489e+02  u_tau 1.0527  e_u/v/w 3.293/0.4145/0.8236  |p-pflux| 2.392e-02  p2dx 0.011%  divw 1.235e-01  1.534 s/step
+  [rotational_fixed] PAUSED at step 10605 t=9.302 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 3.261e+02  u_tau 1.0522  e_u/v/w 3.258/0.4320/0.7988  |p-pflux| 2.560e-02 (p range 1.849e+01)  p2dx 0.002%  divw/|du/dx| 1.175e-01/4.823e+00
+  [rotational_fixed] resumed at step 10605 t=9.302 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] PAUSED at step 10977 t=9.488 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 6.662e+02  u_tau 1.0407  e_u/v/w 3.292/0.4847/0.6588  |p-pflux| 2.711e-02 (p range 1.375e+01)  p2dx 0.000%  divw/|du/dx| 1.203e-01/4.732e+00
+  [rotational_fixed] resumed at step 10977 t=9.488 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step  11000 t=  9.50  2dx share   0.000%  energy 1.7127e-04  amp    0.002x  total 6.686e+02  u_tau 1.0402  e_u/v/w 3.284/0.4896/0.6536  |p-pflux| 2.508e-02  p2dx 0.000%  divw 1.193e-01  1.533 s/step
+  [rotational_fixed] PAUSED at step 11344 t=9.672 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 5.173e+02  u_tau 1.0243  e_u/v/w 3.234/0.5114/0.6047  |p-pflux| 2.841e-02 (p range 2.003e+01)  p2dx 0.001%  divw/|du/dx| 1.263e-01/4.667e+00
+  [rotational_fixed] resumed at step 11344 t=9.672 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step  11500 t=  9.75  2dx share   0.000%  energy 3.2645e-06  amp    0.000x  total 5.319e+02  u_tau 1.0193  e_u/v/w 3.312/0.4681/0.5876  |p-pflux| 3.469e-02  p2dx 0.000%  divw 1.281e-01  1.561 s/step
+  [rotational_fixed] PAUSED at step 11701 t=9.850 -> results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] blocks=2 scheme=rotational rhie_chow=True force=1.0 dt=0.0005 steps=12000 start=results/fields/chan_re180_t4.npz
+  [rotational_fixed] start: 2dx share 0.000%, energy 8.9698e-02, total 4.820e+02  u_tau 1.0159  e_u/v/w 3.247/0.4069/0.5652  |p-pflux| 2.984e-02 (p range 1.365e+01)  p2dx 0.000%  divw/|du/dx| 1.176e-01/4.313e+00
+  [rotational_fixed] resumed at step 11701 t=9.850 from results/fields/probe_rotational_fixed_latest.npz
+  [rotational_fixed] step  12000 t= 10.00  2dx share   0.000%  energy 5.0782e-06  amp    0.000x  total 5.288e+02  u_tau 0.9927  e_u/v/w 2.888/0.3524/0.5352  |p-pflux| 3.134e-02  p2dx 0.000%  divw 8.702e-02  1.551 s/step
+  [rotational_fixed] DONE at step 12000 t=10.000

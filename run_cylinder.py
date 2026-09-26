@@ -29,6 +29,8 @@ import argparse
 import os
 import time
 
+import os
+
 import numpy as np
 
 from cylinder_grid import cylinder_domain, D
@@ -176,9 +178,38 @@ def main():
     print(f"  {'phase':<7}{'step':>7}{'t':>8}{'v_probe':>12}{'amp/500':>11}{'near':>9}"
           f"{'far':>9}{'s/step':>9}", flush=True)
 
+    # SPONGE LAYER (opt-in, PICT_SPONGE="sigma,width"): interior damping of
+    # (u - U_inf) over the outer `width` D of radius, quintic ramp, applied by
+    # operator splitting after each step. Boundary-side interventions at the
+    # Dong arc all destabilised a marginally-stable far-field striping mode
+    # (ghost: aborts; tangential filter: aborts; copy relaxation: no effect),
+    # so the striping is damped INSIDE the domain instead, touching no BC
+    # logic. The decay is applied implicitly (1/(1+dt*sigma)): stable for any sigma.
+    _sp = os.environ.get("PICT_SPONGE")
+    sponge = None
+    if _sp:
+        sig, wid = (float(x) for x in _sp.split(","))
+        rmax = max(float(np.sqrt(blk.x**2 + blk.y**2).max()) for blk in d.blocks)
+        sponge = []
+        for blk in d.blocks:
+            r = np.sqrt(blk.x**2 + blk.y**2)
+            xi = np.clip((r - (rmax - wid * D)) / (wid * D), 0.0, 1.0)
+            sponge.append(sig * xi**3 * (10 - 15*xi + 6*xi*xi))
+        print(f"  sponge: sigma={sig}, width={wid} D (r > {rmax - wid*D:.1f})", flush=True)
+
+    def apply_sponge():
+        if sponge is None:
+            return
+        for b in range(len(d.blocks)):
+            g = 1.0 / (1.0 + m.dt * sponge[b])
+            m.u[b][:] = 1.0 + (m.u[b] - 1.0) * g
+            m.v[b][:] *= g
+            m.w[b][:] *= g
+
     t0 = time.time()
     for i in range(1, settle + 1):
         m.step()
+        apply_sponge()
         hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
         if i % 500 == 0:
             report(i, settle, hist, t0, "settle")
@@ -216,6 +247,7 @@ def main():
     t0 = time.time()
     for i in range(1, a.steps + 1):
         m.step()
+        apply_sponge()
         hist.append((m.time, float(m.v[pb][pk[0], pk[1], 0])))
         mean.add(m)
         R = surface_force(d, body, m.u, m.v, m.w, m.p, m.nu)

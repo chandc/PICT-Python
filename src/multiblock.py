@@ -24,7 +24,11 @@ docstring warns about for periodic axes. A connected axis therefore behaves like
 for node placement: block A stores up to but not including the interface, and block B's first
 node IS the next node. `Domain.validate()` enforces this rather than leaving it to the caller.
 """
+import os
+
 import numpy as np
+
+from src.comm import Comm
 import scipy.sparse as sparse
 
 FACE_NAMES = ("-x", "+x", "-y", "+y", "-z", "+z")
@@ -39,11 +43,22 @@ def face_axis_side(fid):
     return fid // 2, fid % 2
 
 
-def face_slice(fid):
-    """Index tuple selecting that face's layer of cells from a (nx,ny,nz) array."""
+def face_slice(fid, span=None):
+    """Index tuple selecting that face's layer of cells from a (nx,ny,nz) array.
+
+    `span` restricts it to a SUB-RECTANGLE: ((i0, i1), (j0, j1)) over the face's two TANGENTIAL
+    axes in ascending axis order, or None for the whole face. A partial face is what lets ONE
+    block face meet SEVERAL neighbours -- the thing a Cartesian tiling around a ring needs and
+    a whole-face-only connection list cannot express.
+    """
     axis, side = face_axis_side(fid)
     s = [slice(None)] * 3
     s[axis] = 0 if side == 0 else -1
+    if span is not None:
+        tang = [a for a in range(3) if a != axis]
+        for k, rng in enumerate(span):
+            if rng is not None:
+                s[tang[k]] = slice(rng[0], rng[1])
     return tuple(s)
 
 
@@ -51,7 +66,7 @@ def tangential_axes(axis):
     return tuple(a for a in range(3) if a != axis)
 
 
-def _match_extent(lay, o_lo, o_hi, my_lo, my_hi, axis, perm=(0, 1)):
+def _match_extent(lay, o_lo, o_hi, my_lo, my_hi, axis, perm=(0, 1), oaxis=None):
     """
     Reconcile a ghost layer's tangential extent with the receiving block's.
 
@@ -66,7 +81,12 @@ def _match_extent(lay, o_lo, o_hi, my_lo, my_hi, axis, perm=(0, 1)):
     body. Those cells lie geometrically inside the obstacle, so no exact value exists.
     """
     tang = [a for a in range(3) if a != axis]
-    otang = [tang[perm[0]], tang[perm[1]]]
+    # o_lo/o_hi are indexed in the NEIGHBOUR's axis numbering. Deriving its tangential axes
+    # from OUR `tang` is only right when both sides of the seam share a normal axis; for a
+    # connection joining axis 0 to axis 1 it reads the wrong entries and the reconciled slab
+    # comes back the wrong width, surfacing as a concatenate error one frame up.
+    o_all = [a for a in range(3) if a != (axis if oaxis is None else oaxis)]
+    otang = [o_all[perm[0]], o_all[perm[1]]]
     pre, post = [(0, 0)] * lay.ndim, [slice(None)] * lay.ndim
     need_pad = need_trim = False
     for pos, (ma, oa) in enumerate(zip(tang, otang)):
@@ -100,7 +120,7 @@ class Connection:
     """
 
     def __init__(self, ba, fa, bb, fb, axes=(0, 1), flips=(False, False),
-                 shift=(0.0, 0.0, 0.0)):
+                 shift=(0.0, 0.0, 0.0), span_a=None, span_b=None):
         # Physical displacement to ADD to block B's coordinates when viewed from
         # A. Zero for blocks that simply abut; for a WRAP-AROUND connection (the
         # last block of a periodic strip joining back to the first) it is the
@@ -108,6 +128,9 @@ class Connection:
         # it and the ghost coordinates jump backwards across the seam, collapsing
         # the Jacobian there -- the same failure the `period` bug produced.
         self.shift = np.asarray(shift, dtype=float)
+        # WHICH PART OF EACH FACE this connection covers -- None means the whole face, which is
+        # every existing grid, so those keep identical index tuples and identical arithmetic.
+        self.span_a, self.span_b = span_a, span_b
         self.ba, self.fa, self.bb, self.fb = ba, fa, bb, fb
         self.axes = tuple(axes)
         self.flips = tuple(bool(f) for f in flips)
@@ -121,6 +144,20 @@ class Connection:
             raise ValueError(
                 f"connection joins {FACE_NAMES[fa]} to {FACE_NAMES[fb]}: both are "
                 f"{'upper' if sa else 'lower'} faces, so the blocks would overlap")
+
+    @property
+    def idx_a(self):
+        """Index tuple into block A selecting just this connection's part of its face."""
+        return face_slice(self.fa, self.span_a)
+
+    @property
+    def idx_b(self):
+        """Index tuple into block B selecting just this connection's part of its face."""
+        return face_slice(self.fb, self.span_b)
+
+    @property
+    def partial(self):
+        return self.span_a is not None or self.span_b is not None
 
     def align(self, arr_b):
         """Reorder block B's face array so element [i,j] is the neighbour of A's face [i,j]."""
@@ -174,14 +211,114 @@ class Block:
 class Domain:
     """Blocks plus connections, with the global index space laid over them."""
 
-    def __init__(self, blocks, connections=()):
+    def __init__(self, blocks, connections=(), comm=None):
         self.blocks = list(blocks)
         self.connections = list(connections)
+        # Gate 1: every cross-block data read routes through this. Serial by default, so a
+        # Domain built the way every existing caller builds one behaves exactly as before.
+        self.comm = comm if comm is not None else Comm(len(self.blocks))
         self.offsets = np.cumsum([0] + [b.size for b in self.blocks])[:-1]
         self.n_cells = int(sum(b.size for b in self.blocks))
         for c in self.connections:
             self.blocks[c.ba].faces[c.fa] = "connected"
             self.blocks[c.bb].faces[c.fb] = "connected"
+
+    def map_blocks(self, fn, fields=None, width=2):
+        """COLLECTIVE. Exchange halos, apply `fn(b)` on this rank's blocks, gather the results.
+
+        THE ONE SHAPE EVERY DISTRIBUTED OPERATOR LOOP TAKES. The solver's explicit work is
+        uniformly `{b: d.OP(b, F) for b in range(nb)}`, and distributing it means three things
+        that must happen in this order and the same number of times on every rank: exchange the
+        halos F needs, evaluate only the blocks this rank owns, and gather so the global
+        assembly that follows sees every block. Writing that out at nine call sites invites the
+        one mistake that does not fail loudly -- a rank skipping or repeating a collective, which
+        hangs rather than errs. Routing them through one helper makes the ordering structural.
+
+        Serially this is EXACTLY the original expression: `exchange_halos` returns immediately,
+        `local_blocks()` is every block, and `gather_blocks` is the identity. That is what keeps
+        the serial path bitwise unchanged, which is Gate 1's criterion and still binding here.
+
+        `fields` may be one dict or several; each is exchanged. Passing None means the operator
+        reads no neighbour data.
+        """
+        if fields is not None:
+            for f in (fields if isinstance(fields, (list, tuple)) else (fields,)):
+                self.exchange_halos(f, width)
+        part = {b: fn(b) for b in self.comm.local_blocks()}
+        return self.comm.gather_blocks(part)
+
+    def prepare_geometry(self, width=2):
+        """COLLECTIVE, ONCE. Exchange coordinate halos and warm the metric cache.
+
+        SEPARATED FROM THE FIELD PATH ON MEASURED GROUNDS, not tidiness. Instrumenting one
+        solver step found 112 padding calls, every one of them a FIELD: coordinates are padded
+        only when `block_metrics` first runs and are memoised thereafter, because geometry is
+        static. So the coordinate exchange belongs at construction, once, and never appears in
+        the hot path -- where it would otherwise have contributed a collective per step for
+        data that cannot have changed.
+
+        It must still be collective, and for the usual reason: `block_metrics_cached` is called
+        per block, so a lazy exchange underneath it would be entered as many times as a rank
+        happens to own blocks. Warming the cache for every local block here means no coordinate
+        data crosses a rank boundary again for the life of the run.
+
+        Width 2 covers every caller: `block_metrics` asks for 2 and `padded_geometry` for
+        max(width, 2).
+        """
+        ex = getattr(self.comm, "exchange_coords", None)
+        if ex is not None:
+            ex(self._coords_upto(width), width)
+        # EVERY block, not just the local ones. The solver's constructor assembles global
+        # metric arrays over all blocks, so warming only this rank's left it to fault during
+        # construction, before a step ran. Coordinates are replicated, so this costs memory
+        # for a static quantity and no communication at all.
+        for b in range(len(self.blocks)):
+            self.block_metrics_cached(b)
+
+    def is_orthogonal(self, tol=1e-10):
+        """Are the grid directions mutually perpendicular, to `tol`? Measured once, cached.
+
+        Tested on the CONTRAVARIANT METRIC TENSOR g^ij = grad(xi^i).grad(xi^j) being diagonal,
+        not on individual metric components vanishing. The component test is wrong for any
+        rotated system: in polar coordinates xi_x = cos(theta) and xi_y = sin(theta) are both
+        O(1) while the grid is perfectly orthogonal, and using it once led to the cylinder being
+        wrongly recorded as non-orthogonal.
+
+        The quantity returned is the worst |cos| between any two grid directions over all
+        blocks, so the threshold has a geometric meaning: 1e-10 is about 6e-9 degrees off
+        perpendicular.
+        """
+        if getattr(self, "_orth", None) is None:
+            C = ("xi", "eta", "zeta")
+            P = ("x", "y", "z")
+            worst = 0.0
+            for b in range(len(self.blocks)):
+                _, mt = self.block_metrics_cached(b)
+                G = {(i, j): sum(np.asarray(mt[f"{C[i]}_{P[k]}"])
+                                 * np.asarray(mt[f"{C[j]}_{P[k]}"]) for k in range(3))
+                     for i in range(3) for j in range(3)}
+                for i in range(3):
+                    for j in range(i + 1, 3):
+                        den = np.sqrt(np.abs(G[(i, i)]) * np.abs(G[(j, j)])) + 1e-300
+                        worst = max(worst, float((np.abs(G[(i, j)]) / den).max()))
+            self._orth_measure = worst
+            self._orth = worst <= tol
+        return self._orth
+
+    def exchange_halos(self, fields, width=2):
+        """COLLECTIVE. Prime every remote FIELD slab needed this pass. No-op when serial.
+
+        MUST be called by every rank, exactly once, BEFORE any pad_field call in the pass. A
+        lazy exchange inside pad_field would hang: ranks own different numbers of blocks and
+        would enter it a different number of times, and MPI would deadlock in a way that looks
+        like a solver stall rather than a protocol error.
+
+        Coordinates are NOT handled here -- see `prepare_geometry`.
+        """
+        ex = getattr(self.comm, "exchange_fields", None)
+        if ex is None:
+            return
+        ex(self._field_upto(fields, width), width)
 
     @property
     def is_single_block(self):
@@ -197,8 +334,8 @@ class Domain:
         (ids_a, ids_b): matching global cell ids either side of a connection, aligned so that
         ids_a[k] and ids_b[k] are the two cells that share the interface face.
         """
-        ga = self.global_ids(conn.ba)[face_slice(conn.fa)]
-        gb = self.global_ids(conn.bb)[face_slice(conn.fb)]
+        ga = self.global_ids(conn.ba)[conn.idx_a]
+        gb = self.global_ids(conn.bb)[conn.idx_b]
         gb = conn.align(gb)
         if ga.shape != gb.shape:
             raise ValueError(
@@ -226,8 +363,8 @@ class Domain:
         for c in self.connections:
             A, B = self.blocks[c.ba], self.blocks[c.bb]
             try:
-                pa = [f[face_slice(c.fa)] for f in (A.x, A.y, A.z)]
-                pb = [c.align(f[face_slice(c.fb)]) for f in (B.x, B.y, B.z)]
+                pa = [f[c.idx_a] for f in (A.x, A.y, A.z)]
+                pb = [c.align(f[c.idx_b]) for f in (B.x, B.y, B.z)]
             except ValueError:
                 continue                                   # already reported above
             if pa[0].shape != pb[0].shape:
@@ -329,13 +466,53 @@ class Domain:
     # ------------------------------------------------------------------ geometry across seams
 
     def _neighbour_of(self, b, fid):
-        """(other_block, other_face, to_my_ordering, shift) for a connected face, else None."""
+        """(other_block, other_face, to_my_ordering, shift) for a connected face, else None.
+
+        THE SINGLE-NEIGHBOUR VIEW. Returns the first connection only, so it is valid exactly
+        when this face has one. `_neighbours_of` is the general form; callers that can handle a
+        face met by SEVERAL blocks should use that instead.
+        """
         for c in self.connections:
             if c.ba == b and c.fa == fid:
                 return c.bb, c.fb, c.align, +c.shift
             if c.bb == b and c.fb == fid:
                 return c.ba, c.fa, c.unalign, -c.shift
         return None
+
+    def _neighbours_of(self, b, fid):
+        """Every connection on this face, as a list of pieces.
+
+        Each entry is (other_block, other_face, to_my_ordering, shift, my_span, other_span).
+        A face met by one neighbour over its whole extent gives a single entry with both spans
+        None -- which is every grid built so far, and those keep the old code path exactly.
+        """
+        out = []
+        for c in self.connections:
+            if c.ba == b and c.fa == fid:
+                out.append((c.bb, c.fb, c.align, +c.shift, c.span_a, c.span_b))
+            elif c.bb == b and c.fb == fid:
+                out.append((c.ba, c.fa, c.unalign, -c.shift, c.span_b, c.span_a))
+        return out
+
+    def _face_pieces_cover(self, b, fid):
+        """Check the pieces on this face tile it exactly: no overlap, no gap.
+
+        A missing piece leaves an UNINITIALISED ghost and a doubled one silently wins on
+        whichever is written last -- both produce a plausible-looking field, which is how every
+        other seam defect in this code has presented. Cheap to check once at prepare time.
+        """
+        axis, _ = face_axis_side(fid)
+        tang = [a for a in range(3) if a != axis]
+        shp = [self.blocks[b].shape[a] for a in tang]
+        seen = np.zeros(shp, dtype=int)
+        for _ob, _of, _tm, _sh, my_span, _os in self._neighbours_of(b, fid):
+            sl = [slice(None), slice(None)]
+            if my_span is not None:
+                for k, rng in enumerate(my_span):
+                    if rng is not None:
+                        sl[k] = slice(rng[0], rng[1])
+            seen[tuple(sl)] += 1
+        return seen
 
     def _ghost_layers(self, b, fid, width, src=None, shift=True):
         """
@@ -450,6 +627,11 @@ class Domain:
         if bg is not None:
             return self._pad_coords_background(b, width, bg)
 
+        fields, lo, hi = self._coords_upto(width)(b, 3)
+        return fields[0], fields[1], fields[2], lo, hi
+
+    def _coords_upto(self, width):
+        """The coordinate padding recursion, as a closure. See `_field_upto`."""
         order = (0, 1, 2)
         memo = {}
 
@@ -488,16 +670,72 @@ class Domain:
             memo[key] = res
             return res
 
-        fields, lo, hi = upto(b, 3)
-        return fields[0], fields[1], fields[2], lo, hi
+        return upto
+
+    def _assemble_ghost(self, b, fid, width, pieces, my_lo, my_hi, fetch, ncomp, shifted):
+        """Build one ghost layer stack for a face met by SEVERAL neighbours.
+
+        Each piece supplies its own sub-rectangle. The CORE tangential range is filled from the
+        pieces; any tangential padding this block carries is then edge-replicated, which is what
+        `_match_extent` already does wherever two blocks disagree on padding. That is exact for
+        the operators that read this: the face loops in face_fluxes and the pressure coefficient
+        index the core tangential range only.
+
+        Pieces are asserted to tile the face exactly. An uncovered strip would leave an
+        UNINITIALISED ghost and an overlap would let whichever piece is written last win --
+        both of which produce a plausible-looking field, the failure mode every other seam
+        defect in this code has had.
+        """
+        axis, _side = face_axis_side(fid)
+        tang = [a for a in range(3) if a != axis]
+        core = [self.blocks[b].shape[a] for a in tang]
+        cov = np.zeros(core, dtype=int)
+        out = [np.zeros((width, core[0], core[1])) for _ in range(ncomp)]
+        for ob, ofid, to_mine, sh, my_span, other_span in pieces:
+            oaxis, oside = face_axis_side(ofid)
+            slabs, olo, ohi = fetch(ob, oaxis, oside)
+            if ncomp == 1:
+                slabs = [slabs]
+            # trim the neighbour's slab to ITS sub-rectangle, in its own face ordering
+            osl = [slice(None), slice(None), slice(None)]
+            if other_span is not None:
+                otang = [a for a in range(3) if a != oaxis]
+                for kk, rng in enumerate(other_span):
+                    if rng is not None:
+                        # +olo shifts from core indices into the padded array's indexing
+                        osl[1 + kk] = slice(rng[0] + olo[otang[kk]], rng[1] + olo[otang[kk]])
+            dst = [slice(None), slice(None)]
+            if my_span is not None:
+                for kk, rng in enumerate(my_span):
+                    if rng is not None:
+                        dst[kk] = slice(rng[0], rng[1])
+            cov[tuple(dst)] += 1
+            for comp in range(ncomp):
+                lay = np.stack([to_mine(l) for l in slabs[comp]])
+                lay = lay[(slice(None),) + tuple(osl[1:])]
+                add = sh[comp] if shifted else 0.0
+                out[comp][(slice(None),) + tuple(dst)] = lay + add
+        if cov.min() != 1 or cov.max() != 1:
+            raise AssertionError(
+                f"block {b} face {FACE_NAMES[fid]}: pieces do not tile it exactly "
+                f"(coverage {cov.min()}..{cov.max()}); a gap leaves an uninitialised ghost and "
+                f"an overlap silently keeps whichever piece was written last")
+        # extend into whatever tangential padding this block carries
+        pre = [(0, 0)] * 3
+        for kk, a in enumerate(tang):
+            pre[1 + kk] = (my_lo[a], my_hi[a])
+        if any(x != (0, 0) for x in pre):
+            out = [np.pad(o, pre, mode="edge") for o in out]
+        return out
 
     def _ghost_coords(self, b, fid, width, src, upto, k, my_lo, my_hi):
         """
         Coordinate ghost layers beyond face `fid`, nearest-first, in b's ordering.
 
         `src` is b's own partially padded field; a connected face instead reads the NEIGHBOUR
-        padded along the same axes so far, via upto(nb, k) -- that is what makes the corner
-        ghosts right when a block is connected on more than one axis.
+        padded along the same axes so far, via comm.fetch_coords_slab(nb, k, ...) -- that is what
+        makes the corner ghosts right when a block is connected on more than one axis, and it
+        is one of the only two places in the codebase where one block reads another's data.
         """
         blk = self.blocks[b]
         axis, side = face_axis_side(fid)
@@ -514,24 +752,26 @@ class Domain:
                 out.append(lay + (jump if side == 1 else -jump))
             return out
 
-        nb = self._neighbour_of(b, fid)
-        if nb is None:
+        pieces = self._neighbours_of(b, fid)
+        if not pieces:
             return None
-        ob, ofid, to_mine, sh = nb
-        other_fields, olo, ohi = upto(ob, k)
-        oaxis, oside = face_axis_side(ofid)
-        out = []
-        for comp, f in enumerate(other_fields):
-            sl = [slice(None)] * 3
-            sl[oaxis] = slice(olo[oaxis], olo[oaxis] + width) if oside == 0 \
-                else slice(f.shape[oaxis] - ohi[oaxis] - width, f.shape[oaxis] - ohi[oaxis])
-            lay = np.moveaxis(f[tuple(sl)], oaxis, 0)
-            if oside == 1:
-                lay = lay[::-1]
-            lay = np.stack([to_mine(l) for l in lay])
-            lay = _match_extent(lay, olo, ohi, my_lo, my_hi, axis)
-            out.append(lay + sh[comp])
-        return out
+        if len(pieces) == 1 and pieces[0][4] is None and pieces[0][5] is None:
+            # THE WHOLE-FACE CASE, untouched: one neighbour covering the entire face. Every grid
+            # built before partial faces existed lands here, so it keeps the identical arrays
+            # and the identical arithmetic.
+            ob, ofid, to_mine, sh = pieces[0][:4]
+            oaxis, oside = face_axis_side(ofid)
+            slabs, olo, ohi = self.comm.fetch_coords_slab(ob, k, oaxis, oside, width, upto)
+            out = []
+            for comp, lay in enumerate(slabs):
+                lay = np.stack([to_mine(l) for l in lay])
+                lay = _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
+                out.append(lay + sh[comp])
+            return out
+        return self._assemble_ghost(b, fid, width, pieces, my_lo, my_hi,
+                                    lambda ob, oaxis, oside: self.comm.fetch_coords_slab(
+                                        ob, k, oaxis, oside, width, upto),
+                                    ncomp=3, shifted=True)
 
     def _ghost_layers_field(self, b, fid, width, cur, fields):
         """Layers of a scalar field beyond face `fid`, in b's ordering. No period shift."""
@@ -555,7 +795,7 @@ class Domain:
         if oside == 1:
             lay = lay[::-1]
         lay = np.stack([to_mine(l) for l in lay])
-        return _match_extent(lay, olo, ohi, my_lo, my_hi, axis)
+        return _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
 
 
     # ------------------------------------------------------------------ seam-aware operators
@@ -614,8 +854,30 @@ class Domain:
                 if (c.fa % 2) == (c.fb % 2):
                     ok = False
                     break
+                # AND THE NORMAL AXES MUST AGREE. A connection joining axis 0 to axis 1 keeps
+                # the identity permutation, no flips, and opposite sides -- so it passed all
+                # three tests above and took the own-metric path, where block B's component
+                # along axis `a` is a DIFFERENT physical direction from block A's. Measured on
+                # two Cartesian blocks joined normally and then rotated: block A's flux
+                # divergence moved by 7.77 on the identical physical grid. The padded-geometry
+                # path below derives each block's metrics in its OWN frame and is exact there.
+                if face_axis_side(c.fa)[0] != face_axis_side(c.fb)[0]:
+                    ok = False
+                    break
             self._aas = ok
         return self._aas
+
+    def _seam_frames_expressible(self):
+        """True when every connection's frame change is a pure axis permutation plus signs.
+
+        That is all seam_axis_map/seam_axis_signs can encode, and it covers every connection
+        this code can build -- `axes` is a permutation and `flips` a sign pair by construction.
+        Kept as an explicit predicate so the own-metric path states its precondition rather
+        than relying on _axis_aligned_seams' much stronger one.
+        """
+        if getattr(self, "_sfe", None) is None:
+            self._sfe = all(sorted(tuple(c.axes)) == [0, 1] for c in self.connections)
+        return self._sfe
 
     def face_fluxes(self, b, us, vs, ws):
         """
@@ -641,15 +903,39 @@ class Domain:
         """
         from src.phase5_fluxes import contravariant_components
         blk = self.blocks[b]
-        if self._axis_aligned_seams():
+        # THE OWN-METRIC PATH IS THE ONE THAT CONSERVES MASS ACROSS A SEAM. Both blocks average
+        # the SAME padded contravariant components there, so the seam flux is identical computed
+        # from either side -- measured exactly 0.000e+00 on the butterfly. The padded-geometry
+        # fallback below recomputes each block's metrics independently and they do not agree at
+        # the seam: the SAME butterfly grid forced down it measures 5.0e-01. So the fallback is
+        # for geometry the own-metric path cannot express, never a matter of taste.
+        #
+        # A permuted, flipped or axis-ROTATING seam used to disqualify the own-metric path,
+        # because block B's component along axis `a` is then a different physical direction from
+        # block A's. That is recoverable: seam_axis_map says WHICH of the neighbour's components
+        # corresponds, and seam_axis_signs says with what sign. Only DIRECT neighbours matter --
+        # the face loop below indexes the CORE tangential range, so corner ghosts of JU are
+        # never read.
+        if self._axis_aligned_seams() or self._seam_frames_expressible():
             comps = {}
             for bb in range(len(self.blocks)):
                 Jb, mb = self.block_metrics_cached(bb)
                 comps[bb] = contravariant_components(us[bb], vs[bb], ws[bb], Jb, mb)
+            amap = self.seam_axis_map(b)
+            asgn = self.seam_axis_signs(b)
             JU, lo, hi = [], None, None
             for axis in range(3):
-                arr, lo, hi = self.pad_field(
-                    b, {bb: comps[bb][axis] for bb in range(len(self.blocks))}, 1)
+                # identity for every like-axis unflipped seam, so those grids keep the same
+                # arrays and the same arithmetic, bitwise
+                src = {}
+                for bb in range(len(self.blocks)):
+                    if bb in amap:
+                        a2 = amap[bb][axis]
+                        sg = asgn[bb][axis]
+                        src[bb] = comps[bb][a2] if sg > 0 else -comps[bb][a2]
+                    else:
+                        src[bb] = comps[bb][axis]
+                arr, lo, hi = self.pad_field(b, src, 1)
                 JU.append(arr)
         else:
             Jp, mp, lo, hi = self.padded_geometry(b, 1)
@@ -777,6 +1063,14 @@ class Domain:
         # value for the face, breaks that.
         nu_of = (lambda b: nu[b]) if isinstance(nu, (dict, list, tuple)) else (lambda b: nu)
 
+        # THE GEOMETRIC FACTOR g IS STATIC and was rebuilt on every call -- 160 calls per step
+        # at each of the two Jg_of sites, 0.074 s/step between them in the 8-rank profile, for
+        # three squares and two adds over a quantity fixed by the mesh.
+        #
+        # CACHE g ALONE, NEVER Js*g OR nu*Js*g. The expression evaluates left to right, and
+        # floating-point multiplication is not associative: caching the product and
+        # re-associating is mathematically identical and broke bitwise agreement with the Gate 0
+        # reference on all 640 arrays. `jg_field` already carries this scar.
         def Jg_of(b, axis):
             m = metrics_list[b]
             key = ("xi", "eta", "zeta")[axis]
@@ -814,15 +1108,15 @@ class Domain:
             axis, _ = face_axis_side(c.fa)
             oaxis, _ = face_axis_side(c.fb)
             h = self.blocks[c.ba].h[axis]
-            JgA = Jg_of(c.ba, axis)[face_slice(c.fa)]
-            JgB = c.align(Jg_of(c.bb, oaxis)[face_slice(c.fb)])
+            JgA = Jg_of(c.ba, axis)[c.idx_a]
+            JgB = c.align(Jg_of(c.bb, oaxis)[c.idx_b])
             cf = 0.5 * (JgA + JgB) / h ** 2
-            aA = conv_coef(c.ba, axis)[face_slice(c.fa)]
-            aB = c.align(conv_coef(c.bb, oaxis)[face_slice(c.fb)])
+            aA = conv_coef(c.ba, axis)[c.idx_a]
+            aB = c.align(conv_coef(c.bb, oaxis)[c.idx_b])
             ga, gb = self.pair_indices(c)
             add_face(ga, gb, cf.ravel(), aA.ravel(), aB.ravel(), h)
-            diag[c.ba][face_slice(c.fa)] += cf
-            diag[c.bb][face_slice(c.fb)] += c.unalign(cf)
+            diag[c.ba][c.idx_a] += cf
+            diag[c.bb][c.idx_b] += c.unalign(cf)
 
         c0 = 1.5 / dt if bdf2 else 1.0 / dt
         for b in range(len(self.blocks)):
@@ -849,6 +1143,75 @@ class Domain:
             tot = sum(mp[f"{k}_{comp}"] * d[a]
                       for a, k in enumerate(("xi", "eta", "zeta")))
             out.append(tot[core])
+        return out
+
+    def seam_axis_map(self, b):
+        """{neighbour: perm} where perm[a] is the neighbour's axis matching THIS block's axis a.
+
+        Direction-tagged quantities -- the contravariant metrics, J*g -- are padded with
+        `pad_field`, which is blind to what a component MEANS: it hands block b the neighbour's
+        component of the SAME INDEX. Across a seam joining axis 0 to axis 1 that is a different
+        physical direction, so the flux operator disagreed with `build_diffusion_matrix` (which
+        correctly reads the neighbour's own normal axis) and no pressure field could make the
+        corrected flux solenoidal -- interior divergence 2.9e+09 on step one.
+
+        The permutation is the identity whenever the seam joins like-numbered axes, so every
+        existing grid keeps the same cache keys and the same arithmetic, bitwise.
+        """
+        cache = self._sam_cache = getattr(self, "_sam_cache", {})
+        if b in cache:
+            return cache[b]
+        out = {}
+        for c in self.connections:
+            if c.ba == b:
+                me, other, fme, foth, perm = c.ba, c.bb, c.fa, c.fb, tuple(c.axes)
+            elif c.bb == b:
+                me, other, fme, foth = c.bb, c.ba, c.fb, c.fa
+                perm = tuple(np.argsort(c.axes))          # inverse permutation
+            else:
+                continue
+            am = face_axis_side(fme)[0]
+            ao = face_axis_side(foth)[0]
+            tm = [a for a in range(3) if a != am]
+            to = [a for a in range(3) if a != ao]
+            m = [None, None, None]
+            m[am] = ao
+            for i in range(2):
+                m[tm[i]] = to[perm[i]]
+            out[other] = tuple(m)
+        cache[b] = out
+        return out
+
+    def seam_axis_signs(self, b):
+        """{neighbour: (s0, s1, s2)} -- sign the neighbour's mapped component carries here.
+
+        A contravariant component J*U^a is tied to the DIRECTION of computational axis a. Across
+        a seam the two blocks' normal axes always run the same physical way (Connection forbids
+        an upper-to-upper join, which is exactly the case that would reverse it), so the normal
+        component keeps its sign. A TANGENTIAL axis reversed by `flips` runs the other way, and
+        its component changes sign. Pair this with seam_axis_map and a neighbour's components
+        can be re-expressed in this block's frame.
+        """
+        cache = self._sas_cache = getattr(self, "_sas_cache", {})
+        if b in cache:
+            return cache[b]
+        out = {}
+        for c in self.connections:
+            if c.ba == b:
+                other, fme, foth, perm = c.bb, c.fa, c.fb, tuple(c.axes)
+            elif c.bb == b:
+                other, fme, foth = c.ba, c.fb, c.fa
+                perm = tuple(np.argsort(c.axes))
+            else:
+                continue
+            am = face_axis_side(fme)[0]
+            tm = [a for a in range(3) if a != am]
+            sg = [1.0, 1.0, 1.0]
+            sg[am] = 1.0
+            for i in range(2):
+                sg[tm[i]] = -1.0 if c.flips[perm[i] if c.ba != b else i] else 1.0
+            out[other] = tuple(sg)
+        cache[b] = out
         return out
 
     def pressure_face_fluxes(self, b, ps, coef_b, coefs, include_orth=True,
@@ -885,17 +1248,36 @@ class Domain:
         # the stencil central at every width-1 cell; the extra layer is then trimmed away.
         pp2 = None
         if rhie_chow:
-            pp2, lo2, _h2 = self.pad_field(b, ps, 2)
+            pp2, lo2, hi2 = self.pad_field(b, ps, 2)
             _off = tuple(lo2[a] - plo[a] for a in range(3))
         KEYS = (("xi_x", "xi_y", "xi_z"), ("eta_x", "eta_y", "eta_z"),
                 ("zeta_x", "zeta_y", "zeta_z"))
 
         def jg_field(axis):
+            # J*g IS STATIC GEOMETRY and was being rebuilt on every call. Profiling one step
+            # found this function entered 288 times, and the `sum(m**2)` generator inside it
+            # 18,432 times, for a quantity that cannot change: J and the metrics come from the
+            # mesh. Only `coefs` varies between calls. Caching the geometric factor turns each
+            # call into one multiply per block.
+            # CACHE g ALONE, NOT J*g. Caching the product and writing coefs*(J*g) changed the
+            # ASSOCIATION -- the original evaluates (coefs*J)*g left to right -- and
+            # floating-point multiplication is not associative, so it broke bitwise identity
+            # against the Gate 0 reference on all 640 arrays while being mathematically
+            # identical. Caching only the geometric sum keeps the arithmetic order intact.
+            cache = self._jg_cache = getattr(self, "_jg_cache", {})
+            amap = self.seam_axis_map(b)
             out = {}
             for bb in range(len(self.blocks)):
-                Jb, mb = self.block_metrics_cached(bb)
-                g = sum(mb[KEYS[axis][c]] ** 2 for c in range(3))
-                out[bb] = coefs[bb] * Jb * g
+                # A NEIGHBOUR ACROSS A ROTATING SEAM MUST SUPPLY ITS MAPPED COMPONENT, not the
+                # one with the same index -- see seam_axis_map. Identity for every like-axis
+                # seam, so this is bitwise inert on existing grids.
+                a_bb = amap[bb][axis] if bb in amap else axis
+                key = (bb, a_bb)
+                if key not in cache:
+                    _, mb = self.block_metrics_cached(bb)
+                    cache[key] = sum(mb[KEYS[a_bb][c]] ** 2 for c in range(3))
+                Jb, _ = self.block_metrics_cached(bb)
+                out[bb] = coefs[bb] * Jb * cache[key]
             return out
 
         if include_cross:
@@ -917,19 +1299,60 @@ class Domain:
             shape = list(blk.shape); shape[axis] += 1
             f = np.zeros(shape)
             # the wide counterpart of the compact face difference, on the SAME padded field
-            dpw = dpw_ok = None
+            dpw = None
             if rhie_chow:
                 g2 = np.gradient(pp2, blk.h[axis], axis=axis, edge_order=2)
+                # A BC-CONSISTENT GHOST AT A PHYSICAL BOUNDARY, which is what makes the wide
+                # half well defined everywhere. `pad_field` supplies no ghost at a wall, inflow
+                # or outflow (`_ghost_field` returns None), so np.gradient falls back to a
+                # one-sided edge_order=2 stencil there. That stencil extrapolates the INTERIOR
+                # field and knows nothing about the pressure BC, so `compact - wide` stops being
+                # the O(h^3) difference of two centred approximations and becomes O(1): tried,
+                # and it grew from 5e+01 to 4e+02 over 30 steps at an inflow and diverged.
+                # Dropping the correction there instead left 4,096 of 533,568 faces with
+                # exactly zero damping, all of them in the one cell layer beside a boundary.
+                #
+                # Neither upstream code has the choice to make, because neither ever forms the
+                # wide gradient from interior data alone. PICT's getPressureAtWithBounds returns
+                # the boundary cell's OWN pressure at a prescribed-velocity bound -- "enforce 0
+                # pressure gradient to avoid changing the prescribed value" -- and its
+                # getPressureGradient then stays a two-point central difference at every cell.
+                # OpenFOAM's fvc::grad(p) is a Gauss sum that reads the fixedFluxPressure patch
+                # value, which constrainPressure has set from the flux. See
+                # reference/rhie_chow_boundary.md.
+                #
+                # With p_ghost = p_boundary the central difference collapses to HALF the
+                # one-sided difference. That is the whole reason this is safe where the
+                # edge_order=2 stencil was not: it is bounded by construction, giving
+                # `compact - wide = compact/2` -- the same sign as the compact term and between
+                # half and all of its magnitude. It cannot run away.
+                #
+                # mb_adjoint.cell_gradient_matrix ALREADY does exactly this: it is P @ F with P
+                # weighting each adjacent face 0.5, and a boundary cell has only one face. The
+                # two implementations disagreed by 5.7e+01 relative on a channel while agreeing
+                # to 2e-16 on a periodic box, confined to the wall-adjacent layers;
+                # verify_rc_divergence measures it and is the test that this restores.
+                # PICT_RC_BOUNDARY: 'legacy' = pre-fix one-sided edge stencil
+                # everywhere; 'ghost' = zero-gradient ghost everywhere (the
+                # 2026-09-05 fix, which R8 showed EXCITES the Dong-junction
+                # mode); default 'auto' = BC-AWARE -- ghost at walls/inflow,
+                # one-sided at faces whose pressure the solve PINS (Dong rows
+                # are Dirichlet, so the boundary value anchors the interior
+                # extrapolation; the runaway the ghost fix feared was measured
+                # at an UNPINNED inflow). reference/rhie_chow_boundary.md.
+                _mode = os.environ.get("PICT_RC_BOUNDARY", "auto")
+                _pinned = (frozenset() if _mode == "ghost"
+                           else getattr(self, "pressure_pinned", frozenset()))
+                for side, absent in ((0, lo2[axis] == 0), (1, hi2[axis] == 0)):
+                    if not absent or _mode == "legacy" or (b, axis, side) in _pinned:
+                        continue                  # a real ghost is present; g2 is already central
+                    sb = [slice(None)] * 3; sb[axis] = -1 if side else 0
+                    sn = [slice(None)] * 3; sn[axis] = -2 if side else 1
+                    d = pp2[tuple(sb)] - pp2[tuple(sn)] if side else \
+                        pp2[tuple(sn)] - pp2[tuple(sb)]
+                    g2[tuple(sb)] = 0.5 * d / blk.h[axis]
                 sl2 = tuple(slice(_off[a], _off[a] + pp.shape[a]) for a in range(3))
                 dpw = g2[sl2]
-                # Where np.gradient fell back to a ONE-SIDED stencil, `compact - wide` is no
-                # longer the O(h^3) difference of two centred second-order approximations --
-                # it is an O(1) spurious term. Harmless at a wall (dp/dn ~ 0) and fatal at an
-                # inflow, where it grew from 5e+01 to 4e+02 over 30 steps and then diverged.
-                # Mark those cells and drop the correction on any face that touches one.
-                ok2 = np.ones(pp2.shape[axis], bool); ok2[0] = ok2[-1] = False
-                shp = [1, 1, 1]; shp[axis] = pp.shape[axis]
-                dpw_ok = ok2[_off[axis]:_off[axis] + pp.shape[axis]].reshape(shp)
             core = [slice(lo[a], lo[a] + blk.shape[a]) for a in range(3)]
             ccore = [slice(glo[a], glo[a] + blk.shape[a]) for a in range(3)] \
                 if include_cross else None
@@ -947,13 +1370,8 @@ class Domain:
                     cf = 0.5 * (Jg[tuple(s1)] + Jg[tuple(s2)])
                     val = val + cf * (pp[tuple(s2)] - pp[tuple(s1)]) / blk.h[axis]
                     if rhie_chow:
-                        good = (np.take(dpw_ok, a_lo, axis=axis).all()
-                                and np.take(dpw_ok, a_hi, axis=axis).all())
-                        if good:
-                            val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
-                                               + Jg[tuple(s2)] * dpw[tuple(s2)])
-                        else:
-                            val = 0.0 * val   # no valid wide stencil -> no correction here
+                        val = val - 0.5 * (Jg[tuple(s1)] * dpw[tuple(s1)]
+                                           + Jg[tuple(s2)] * dpw[tuple(s2)])
                 if include_cross:
                     c1 = list(ccore); c1[axis] = glo[axis] + k - 1
                     c2 = list(ccore); c2[axis] = glo[axis] + k
@@ -994,6 +1412,8 @@ class Domain:
         rows, cols, vals = [], [], []
         diag = [np.zeros(b.shape) for b in self.blocks]
 
+        # g is static -- see the note at the momentum Jg_of. Same cache, same reason, and the
+        # same rule: g alone, never c*Js*g, or the association changes and bitwise identity goes.
         def Jg_of(b, axis):
             m = metrics_list[b]
             key = ("xi", "eta", "zeta")[axis]
@@ -1034,14 +1454,14 @@ class Domain:
                 raise ValueError(
                     f"{c}: computational spacing differs across the seam ({ha:.6g} vs "
                     f"{hb:.6g}). The face coefficient would be ambiguous.")
-            JgA = Jg_of(c.ba, axis)[face_slice(c.fa)]
-            JgB = c.align(Jg_of(c.bb, oaxis)[face_slice(c.fb)])
+            JgA = Jg_of(c.ba, axis)[c.idx_a]
+            JgB = c.align(Jg_of(c.bb, oaxis)[c.idx_b])
             cf = 0.5 * (JgA + JgB) / ha ** 2
             ga, gb = self.pair_indices(c)
             rows += [ga, gb]; cols += [gb, ga]
             vals += [-cf.ravel(), -cf.ravel()]
-            diag[c.ba][face_slice(c.fa)] += cf
-            diag[c.bb][face_slice(c.fb)] += c.unalign(cf)
+            diag[c.ba][c.idx_a] += cf
+            diag[c.bb][c.idx_b] += c.unalign(cf)
 
         for b in range(len(self.blocks)):
             rows.append(self.global_ids(b).ravel())
@@ -1074,6 +1494,17 @@ class Domain:
             raise TypeError(
                 "pad_field needs the field for EVERY block, as a dict or list keyed by block "
                 "index -- a connected face reads across the seam.")
+        cur, lo, hi = self._field_upto(fields, width)(b, 3)
+        return cur, lo, hi
+
+    def _field_upto(self, fields, width):
+        """The memoised padding recursion, as a closure.
+
+        Extracted so the COLLECTIVE halo exchange can drive exactly the same recursion the
+        local padding will drive -- see src/comm_mpi.py. Nothing about the arithmetic changed
+        when it moved; Gate 1's criterion is bitwise and a merely-equivalent recursion would
+        not do.
+        """
         order = (0, 1, 2)
         memo = {}
 
@@ -1113,8 +1544,18 @@ class Domain:
             memo[key] = res
             return res
 
-        cur, lo, hi = upto(b, 3)
-        return cur, lo, hi
+        # WHICH BLOCKS THIS DICT ACTUALLY CARRIES. The halo exchange exists to supply data a
+        # rank does NOT have; when the caller already holds a block's field there is nothing to
+        # fetch and no reason to communicate. The global assembly path is exactly that case --
+        # `map_blocks` has already gathered, so every rank holds every block -- and without this
+        # the distributed run demanded exchanged slabs for blocks whose data was sitting in the
+        # very dict being padded.
+        try:
+            upto.covers = frozenset(b for b in range(len(self.blocks))
+                                    if fields[b] is not None)
+        except (KeyError, IndexError, TypeError):
+            upto.covers = frozenset(range(len(self.blocks)))
+        return upto
 
     def _ghost_field(self, b, fid, width, src, upto, k, my_lo, my_hi):
         """Field ghost layers beyond face `fid`, nearest-first, in b's ordering. NO shift."""
@@ -1126,23 +1567,21 @@ class Domain:
             sl[axis] = slice(0, width) if side == 1 else slice(-width, None)
             lay = np.moveaxis(src[tuple(sl)], axis, 0)
             return lay if side == 1 else lay[::-1]
-        nb = self._neighbour_of(b, fid)
-        if nb is None:
+        pieces = self._neighbours_of(b, fid)
+        if not pieces:
             return None
-        ob, ofid, to_mine, _ = nb
-        other, olo, ohi = upto(ob, k)
-        oaxis, oside = face_axis_side(ofid)
-        sl = [slice(None)] * 3
-        sl[oaxis] = slice(olo[oaxis], olo[oaxis] + width) if oside == 0 \
-            else slice(other.shape[oaxis] - ohi[oaxis] - width,
-                       other.shape[oaxis] - ohi[oaxis])
-        lay = np.moveaxis(other[tuple(sl)], oaxis, 0)
-        if oside == 1:
-            lay = lay[::-1]
-        # reconcile only the MISMATCH in tangential padding -- the two blocks either side of a
-        # connection can differ at a reentrant corner of an obstacle
-        lay = np.stack([to_mine(l) for l in lay])
-        return _match_extent(lay, olo, ohi, my_lo, my_hi, axis)
+        if len(pieces) == 1 and pieces[0][4] is None and pieces[0][5] is None:
+            ob, ofid, to_mine, _ = pieces[0][:4]
+            oaxis, oside = face_axis_side(ofid)
+            lay, olo, ohi = self.comm.fetch_field_slab(ob, k, oaxis, oside, width, upto)
+            # reconcile only the MISMATCH in tangential padding -- the two blocks either side of
+            # a connection can differ at a reentrant corner of an obstacle
+            lay = np.stack([to_mine(l) for l in lay])
+            return _match_extent(lay, olo, ohi, my_lo, my_hi, axis, oaxis=oaxis)
+        return self._assemble_ghost(b, fid, width, pieces, my_lo, my_hi,
+                                    lambda ob, oaxis, oside: self.comm.fetch_field_slab(
+                                        ob, k, oaxis, oside, width, upto),
+                                    ncomp=1, shifted=False)[0]
 
     def wall_mask(self):
         """
@@ -1179,9 +1618,23 @@ class Domain:
         blk = self.blocks[b]
         pf, lo, hi = self.pad_field(b, fields, width)
         Jp, mp, plo, phi_ = self.padded_geometry(b, width)
-        g12 = sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz")
-        g13 = sum(mp[f"xi_{c}"] * mp[f"zeta_{c}"] for c in "xyz")
-        g23 = sum(mp[f"eta_{c}"] * mp[f"zeta_{c}"] for c in "xyz")
+        # THE OFF-DIAGONAL METRIC PRODUCTS ARE STATIC. They come from the mesh alone, and were
+        # being rebuilt on all 192 calls a step. Cached per (block, width).
+        #
+        # This term is NOT skipped on orthogonal meshes, even though it evaluates to round-off
+        # there (measured 5.2e-12 of |u|max on the cylinder, whose worst |cos| between grid
+        # directions is 2.3e-12). Skipping it would save more -- most of the cost is the six
+        # np.gradient calls below, which are field-dependent and cannot be cached -- but the
+        # correction is the whole reason this function exists, and non-orthogonal meshes are
+        # coming. Deleting physics to speed up a case that does not need it is how a solver
+        # silently loses the ability to run the case that does.
+        gk = self._g_off_cache = getattr(self, "_g_off_cache", {})
+        key = (b, width)
+        if key not in gk:
+            gk[key] = (sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz"),
+                       sum(mp[f"xi_{c}"] * mp[f"zeta_{c}"] for c in "xyz"),
+                       sum(mp[f"eta_{c}"] * mp[f"zeta_{c}"] for c in "xyz"))
+        g12, g13, g23 = gk[key]
         d = [np.gradient(pf, blk.h[a], axis=a, edge_order=2) for a in range(3)]
         fx = Jp * (g12 * d[1] + g13 * d[2])
         fe = Jp * (g12 * d[0] + g23 * d[2])

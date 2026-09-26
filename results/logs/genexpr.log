@@ -1,0 +1,9 @@
+   own/step calls/step  line  source
+     0.0233       1152   920  tot = sum(mp[f"{k}_{comp}"] * d[a]
+     0.0083        768  1281  g12 = sum(mp[f"xi_{c}"] * mp[f"eta_{c}"] for c in "xyz")
+     0.0064        768  1282  g13 = sum(mp[f"xi_{c}"] * mp[f"zeta_{c}"] for c in "xyz")
+     0.0055        768  1283  g23 = sum(mp[f"eta_{c}"] * mp[f"zeta_{c}"] for c in "xyz")
+     0.0028       5760   740  core = [slice(lo[a], lo[a] + blk.shape[a]) for a in range(3)]
+     0.0020         64   539  res = ([blk.x.copy(), blk.y.copy(), blk.z.copy()], [0, 0, 0], [0, 0, 0])
+     0.0017       1792  1243  lay = np.stack([to_mine(l) for l in lay])
+     0.0016        192   360  eps = 1e-30

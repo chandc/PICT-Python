@@ -1,0 +1,10 @@
+--- n=2 ---
+  [PASS] reductions at 2 ranks match serial: worst relative 0.000e+00 (on n/a)  [criterion 1e-12]
+  [PASS] grid_fingerprint identical on all 2 rank(s): e7a59005e2228ee3...
+  [PASS] exact restart at 2 ranks: 20 continuous vs 10+restart+10 differ by 0.000e+00
+  3/3 checks passed at 2 rank(s)
+--- n=4 ---
+  [PASS] reductions at 4 ranks match serial: worst relative 0.000e+00 (on n/a)  [criterion 1e-12]
+  [PASS] grid_fingerprint identical on all 4 rank(s): e7a59005e2228ee3...
+  [PASS] exact restart at 4 ranks: 20 continuous vs 10+restart+10 differ by 0.000e+00
+  3/3 checks passed at 4 rank(s)

@@ -1,0 +1,8 @@
+--- n=4 ---
+  [PASS] 4 ranks, rtol 1e-09, 10 steps vs serial PETSc: max relative difference 8.041e-14  (criterion < 1e-12)
+  [PASS] pressure iterations [436, 433, 426, 411, 436, 452, 455, 458, 445, 456]
+           serial [np.int64(394), np.int64(394), np.int64(395), np.int64(392), np.int64(397), np.int64(408), np.int64(409), np.int64(409), np.int64(404), np.int64(406)]  -> total ratio 1.10x (abort above 2x; bjacobi is partition-dependent)
+--- n=8 ---
+  [PASS] 8 ranks, rtol 1e-09, 10 steps vs serial PETSc: max relative difference 8.727e-14  (criterion < 1e-12)
+  [PASS] pressure iterations [431, 432, 429, 421, 436, 438, 449, 451, 450, 450]
+           serial [np.int64(394), np.int64(394), np.int64(395), np.int64(392), np.int64(397), np.int64(408), np.int64(409), np.int64(409), np.int64(404), np.int64(406)]  -> total ratio 1.09x (abort above 2x; bjacobi is partition-dependent)

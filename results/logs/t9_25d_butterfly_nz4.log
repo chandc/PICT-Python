@@ -1,0 +1,18 @@
+T9-2.5D meshes/cylinder_butterfly.msh: 6992 cells x 4 planes (Lz=4.0), Re=100.0, dt=0.005, eps3d=0.001, 30000 steps to T=150.0
+  t=  10.00  Cd 1.4840  Cl -0.0064 (amp 0.0555)  Cd_p 1.0696  E3d 3.902e-08  |w|max 2.31e-04  (132.0 ms/step)
+  t=  20.00  Cd 1.3263  Cl +0.0076 (amp 0.0842)  Cd_p 0.9835  E3d 1.103e-09  |w|max 1.85e-05  (131.8 ms/step)
+  t=  30.00  Cd 1.3873  Cl -0.0002 (amp 0.2018)  Cd_p 1.0325  E3d 3.036e-09  |w|max 1.94e-05  (134.4 ms/step)
+  t=  40.00  Cd 1.4388  Cl -0.0319 (amp 0.2706)  Cd_p 1.0729  E3d 7.994e-10  |w|max 9.40e-06  (134.9 ms/step)
+  t=  50.00  Cd 1.4597  Cl +0.0244 (amp 0.3097)  Cd_p 1.0893  E3d 1.128e-10  |w|max 4.30e-06  (134.3 ms/step)
+  t=  60.00  Cd 1.4678  Cl +0.0308 (amp 0.3188)  Cd_p 1.0958  E3d 8.285e-12  |w|max 1.35e-06  (133.8 ms/step)
+  t=  70.00  Cd 1.4690  Cl -0.0270 (amp 0.3224)  Cd_p 1.0967  E3d 4.147e-13  |w|max 2.86e-07  (133.6 ms/step)
+  t=  80.00  Cd 1.4706  Cl -0.0313 (amp 0.3232)  Cd_p 1.0980  E3d 9.286e-15  |w|max 4.02e-08  (133.4 ms/step)
+  t=  90.00  Cd 1.4698  Cl +0.0263 (amp 0.3235)  Cd_p 1.0973  E3d 1.983e-16  |w|max 5.92e-09  (133.2 ms/step)
+  t= 100.00  Cd 1.4708  Cl +0.0322 (amp 0.3235)  Cd_p 1.0981  E3d 2.529e-18  |w|max 6.35e-10  (132.8 ms/step)
+  t= 110.00  Cd 1.4699  Cl -0.0253 (amp 0.3235)  Cd_p 1.0974  E3d 4.323e-20  |w|max 9.10e-11  (132.2 ms/step)
+  t= 120.00  Cd 1.4708  Cl -0.0330 (amp 0.3236)  Cd_p 1.0981  E3d 5.501e-22  |w|max 9.54e-12  (131.7 ms/step)
+  t= 130.00  Cd 1.4700  Cl +0.0242 (amp 0.3236)  Cd_p 1.0975  E3d 9.929e-24  |w|max 1.37e-12  (131.3 ms/step)
+  t= 140.00  Cd 1.4707  Cl +0.0338 (amp 0.3236)  Cd_p 1.0981  E3d 1.507e-25  |w|max 1.55e-13  (130.8 ms/step)
+  t= 150.00  Cd 1.4700  Cl -0.0231 (amp 0.3236)  Cd_p 1.0975  E3d 3.489e-27  |w|max 2.66e-14  (130.0 ms/step)
+  10 periods, mean 5.7058 +- 0.0000
+RESULT meshes/cylinder_butterfly.msh: St=0.1753  Cd_mean=1.4704  Cl_rms=0.2289  Cl_amp=0.3236  Cd_p=1.0978  E3d_end=3.489e-27  (window t=90.0..150.0)

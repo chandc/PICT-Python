@@ -1,0 +1,4 @@
+  blow t= 10.0 CD(last 10) 1.5153 CL rms 0.6092 (127 ms/step)
+  blow t= 20.0 CD(last 10) 1.4101 CL rms 0.2980 (127 ms/step)
+  blow t= 30.0 CD(last 10) 1.3995 CL rms 0.2750 (127 ms/step)
+BASELINE blow: mean CD over t=0..30: 1.4416   last 60%: 1.4087   CL rms 0.2814   return sum(-dt*CD) -43.25

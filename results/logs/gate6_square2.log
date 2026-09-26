@@ -1,0 +1,3 @@
+   1 |   3.019 | cells/rank 164,192-164,192 | load max/mean 1.000x | ceiling 1.00x | LOCAL-work spread   0.0% | press 2.224 | comm 0.039
+   2 |   2.392 | cells/rank 69,856-94,336 | load max/mean 1.149x | ceiling 1.74x | LOCAL-work spread   3.5% | press 1.756 | comm 0.058
+   4 |   1.588 | cells/rank 19,832-50,024 | load max/mean 1.219x | ceiling 3.28x | LOCAL-work spread  10.8% | press 0.997 | comm 0.100
