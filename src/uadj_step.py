@@ -20,7 +20,7 @@ import numpy as np
 import torch
 
 from src.uops import DIRICHLET, NEUMANN
-from src.uadj_ops import (DT, Masks, Pattern, TBC, TGradient, TMesh, SparseConst,
+from src.uadj_ops import (DT, TIE, Masks, st_mask, Pattern, TBC, TGradient, TMesh, SparseConst,
                           convection_rhs, convection_vals, laplacian_rhs, laplacian_vals, _t)
 from src.uadj_solve import LUFactor, lu_solve
 
@@ -144,7 +144,13 @@ class TorchUPISO:
         aP = pat.diag(A)
         rs = pat.rowsum(A); floor = a_t * tm.vol
         keep = self.masks("simplec", lambda: rs >= floor)       # np.maximum(rowsum, a_t V)
-        aC = torch.where(keep, rs, floor)
+        tie = self.masks("simplec_tie", lambda: (rs - floor).abs() <= TIE * floor)
+        if self.masks.mode == "replay":
+            keep = torch.where(tie, rs.detach() >= floor, keep)
+        # value: production's branch; derivative: the midpoint where rowsum sits on its floor (the
+        # viscous row sum is zero, so interior cells are within round-off of the floor: finding 12)
+        wk = torch.where(tie, torch.full_like(floor, 0.5), keep.to(DT))
+        aC = st_mask(rs, keep.to(DT), wk) + st_mask(floor, (~keep).to(DT), 1.0 - wk)
         return x, aP, aC
 
     def _gam(self, Dcell):

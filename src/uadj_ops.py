@@ -58,6 +58,22 @@ class Masks:
         r = Masks("replay"); r.log = self.log; return r
 
 
+TIE = 1e-12          # |F| <= TIE * max|F| (or rowsum within TIE of its floor) is a tie
+
+
+def st_mask(x, value_mask, grad_weight):
+    """x * value_mask in VALUE, with d/dx = grad_weight: the branch production took for the forward,
+    and the average of the two one-sided derivatives (weight 1/2) where the decision is a tie.
+
+    WHY: a symmetric state sits ON the kinks. On the faces crossing a symmetry axis v = 0, so F = 0
+    exactly, and F * phi_upwind has one-sided derivatives phi_owner and phi_neighbour, which differ
+    at O(1) even though F ~ 0. The branch round-off picks is asymmetric, and the adjoint then broke
+    the mirror symmetry the forward keeps exactly (dC_D/domega 5.7e-4 of dC_L/domega where it must
+    be 0; record finding 12). The midpoint of the two derivatives is what a central difference
+    measures, and it is symmetric."""
+    return x.detach() * value_mask + (x - x.detach()) * grad_weight
+
+
 class SparseConst:
     """A constant sparse matrix as entry lists; y = A x is differentiable in x."""
 
@@ -229,32 +245,43 @@ def laplacian_rhs(tm, gam_f, dir_face_mask, grad_phi, bvalues=None):
 def convection_vals(tm, pat, F, masks):
     """Implicit upwind part of `uops.convection` on the superset pattern."""
     pos = masks("upwind", lambda: F >= 0.0)
-    Fi, pi = F[tm.fi], pos[tm.fi].to(DT)
-    Fo, Fn = Fi * pi, Fi * (1.0 - pi)                      # owner-upwind and neighbour-upwind parts
+    tie = masks("upwind_tie", lambda: F.abs() <= TIE * F.abs().max())
+    if masks.mode == "replay":
+        # FD probes: pinned to the recorded branch EXCEPT at ties, where the live decision lets the
+        # +-h pair straddle the kink, so the central difference measures the same midpoint slope
+        # the adjoint returns (the value is continuous there: F * phi = 0 on both sides of F = 0)
+        pos = torch.where(tie, F.detach() >= 0.0, pos)
+    p = pos.to(DT)
+    w = torch.where(tie, torch.full_like(p, 0.5), p)       # derivative weight of the owner branch
+    Fi = F[tm.fi]
+    pi, wi = p[tm.fi], w[tm.fi]
+    Fo = st_mask(Fi, pi, wi)                               # owner-upwind part
+    Fn = st_mask(Fi, 1.0 - pi, 1.0 - wi)                   # neighbour-upwind part
     v = pat.zeros()
     v = v.index_add(0, pat.p_oo, Fo).index_add(0, pat.p_no, -Fo)
     v = v.index_add(0, pat.p_on, Fn).index_add(0, pat.p_nn, -Fn)
-    Fb = F[tm.fb] * pos[tm.fb].to(DT)                      # boundary outflow: owner's own value
-    return v.index_add(0, pat.p_bb, Fb), pos
+    Fb = st_mask(F[tm.fb], p[tm.fb], w[tm.fb])             # boundary outflow: owner's own value
+    return v.index_add(0, pat.p_bb, Fb), (pos, w)
 
 
 def convection_rhs(tm, F, pos, phi, phi_b, grad_phi, scheme):
     """`rhs_fn` of `uops.convection`: boundary inflow/outflow terms and deferred central."""
+    pos, wgt = pos
+    p = pos.to(DT)
     out = torch.zeros(tm.ncell, dtype=DT)
-    Fb, posb = F[tm.fb], pos[tm.fb]
-    inflow = torch.where(posb, torch.zeros_like(Fb), Fb * phi_b[tm.bidx_b])
+    Fb, pb_, wb = F[tm.fb], p[tm.fb], wgt[tm.fb]
+    inflow = st_mask(Fb, 1.0 - pb_, 1.0 - wb) * phi_b[tm.bidx_b]
     out = out.index_add(0, tm.o_b, inflow)
     ext = (grad_phi[tm.o_b] * tm.dx_b).sum(dim=1)
-    outflow = torch.where(posb, Fb * ext, torch.zeros_like(Fb))
+    outflow = st_mask(Fb, pb_, wb) * ext
     out = out.index_add(0, tm.o_b, outflow)
     if scheme == "upwind":
         return out
-    pi = pos[tm.fi]
+    Fi, pi, wi = F[tm.fi], p[tm.fi], wgt[tm.fi]
     po, pn = phi[tm.o_i], phi[tm.n_i]
-    up = torch.where(pi, po, pn)
     w = tm.w_i
     ce = w * po + (1.0 - w) * pn
     gf = w[:, None] * grad_phi[tm.o_i] + (1.0 - w)[:, None] * grad_phi[tm.n_i]
     ce = ce + (gf * tm.skew_i).sum(dim=1)
-    corr = F[tm.fi] * (ce - up)
+    corr = Fi * ce - (st_mask(Fi, pi, wi) * po + st_mask(Fi, 1.0 - pi, 1.0 - wi) * pn)
     return out.index_add(0, tm.o_i, corr).index_add(0, tm.n_i, -corr)

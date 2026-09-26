@@ -77,11 +77,28 @@ CASES = {"cavity_quads": cavity_quads, "cavity_tris": cavity_tris,
          "channel_open": channel_open, "channel_periodic": channel_periodic}
 
 
-def cylinder(mesh="meshes/cylinder_butterfly_coarse.msh", Re=100.0, dt=0.01, nsteps=5):
+def mirror_nodes(nodes, tol=1e-3):
+    """Snap a nearly mirror-symmetric node set to EXACT symmetry about y = 0: each node and its
+    mirror partner get x averaged and y = +-(|y| averaged); nodes on the axis get y = 0. Gmsh
+    writes coordinates to about 1e-9, which would otherwise floor every symmetry test there."""
+    from scipy.spatial import cKDTree
+    X = np.asarray(nodes, dtype=float).copy()
+    d, j = cKDTree(X).query(X * [1.0, -1.0])
+    if d.max() > tol:
+        raise ValueError(f"mesh is not mirror-symmetric: node offset {d.max():.2e}")
+    x = 0.5 * (X[:, 0] + X[j, 0]); y = 0.5 * (X[:, 1] - X[j, 1])
+    y[j == np.arange(len(X))] = 0.0
+    return np.stack([x, y], axis=1)
+
+
+def cylinder(mesh="meshes/cylinder_butterfly_coarse.msh", Re=100.0, dt=0.01, nsteps=5, symmetrize=False,
+             seed_v=0.05):
     """M4/M5: the T9 cylinder on a production Gmsh mesh, run_ucylinder.py's BCs exactly: Inlet
     u = 1; Freestream v = 0 with u free (symmetry); Outlet p = 0; Cylinder no-slip."""
     from src.umesh import read_gmsh22, Mesh
     nodes, cells, ctag, edges, etag, names = read_gmsh22(mesh)
+    if symmetrize:
+        nodes = mirror_nodes(nodes)
     m = Mesh(nodes, cells, edges, etag, names)
     inv = {v: k for k, v in names.items()}
     T_IN, T_FS, T_OUT, T_CYL = inv["Inlet"], inv["Freestream"], inv["Outlet"], inv["Cylinder"]
@@ -92,13 +109,38 @@ def cylinder(mesh="meshes/cylinder_butterfly_coarse.msh", Re=100.0, dt=0.01, nst
     s = PISO(m, nu=1.0 / Re, dt=dt, bc_u=BC(m, ku, vu), bc_v=BC(m, kv, np.zeros(nb)),
              bc_p=BC(m, kp, np.zeros(nb)), n_corr=2, n_nonorth=3, scheme="central", convect=True)
     C = m.centroid
-    s.u[:] = 1.0; s.v[:] = 0.05 * np.exp(-((C[:, 0] - 1.0) ** 2 + C[:, 1] ** 2))
+    s.u[:] = 1.0; s.v[:] = seed_v * np.exp(-((C[:, 0] - 1.0) ** 2 + C[:, 1] ** 2))
     s.wall_faces = np.flatnonzero(m.boundary & (m.btag == T_CYL))
     return _run(s, nsteps)
 
 
 def cylinder_tris(**kw):
     return cylinder(mesh="meshes/cylinder_medium.msh", **kw)
+
+
+def symmetric_steady_cylinder(Re=40.0, dt=0.02, nsteps=2500, free_steps=50,
+                              mesh="meshes/cylinder_butterfly_coarse.msh"):
+    """The steady symmetric wake on an exactly mirror-symmetric mesh (plan P5). Converged with the
+    mirror projection run_ucylinder.py --steady uses (u, p even in y, v odd), then `free_steps`
+    unprojected steps so every history array (F, F_prev, F_old, Fbar_old) belongs to the same
+    free dynamics; below onset any asymmetry left then decays rather than grows.
+
+    The coarse butterfly's nodes pair uniquely under the mirror but sit up to 4e-4 off it; they are
+    snapped (`mirror_nodes`), a valid mesh within 4e-4 of the T9 one. (`cylinder_bf2_coarse`, which
+    is symmetric as written, is the MMS mesh on a different domain and gives C_D < 0 within 100
+    production steps at Re 40; it is not a flow case.)"""
+    from scipy.spatial import cKDTree
+    s = cylinder(mesh=mesh, Re=Re, dt=dt, nsteps=0, symmetrize=True, seed_v=0.0)
+    C = s.m.centroid
+    d, mir = cKDTree(C).query(C * [1.0, -1.0])
+    assert d.max() < 1e-12, d.max()
+    s.mirror = mir
+    for _ in range(nsteps):
+        s.step()
+        s.u[:] = 0.5 * (s.u + s.u[mir]); s.v[:] = 0.5 * (s.v - s.v[mir]); s.p[:] = 0.5 * (s.p + s.p[mir])
+    for _ in range(free_steps):
+        s.step()
+    return s
 
 
 PRODUCTION = {"cylinder_butterfly": cylinder, "cylinder_tris": cylinder_tris}

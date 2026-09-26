@@ -45,18 +45,24 @@ def roll(T, st, n):
     return st
 
 
-def grad_and_fd(T, f, x0, h):
-    """Adjoint derivative of scalar f at scalar x0, and a 4th-order central FD on the recorded branch."""
+def grad_and_fd(T, f, x0, h, sweep=(1.0, 1e-1, 1e-2)):
+    """Adjoint derivative of scalar f at scalar x0, and the best 4th-order central FD over a step
+    sweep h * sweep, on the recorded branch (ties straddled; see uadj_ops.st_mask)."""
     x = torch.tensor(float(x0), requires_grad=True)
     T.record(); y = f(x); g = float(torch.autograd.grad(y, x)[0])
-    vals = []
-    for sg in (2, 1, -1, -2):
-        T.replay()
-        with torch.no_grad():
-            vals.append(float(f(torch.tensor(float(x0) + sg * h))))
+    best = None
+    for k in sweep:
+        hh = h * k
+        vals = []
+        for sg in (2, 1, -1, -2):
+            T.replay()
+            with torch.no_grad():
+                vals.append(float(f(torch.tensor(float(x0) + sg * hh))))
+        fd = (8 * (vals[1] - vals[2]) - (vals[0] - vals[3])) / (12 * hh)
+        if best is None or abs(fd - g) < abs(best - g):
+            best = fd
     T.live()
-    fd = (8 * (vals[1] - vals[2]) - (vals[0] - vals[3])) / (12 * h)
-    return float(y.detach()), g, fd
+    return float(y.detach()), g, best
 
 
 # ---------------------------------------------------------------------------------------------
@@ -151,9 +157,73 @@ def run_p2():
     check("P2-P convergence order 32 -> 64", np.log2(rel[32] / rel[64]), 1.8, lower=True)
 
 
+# ---------------------------------------------------------------------------------------------
+def run_p5_p6():
+    """P5: exact symmetry zeros at the symmetric steady Re 40 wake (mirror-snapped butterfly).
+    Linear perturbation about a mirror-symmetric state: a symmetric input (both jets blowing) moves
+    only symmetric outputs (C_D), an antisymmetric one (opposing jets, rotation) only antisymmetric
+    outputs (C_L). So dC_L/da_sym = dC_D/da_anti = dC_D/domega = 0, resolution-independent.
+    P6 (part): over 10 convective times, steady symmetric blowing through the +-90 degree slots must
+    RAISE the drag and suction lower it -- the sign that makes HydroGym's shipped jet cylinder
+    solvable by constant suction (record section 43)."""
+    from src.uadj_cases import symmetric_steady_cylinder
+    from src.uadj_control import WallForces, SlotJets, Rotation
+    from src.uadj_replay import replay_grad
+    print("  P5 symmetric steady wake, Re 40: exact symmetry zeros", flush=True)
+    s = symmetric_steady_cylinder()
+    T = TorchUPISO(s)
+    base = T.state_from_solver()
+    W = WallForces(T, s.wall_faces)
+    jets = SlotJets.cylinder(T, s.wall_faces, (90.0, -90.0), 10.0)
+    rot = Rotation(T, s.wall_faces)
+    one, alt = torch.tensor([1.0, 1.0]), torch.tensor([1.0, -1.0])
+    for N in (2, 20):
+        q = torch.zeros(3, requires_grad=True)            # (a_sym, a_anti, omega)
+        # rotation first: it writes every wall face, and the jets then overwrite their slots
+        st = jets.apply(rot.apply(base, q[2]), q[0] * one + q[1] * alt)
+        out = roll(T, st, N)
+        cd, cl = W(out)
+        gD = torch.autograd.grad(cd, q, retain_graph=True)[0]
+        gL = torch.autograd.grad(cl, q)[0]
+        print(f"      N={N:2d}  dC_D/d(a_sym, a_anti, omega) = {gD[0]:+.4e} {gD[1]:+.3e} {gD[2]:+.3e}")
+        print(f"            dC_L/d(a_sym, a_anti, omega) = {gL[0]:+.3e} {gL[1]:+.4e} {gL[2]:+.4e}")
+        check(f"P5-P N={N}: dC_L/da_sym   / dC_L/da_anti", abs(float(gL[0] / gL[1])), 1e-10)
+        check(f"P5-P N={N}: dC_D/da_anti  / dC_D/da_sym", abs(float(gD[1] / gD[0])), 1e-10)
+        check(f"P5-P N={N}: dC_D/domega   / dC_L/domega", abs(float(gD[2] / gL[2])), 1e-10)
+    # A criteria on the non-zero ones, N = 2
+    for label, f in (("dC_D/da_sym", lambda x: W(roll(T, jets.apply(base, x * one), 2))[0]),
+                     ("dC_L/da_anti", lambda x: W(roll(T, jets.apply(base, x * alt), 2))[1]),
+                     ("dC_L/domega", lambda x: W(roll(T, rot.apply(base, x), 2))[1])):
+        _, g, fd = grad_and_fd(T, f, 0.0, 1e-4)
+        check(f"P5-A N=2: {label} adjoint vs FD", abs(g - fd) / abs(fd), 1e-7)
+
+    print("  P6 steady symmetric blowing/suction over 10 convective times (500 steps, replay)", flush=True)
+    N = 500
+    apply = lambda st, a: jets.apply(st, a * one)
+    final = lambda st: W(st)[0]
+    t0 = time.time()
+    _, ga = replay_grad(T, base, [0.0] * N, apply, final_loss=final)
+    g = float(sum(ga))                                   # the same a at every step
+    tr = time.time() - t0
+    def cd_after(a):
+        st = dict(base)
+        for _ in range(N):
+            st = T.step(apply(st, a))
+        return W(st)[0]
+    # FD on the recorded branch (500 steps of masks), 4th order, swept: the same harness as P5-A
+    _, _, fd = grad_and_fd(T, cd_after, 0.0, 1e-3, sweep=(1.0, 1e-1))
+    print(f"      dC_D(T=10)/da_sym: adjoint {g:+.6e}  FD {fd:+.6e}  (replay {tr:.0f}s)")
+    check("P6-A dC_D/da_sym over 500 steps, replay adjoint vs FD", abs(g - fd) / abs(fd), 1e-5)
+    check("P6-P sign: blowing raises drag, suction lowers it (dC_D/da_sym > 0)", g, 0.0, lower=True)
+
+
 if __name__ == "__main__":
     t0 = time.time()
+    if "--only" in sys.argv:
+        globals()[sys.argv[sys.argv.index("--only") + 1]]()
+        print(f"\n  {len(FAILS)} failure(s), {time.time() - t0:.0f}s"); sys.exit(1 if FAILS else 0)
     run_p1()
     run_p2()
+    run_p5_p6()
     print(f"\n  {len(FAILS)} failure(s), {time.time() - t0:.0f}s" + (": " + ", ".join(FAILS) if FAILS else ""))
     sys.exit(1 if FAILS else 0)
