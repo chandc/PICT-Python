@@ -27,6 +27,7 @@ ap.add_argument("--model", default="wale", choices=["wale", "smagorinsky", "none
 ap.add_argument("--forcing", default="cpg", choices=["cpg", "mf"]); ap.add_argument("--Ub", type=float, default=15.63, help="bulk velocity for --forcing mf (DNS: 15.63)")
 ap.add_argument("--tag", default=None); ap.add_argument("--checkpoint", type=int, default=2500); ap.add_argument("--restart", default=None)
 ap.add_argument("--report", type=int, default=500); ap.add_argument("--nsteps", type=int, default=None)
+ap.add_argument("--outdir", default="results", help="where <tag>_ckpt/_final/_stats.npz go (e.g. a mounted Google Drive folder, so a lost session loses nothing)")
 ap.add_argument("--cfl-max", type=float, default=0.0, help="> 0: CFL-limited time step, dt halves (up to 3 times) whenever the face-flux Courant number would exceed this; 0 = fixed dt")
 ap.add_argument("--device", default="cpu", choices=["cpu", "gpu"], help="gpu: the whole step on CuPy with the block AMG solves (tools/a100/README.md)")
 ap.add_argument("--re-tau", type=float, default=180.0, help="180 (FOSLS DNS reference, DNS initial field) or 395 (MKM 1999 reference; initial field = the 180 DNS field with its mean shifted to the MKM 395 mean)")
@@ -36,6 +37,7 @@ ap.add_argument("--wall-layers-y", type=int, default=16, help="hybrid: quad laye
 ap.add_argument("--cells", default="quad", choices=["quad", "tri", "hybrid"], help="tri: each quad split into two triangles (alternating diagonal), the non-bipartite mesh that carries a two-colour pressure mode in 2D")
 ap.add_argument("--n-nonorth", type=int, default=None, help="deferred non-orthogonal passes in the pressure solve (default 1 for quads, 3 for triangles)")
 a = ap.parse_args()
+os.makedirs(a.outdir, exist_ok=True)
 RE_TAU = a.re_tau; NU = 1.0 / RE_TAU; LX = a.Lx; LY = 2.0; LZ = a.Lz
 if RE_TAU != 180 and abs(a.Ub - 15.63) < 1e-9: a.Ub = {395.0: 17.54}.get(RE_TAU, a.Ub)     # MKM 395: U_b/u_tau = 17.54
 tag = a.tag or f"uchan{int(RE_TAU) if RE_TAU != 180 else ''}_{a.nx}x{a.ny}x{a.nz}_{a.model}_{a.forcing}" + ("_tri" if a.cells == "tri" else (f"_hyb{a.wall_layers_y}" if a.cells == "hybrid" else ""))
@@ -145,8 +147,8 @@ while True:
     if (k + 1) % a.report == 0:
         cbq, cbt, hp = checkerboard()
         print(f"  t={s.time:7.3f}  u_tau {np.sqrt(tw):.4f} (Re_tau {np.sqrt(tw)/NU:6.1f})  U_b {hist[-1][2]:.3f}  E/V {hist[-1][3]:.3f}  <nu_t>/nu {hist[-1][4]:.3f} max {hist[-1][5]:.2f}  CFL {cfl():.2f} dt {s.dt:.5f}  p two-colour quad {cbq:.4f} tri {cbt:.4f} hp {hp:.3f}  stats {stats.n}  ({(time.time()-t0)/(k+1)*1e3:.0f} ms/step)", flush=True)
-    if (k + 1) % a.checkpoint == 0: s.save(f"results/{tag}_ckpt.npz")
-if not diverged: s.save(f"results/{tag}_final.npz")
+    if (k + 1) % a.checkpoint == 0: s.save(f"{a.outdir}/{tag}_ckpt.npz")
+if not diverged: s.save(f"{a.outdir}/{tag}_final.npz")
 # ---- statistics against the DNS
 pr = stats.profiles(); y = pr["y"]
 if stats.n and not diverged:
@@ -164,4 +166,4 @@ if stats.n and not diverged:
         Ud_i = np.interp(yp, ypd, Ud / utd); dU = Up[sel] - Ud_i[sel]
         print(f"   vs {'FOSLS DNS' if RE_TAU == 180 else 'MKM 1999 Re_tau 392'} (u_tau {utd:.4f}): U+ difference in the log region mean {dU.mean():+.3f} max {np.abs(dU).max():.3f};  DNS u_rms+ peak {(ud/utd).max():.3f}, ours {(urms/ut).max():.3f} ({((urms/ut).max()/(ud/utd).max()-1)*100:+.1f}%);  DNS -<uv>+ max {(uvd/utd**2).max():.3f}, ours {(-uv/ut**2).max():.3f}", flush=True)
     cbq, cbt, hp = checkerboard(); print(f"   pressure two-colour mode: quad cells {cbq*100:.2f}% of p_rms, triangle pairs {cbt*100:.2f}% (criterion < 1%), face high-pass share {hp:.3f}", flush=True)
-    np.savez(f"results/{tag}_stats.npz", y=yl, yp=yp, U=U, urms=urms, vrms=vrms, wrms=wrms, uv=uv, prms=np.sqrt(np.maximum(fold("pp"), 0)), ut=ut, re_tau=re_tau, hist=h, nsamp=stats.n, nu=NU, model=a.model, forcing=a.forcing, cells=a.cells, re_tau_target=RE_TAU, Lx=LX, Lz=LZ)
+    np.savez(f"{a.outdir}/{tag}_stats.npz", y=yl, yp=yp, U=U, urms=urms, vrms=vrms, wrms=wrms, uv=uv, prms=np.sqrt(np.maximum(fold("pp"), 0)), ut=ut, re_tau=re_tau, hist=h, nsamp=stats.n, nu=NU, model=a.model, forcing=a.forcing, cells=a.cells, re_tau_target=RE_TAU, Lx=LX, Lz=LZ)
