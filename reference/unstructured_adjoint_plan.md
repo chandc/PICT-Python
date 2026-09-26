@@ -81,7 +81,9 @@ U0 decisions ─ U1 constant ops ─ U2 solution-dependent ops ─ U3 LinearSolv
 ## 3. Stages and gates
 
 Every stage ends on a gate. Nothing starts until the previous gate passes. Tolerances are stated
-up front so a gate cannot be retuned after the fact.
+up front so a gate cannot be retuned after the fact. The gates below are summarised; §7 is the
+full test catalogue, with the physical tests that sit beside them and the acceptance criteria that
+decide the whole plan is done.
 
 ### U0 — Decisions (1–2 days)
 
@@ -284,6 +286,7 @@ same physics, not just of its own code.
 | U9 | 1 week | 10 weeks |
 | U10 | 3–4 weeks | 14 weeks |
 | U11 | ½ week | ≈ 14.5 weeks |
+| §7 physical tests beyond the stage gates (P3, P5, P7, P9 mostly) | 2 weeks, spread over U5–U10 | **≈ 16.5 weeks** |
 
 Stage 9 on the structured solver took the path through probing, ghost padding and Dong; none of
 that recurs, which is why U0–U5 is estimated shorter than 9.1–9.3 were.
@@ -310,3 +313,247 @@ that recurs, which is why U0–U5 is estimated shorter than 9.1–9.3 were.
 * for paper 1 (`reference/paper1_outline.md`): U8 supplies the "training on our own certified
   solver" result that framing B needs, on a task the published benchmarks' own backends do not
   differentiate.
+
+---
+
+## 7. Test cases and acceptance criteria
+
+### 7.1 How the tests are organised
+
+Every test belongs to one of two families, and most physical cases carry **one criterion of
+each**:
+
+* **Algorithmic (A)**: the adjoint is the exact derivative *of the discrete solver*. Criteria are
+  tight (round-off, linear-solve tolerance or finite-difference floor) and are measured against the
+  torch step's own finite differences or against production numpy.
+* **Physical (P)**: the gradient means what the physics says it should. Criteria are measured
+  against an analytic result, an exact symmetry, a conservation law, an independent reference
+  solver or published data. They are **discretisation-level**: a P criterion passes at a stated
+  resolution and must converge under refinement. It is never tightened to round-off.
+
+A physical case that passes A but fails P shows the adjoint is right and the discretisation is
+wrong for that physics, which the forward validation should already have found. A case that passes
+P but fails A is a bug hidden by a coincidence. Both must pass.
+
+**Finite-difference convention.** FD is central, with a relative step h = 1e-6 of the perturbed
+quantity's scale. Its floor is about h² truncation plus ε/h round-off, roughly 1e-9 to 1e-10 in
+float64. That is why FD gates sit at 1e-6 to 1e-8 and never at round-off. Every FD probe holds the
+detached masks (upwind sign, `aC` floor) fixed across the ± pair and reports how many faces are
+within 1e-6·max|F| of a sign switch. A probe with a non-zero count is re-run at a different state
+rather than loosened.
+
+**Linear-solve tolerance.** 1e-12 relative for every forward and backward solve in gate runs.
+Production runs keep their own tolerance, and equivalence gates tighten production to match.
+
+### 7.2 Meshes
+
+| id | mesh | why it is in the matrix |
+|---|---|---|
+| M1 | uniform quads, `rect_mesh(nx, ny, cells="quad")` | orthogonal: every cross term is zero, the simplest correct answer |
+| M2 | wall-clustered quads (`cluster_y`) | aspect ratio and grading; the channel mesh family |
+| M3 | perturbed triangles (`perturb > 0`) | skewness and non-orthogonality: every deferred correction live; non-bipartite |
+| M4 | HydroGym's cylinder triangles (T9) | a production triangle mesh with a body |
+| M5 | fine butterfly quads (T9) | the production quad cylinder; mirror-symmetric; shared with the structured solver |
+| M6 | NACA0012 α 40° mesh (§46) | hybrid mesh, jets, gust inflow: the U8 target |
+| M7 | periodic channel, `make_periodic` | periodic seams (`dcc` carries the period shift) |
+| M8 | pinball mesh | three bodies, several wall tags |
+
+M1, M3 and M7 at coarse resolution form the **fast suite**: every A test on them runs in under 10
+minutes on a laptop and runs on every commit.
+
+### 7.3 Algorithmic test catalogue
+
+| id | test | meshes | acceptance | stage |
+|---|---|---|---|---|
+| A1 | Constant operators, torch vs numpy, random fields | all | ≤ 1e-15 relative | U1 |
+| A2 | Adjoint identity ⟨y, Ax⟩ = ⟨Aᵀy, x⟩ for every operator and every solution-dependent map at a fixed state | all | ≤ 1e-14 | U1–U2 |
+| A3 | Discrete gradient–divergence duality, Σ V u·(G p) + Σ V p (D u) = 0, with the dual GG gradient | M1, M3, M5 | ≤ 1e-14 (fails at O(1) with the ordinary weights on M3: the test is sensitive) | U1 |
+| A4 | Measured linearity where claimed (convection in F at fixed mask, pressure Laplacian in `gam`, Rhie–Chow in p at fixed D, `BC.effective`) | M1, M3, M4 | residual of f(αa+βb) − αf(a) − βf(b) ≤ 1e-14 | U2 |
+| A5 | Each solution-dependent map, torch vs numpy, at a developed state | all | ≤ 1e-14 | U2 |
+| A6 | `LinearSolve` dL/db and dL/dA vs FD: momentum (non-symmetric), pressure (symmetric), all-Neumann pressure (singular) | M1, M3, M5 | ≤ 1e-8 | U3 |
+| A7 | Residual certificate on every forward and backward solve | all | ‖b − Ax‖ ≤ 1e-12‖b‖ or an exception; a logged warning is a failure | U3 on |
+| A8 | **Step equivalence**, torch vs `PISO.step()` from a developed state | all | u, v, p, F ≤ 1e-10 after 1 step, ≤ 1e-9 after 10; max\|div F\| equal to 1e-14 each step | U4 |
+| A9 | Rollout drift, 30 steps, torch vs production | M5, M6 | drift grows at most linearly (ratio at 30 vs 15 steps ≤ 2.2) | U4 |
+| A10 | FD vs adjoint through 1, 2, 3 steps: dL/d(state), dL/d(body force), dL/d(boundary values), dL/dν | all | ≤ 1e-6 relative | U5 |
+| A11 | **Liveness mangles**: detach each path in turn and require the gradient to change: convecting flux, aP → D, aC → gam, dt-independent history, BDF2 history, deferred non-orthogonal terms, deferred central convection | M3, M5 | change ≥ 1e-6 relative for each; source and loss placed where the path acts | U5 |
+| A12 | JVP/VJP consistency of one step, ⟨w, J v⟩ = ⟨Jᵀw, v⟩, random v, w | M3, M5 | ≤ 1e-10 | U5 |
+| A13 | Mask robustness in a recirculation bubble: gradient at a steady Re 40 state, where faces with F ≈ 0 exist | M5 | FD agreement ≤ 1e-6 on probes with zero switch count; switch count reported | U5 |
+| A14 | Periodic seam: source on one side of the seam, loss on the other | M7 | FD ≤ 1e-6, gradient non-zero across the seam | U5 |
+| A15 | Boundary-type coverage: gradient w.r.t. Dirichlet values on walls, inflow, symmetry (mixed u Neumann / v Dirichlet), jets; Neumann outlet | M4, M6 | FD ≤ 1e-6 per boundary type | U5–U6 |
+| A16 | Force functional, torch vs numpy, and its FD | M4, M5, M6, M8 | ≤ 1e-14; FD ≤ 1e-8 | U6 |
+| A17 | Replay == tape on the same window | M5, M6 | ≤ 1e-9 over 5 steps; policy gradients ≤ 1e-10 | U7 |
+| A18 | Memory flat in horizon with replay | M5 | peak memory at H = 30 within 10% of H = 3 | U7 |
+| A19 | Cost | M5 | tape backward ≤ 2.5× forward per step; replay ≤ 3.5× | U7 |
+| A20 | Determinism: two identical gradient runs | M3 | bitwise equal on the CPU | U5 |
+| A21 | RK3: A8–A12 repeated against `step_rk3`; stage factors reused, not rebuilt | M1, M3, M5 | as A8–A12 | U9 |
+| A22 | 2.5D: mode 0 equals the 2D torch RK3 step; A8, A10, A12 against `PISO25.step` | M1×nz, M7×nz | mode 0 ≤ 1e-14; others as A8/A10/A12 | U10 |
+| A23 | 2.5D block solve, forward and backward, on every mode | M2×nz | per-mode residual ≤ 1e-10 both directions; iterations reported | U10 |
+
+### 7.4 Physical test catalogue
+
+Each case lists the physical reason it is in the plan, its A criterion (against the discrete
+solver) and its P criterion (against the physics).
+
+**P1. Plane Poiseuille, flow-rate sensitivities (analytic).** Channel y ∈ [−1, 1], body force f,
+laminar steady state. Q = ∫u dy = 2f / (3ν) per unit span, so ∂Q/∂f = 2/(3ν) and ∂Q/∂ν = −Q/ν.
+*Why:* the simplest statement that the adjoint of the viscous operator and of the pressure–velocity
+coupling carries the right physics. Walls, forcing and viscosity all enter.
+* A: adjoint ∂Q/∂f and ∂Q/∂ν vs FD of the torch steady state ≤ 1e-8.
+* P: vs the analytic values ≤ 1e-8 on M1 (second-order FV is exact for the parabola) and ≤ 1e-3
+  on M3 and M2, converging at order ≥ 1.8.
+
+**P2. Two-dimensional Taylor–Green decay (analytic time dependence).** On [0, 2π]² with
+u = sin x cos y, v = −cos x sin y, the energy decays as E(t) = E₀ e^(−4νt), so
+∂E(T)/∂ν = −4T E(T).
+*Why:* the first test of the adjoint *in time*. It is an unsteady, periodic, pressure-coupled
+flow whose exact gradient is known for all T. It exercises the BDF2 or RK3 history in the
+reverse sweep.
+* A: vs FD ≤ 1e-7, at T = 1, 5, 20.
+* P: vs −4T E(T) ≤ 1% at 64² (M1 and M3), converging at order ≈ 2 under refinement at fixed dt/h.
+
+**P3. Energy conservation in the reverse direction (inviscid Taylor–Green, RK3).** For an exactly
+energy-conserving flow E(T) = E(0) for every initial state, so ∇_{u₀}E(T) = ∇_{u₀}E(0) = V u₀.
+*Why:* this is the test of the **convection adjoint**, the hardest piece (upwind masks, deferred
+central correction, skewness correction). A convection adjoint that is wrong in any of those shows
+up as a mismatch here, and the mismatch is bounded by a measured physical quantity: the scheme's
+own energy loss.
+* A: vs FD ≤ 1e-7.
+* P: ‖∇_{u₀}E(T) − V u₀‖ / ‖V u₀‖ ≤ 5 × the forward relative energy loss over [0, T]. The record
+  gives that loss as 0.04 %/turnover for RK3 at dt 0.005 on 64² quads, and about 4 % for BDF2-PISO,
+  so the test is informative for RK3 and loose for BDF2.
+
+**P4. Orr–Sommerfeld growth-rate sensitivity (T8 case, spectral reference).** Plane Poiseuille at
+Re 7500, α = 1. The least-stable mode grows at σ = α Im(c) = 0.00223497 (`orr_sommerfeld.py`). With
+the body force f = 2ν the base flow is independent of ν, so for a window [T₁, T₂] inside the linear
+phase, ∂/∂ν ln(E(T₂)/E(T₁)) = 2(T₂ − T₁) ∂σ/∂ν. The reference ∂σ/∂ν comes from the Chebyshev
+eigen-solver by central difference in Re, and it is effectively exact.
+*Why:* a growth rate of 2e-3 is a severe test of dissipation. Its sensitivity to ν is a severe test
+of the viscous adjoint along a long horizon (T₂ ≈ 100), on a periodic seam (M7).
+* A: vs FD ≤ 1e-6.
+* P: vs the OS derivative ≤ 5 % at ny = 200 and converging with ny. The forward growth rate is
+  itself within 0.2 % (RK3) on the recorded T8 runs, and a derivative is expected to be less
+  accurate than the value.
+
+**P5. Cylinder at Re 40, steady symmetric wake: exact symmetry of sensitivities.** On the
+mirror-symmetric butterfly (M5) the steady base flow is symmetric about y = 0. Linear perturbation
+theory then forces:
+* ∂C_L/∂a_sym = 0 and ∂C_D/∂a_anti = 0, for symmetric and antisymmetric jet actuation at ±90°;
+* ∂C_D/∂ω = 0 for cylinder rotation (the Magnus force is odd in ω, the drag even);
+* ∂C_L/∂ω ≠ 0, with the sign of the Magnus force.
+
+*Why:* these are exact consequences of the physics, independent of resolution, and they catch
+symmetry-breaking bugs (a sign error on one side of the mesh, a wrong neighbour index at a seam)
+that FD agreement alone does not catch.
+* A: every sensitivity vs FD ≤ 1e-6.
+* P: the "zero" sensitivities ≤ 1e-10 of the non-zero ones on M5. On M4, which is not exactly
+  symmetric, the ratio is reported as a measure of the mesh asymmetry.
+
+**P6. Cylinder at Re 40: sensitivity to Reynolds number and to steady suction (independent
+reference).**
+* ∂C_D/∂Re from the adjoint (through ν).
+  * A: vs FD of the torch steady state ≤ 1e-6.
+  * P: vs the slope of HydroGym's Firedrake C_D(Re) on the same domain at Re 39 and 41 (the §38
+    set-up, runnable on the Spark) ≤ 2 %. Also vs the unstructured solver's own C_D(Re) slope
+    ≤ 1e-4 (an A-type check on the ν path through a converged steady state).
+* ∂C_D/∂a_sym for symmetric suction/blowing at the ±90° slots. P: the sign is positive (suction
+  lowers drag, blowing raises it), consistent with the constant-actuation references of §43, and
+  the magnitude equals the linear fit of the solver's own C_D(a) at |a| ≤ 0.01 to 1 %.
+
+**P7. Global stability of the cylinder wake: direct and adjoint eigenmodes.** At a Reynolds number
+above onset (Re 60, on the base flow computed by the mirror-averaged steady run that
+`run_ucylinder.py --steady` already provides), the linearised step's leading eigenvalue μ gives
+the growth rate σ = ln|μ|/dt and the frequency. Direct modes come from Arnoldi on the linearised
+forward step: a JVP rule for `LinearSolve` (solve A dx = db − dA x), or FD matvecs as in the
+time-stepper method. Adjoint modes come from Arnoldi on the VJP.
+*Why:* this is where the adjoint has a physical meaning that the literature has mapped. The
+adjoint eigenmode is the receptivity of the wake, and the product |û||û†| is the structural
+sensitivity, the "wavemaker" (Giannetti & Luchini 2007 [U]). It is also a direct test that the
+VJP is the transpose of the JVP over the long-time dynamics, not just over one step.
+* A: the adjoint eigenvalue equals the complex conjugate of the direct one to 1e-8 relative
+  (the same operator's spectrum). ⟨û†, û⟩ ≠ 0.
+* P:
+  * σ and the frequency match the linear phase of a forward kick run from the same base flow to
+    2 % and 1 %;
+  * the direct mode's energy centroid lies downstream of the adjoint mode's (the non-normality of
+    the convective wake: direct modes peak in the far wake, adjoint modes near the body);
+  * the structural sensitivity peaks inside the recirculation bubble, as two lobes symmetric about
+    the axis to 1e-6 on M5.
+* Optional: the growth rate crosses zero at the solver's own measured onset Re to 2 %. Onset
+  depends on blockage, so compare with the solver's forward onset estimate, not with the unconfined
+  literature value of about 47.
+
+**P8. Periodic shedding at Re 100: time-shift invariance on the limit cycle.** On a periodic orbit,
+shifting the initial state along the flow advances the solution in time. Take δx = x₁ − x₀, the
+full state difference over one step, including every history array. Then ⟨∇_{x₀} C_L(t_N), δx⟩
+must equal C_L(t_{N+1}) − C_L(t_N) up to O(|δx|²).
+*Why:* it tests the adjoint against the dynamics' own symmetry (autonomy) along a long unsteady
+horizon, which is the regime every control run lives in, without any external reference. A second
+limit-cycle property is checked at the same time: the neutral phase mode means ∇_{x₀}J(T) must
+neither decay nor grow exponentially.
+* A: ∇_{x₀}C_L vs FD in random directions ≤ 1e-6 over 1 period.
+* P:
+  * the time-shift identity holds to ≤ 1 % at production dt, and the error halves when dt halves
+    (first order in |δx|);
+  * over 10 shedding periods, ‖∇_{x₀}C_L(T)‖ grows at most linearly (fitted exponent in T within
+    [0, 1.2]);
+  * St from the forward run within 0.5 % of the T9 value, so the orbit is the validated one.
+
+**P9. Jet and rotary control sensitivities on the validated shedding case, and the cross-code
+check (U11).** Same geometry, Re 100, the same actuator on both solvers (M5, butterfly quads).
+*Why:* the gradient a control study actually uses, on the flow both solvers were validated on.
+* A: dC_D/da and dC_L/dω vs FD ≤ 1e-6 through 2 steps and 1 control interval.
+* P:
+  * the unstructured adjoint's dC_D/da, dC_L/da and dC_L/dω agree with the structured Stage 9
+    adjoint to within the two solvers' forward difference in C_D and C_L at that state (the T9
+    record: about 1 %);
+  * the rotary Magnus sensitivity has the sign measured on the structured backend (hg.4:
+    ΔC_L = −0.3532 for ω = +1) and is antisymmetric in ω to 1e-6.
+
+**P10. NACA0012 α 40° gust (U8 target): physically sensible control gradients.**
+* A: dC_L/da_j for each of the three jets vs FD ≤ 1e-6.
+* P: at the gust peak, the sign of dC_L/da for the upper-surface jet agrees with the direction the
+  trained PPO policy used (suction on the upper jet to hold C_L, record §56). The DPC policy trained
+  through the adjoint reaches a return at least as good as PPO's −30.3 within the same evaluation
+  protocol, over ≥ 3 seeds.
+
+**P11. 2.5D: symmetry of spanwise modes.** At a span-uniform (2D) state, any objective built from
+mode-0 quantities (C_D, C_L, the mean profile) has **zero first-order sensitivity** to every
+spanwise mode k ≠ 0. The modes couple to mode 0 only quadratically.
+*Why:* it is exact and resolution-independent, and it catches mode-mixing errors in the FFT,
+dealiasing and per-mode solve adjoints.
+* A: per-mode FD ≤ 1e-6.
+* P: ‖∂J/∂(mode k ≠ 0)‖ ≤ 1e-12 × ‖∂J/∂(mode 0)‖. With span-uniform actuation the periodic-span
+  cylinder's dC_D/da equals the 2D value to 1e-10 (the G2 cylinder test, in reverse).
+
+**P12. Turbulent channel Re_τ 180: where adjoint gradients stop being meaningful
+(characterisation, not a pass/fail on the physics).** For a chaotic flow, the sensitivity of a
+long-time average cannot be obtained by a plain adjoint: the adjoint grows at the leading Lyapunov
+exponent. The plan does not attempt shadowing methods. It measures the limit so that nobody uses
+the tool past it.
+* A: FD ≤ 1e-5 for horizons shorter than one Lyapunov time.
+* P, reported rather than gated: the growth rate λ of ‖∇_{x₀}J(T)‖ (positive, exponential); the
+  horizon at which the gradient of a window-averaged wall stress loses agreement with FD; the ratio
+  λ / (u_τ²/ν). The laminar channel at the same box (P1) must show no growth, which confirms that
+  the growth is the physics and not the adjoint.
+
+### 7.5 Acceptance criteria for the whole plan
+
+The adjoint is **accepted for control studies on 2D unstructured meshes** when all of these hold:
+
+1. A1–A20 pass on every mesh listed for them, and the fast suite runs clean on every commit.
+2. P1, P2, P4, P5, P6, P8 and P9 pass both their A and P criteria. P3 passes for RK3 once U9 lands.
+3. P7 passes its A criterion and the σ/frequency part of its P criterion. The wavemaker shape is
+   reported with figures, compared qualitatively with the literature, and marked [U] until that
+   comparison has been made against the source.
+4. U8 delivers its control result (P10) with ≥ 3 seeds and the evaluation protocol written down
+   before the runs.
+5. The record `reference/unstructured_adjoint.md` states every measured number of 1–4, with the
+   command that reproduces it.
+
+It is **accepted for 2.5D/LES use** when, in addition, A21–A23 and P3, P11 pass, and P12's
+characterisation is published in the record with the horizon limit stated beside every 2.5D
+gradient result.
+
+**Standing rule.** A test that fails is reported as failed, with its number, and is not re-posed.
+If a criterion turns out to be mis-posed (as G1's T9 amplitude criterion was, record §50), the
+correction and the reason go into the record *before* the test is re-run.
