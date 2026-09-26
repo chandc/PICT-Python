@@ -58,7 +58,10 @@ for kind, n, nz in cases:
 # ---- run-time estimates
 floor = rows[0][4] if not a.mesh else 0.0
 rate = max((r[4] - floor) / r[3] for r in rows[-2:])                       # s per cell-mode past the latency floor, at the large end
-targets = [("V3 cylinder Re 3900, 27968-quad butterfly x 64 modes, dt 0.002, 200 D/U", 27968, 33, 100000),
+targets = [("V3 cylinder Re 3900 on meshes/cylinder_re3900 (60k quads) x 64 planes, 150 D/U at dt 0.002", 60000, 33, 75000),
+           ("V3 cylinder Re 3900 on meshes/cylinder_re3900 (60k quads) x 64 planes, 150 D/U at dt 0.004", 60000, 33, 37500),
+           ("V3 cylinder Re 3900 on meshes/cylinder_re3900 (60k quads) x 48 planes, 125 D/U at dt 0.002", 60000, 25, 62500),
+           ("V3 cylinder Re 3900, 27968-quad butterfly x 64 modes, dt 0.002, 200 D/U", 27968, 33, 100000),
            ("V3 cylinder Re 3900, 1e5-cell plane x 64 modes, dt 0.002, 200 D/U", 100000, 33, 100000),
            ("V3 cylinder Re 3900, 1e5-cell plane x 128 modes, dt 0.002, 200 D/U", 100000, 65, 100000),
            ("channel Re_tau 180, 24x80 quads x 32 modes, dt 0.002, 30 time units", 1920, 17, 15000),
