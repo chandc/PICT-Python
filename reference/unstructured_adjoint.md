@@ -44,7 +44,13 @@ Production meshes, `python test_uadj_step.py --production cylinder_butterfly cyl
 | `cylinder_butterfly_coarse.msh` (quads) | 1,776 | 3.1e-14 | 7.7e-13 | 32 / 24 ms |
 | `cylinder_medium.msh` (HydroGym's triangles) | 17,258 | 4.6e-14 | 4.1e-13 | 749 / 266 ms |
 
-(A10–A12 on these two meshes: see the next section once the run completes.)
+| gate | butterfly quads | HydroGym triangles | tol |
+|---|---|---|---|
+| A10 FD vs adjoint, 1/2/3 steps, worst of 14 inputs | 3e-9 / 4e-8 / 5e-8 | 5e-8 / 9e-9 / 9e-8 | 1e-6 |
+| A11 paths live | 7/7 (the butterfly is not orthogonal: non-orthogonal Poisson path 2.6 %) | 7/7 | ≥ 1e-6 |
+| A12 ⟨w,Jv⟩ = ⟨Jᵀw,v⟩ | 1e-14 | 6e-15 | 1e-10 |
+
+The whole production run takes 666 s.
 
 ## Findings
 
