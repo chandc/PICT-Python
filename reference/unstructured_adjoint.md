@@ -16,7 +16,7 @@
 | U5 gradient gates | ✅ | A10–A15 on every listed mesh (A13 bubble, A14 seam invariance, A15 every boundary type) |
 | U6 forces and actuation | ✅ | `src/uadj_control.py`: wall traction, cylinder jets, HydroGym's NACA jets from the production `JetSet`, rotation, inlet modulation |
 | U7 replay | ✅ | `src/uadj_replay.py`: replay == tape to 9e-14; memory flat in the horizon |
-| physical tests | 🔧 P1, P2 done | `test_uadj_physics.py` |
+| physical tests | 🔧 P1, P2, P5, P6 pass; P8 (a) passes; P4 and P8 (b) not yet run | `test_uadj_physics.py` |
 | U8–U11 | not started | |
 
 ## Gate results
@@ -195,10 +195,69 @@ gust peak and over a control interval, so this is a sign check, not the test.
     poses the refinement at fixed dt/h. At fixed dt, the O(dt) Rhie–Chow damping puts a floor
     under the error. At fixed dt/h the order is 2.13.
 
+## P5, P6, P8: `python test_uadj_physics.py --only run_p5_p6` / `--only run_p8`
+
+**P5, exact symmetry zeros** at the steady symmetric Re 40 wake. The coarse butterfly's nodes are
+snapped to exact mirror pairs (`uadj_cases.mirror_nodes`; they sat ≤ 4e-4 off), and the state is
+mirror-symmetric to 2e-14, with C_D 1.824 and C_L 6e-15.
+
+| N steps | dC_L/da_sym ÷ dC_L/da_anti | dC_D/da_anti ÷ dC_D/da_sym | dC_D/dω ÷ dC_L/dω |
+|---|---|---|---|
+| 2 | 3e-14 | 8e-15 | 5e-15 |
+| 20 | 1e-14 | 9e-16 | 1e-14 |
+
+The non-zero ones equal FD to 2e-8 (jets) and 1e-10 (rotation).
+
+**P6, steady symmetric blowing over 10 convective times** (500 steps, through the replay):
+dC_D/da_sym = +0.27626, FD +0.27626 (5e-7). Blowing raises the drag and suction lowers it.
+
+**P8, the Re 100 limit cycle** (coarse butterfly spun up to t = 200, C_L amplitude 0.278 constant
+to 4 digits since t = 75, state in `results/uadj_shed_cylinder_butterfly_coarse.npz`; period 5.939,
+St 0.168, coarse mesh, reported only):
+* (a) time shift, N = 100: ⟨∇_{x0} C_L(t_N), x₁ − x₀⟩ = 3.4963e-4 against C_L(t_{N+1}) − C_L(t_N) =
+  3.5007e-4, 1.3e-3 apart (tol 1e-2). With half the shift the error falls by 2.06 (a linearisation
+  error, as it must be). **Pass.**
+* (b) gradient norm over 1–8 periods: 1 period gives ‖∇‖ = 0.911. The 2-, 4- and 8-period runs
+  were stopped: with three jobs on four cores one period took 49 min. **Not yet run.**
+
+**P4, Orr–Sommerfeld: not yet run.** Its first attempt hit its own 7,000 s timeout under CPU
+contention. The re-run was queued behind the regression, and the queue never started it: its
+wait loop's `pgrep -f` matched its own command line.
+
+## Findings, continued (2)
+
+12. **A symmetric state sits on the upwind kink, and the adjoint must take the midpoint there.**
+    On faces crossing the symmetry axis v = 0, so F = 0 exactly, and F·φ_upwind has one-sided
+    derivatives φ_owner and φ_neighbour, which differ at O(1). The branch round-off picked made
+    dC_D/dω 5.7e-4 of dC_L/dω, while the forward keeps the symmetry to 2e-11. The SIMPLEC floor
+    has the same kind of tie in every cell whose viscous row sum cancels. At ties (|F| ≤ 1e-12
+    max|F|, row sum within 1e-12 of its floor) the derivative is now the average of the two
+    one-sided derivatives. The forward value is untouched (`uadj_ops.st_mask`), and FD probes
+    re-decide ties live so the central difference straddles the kink (`Masks.straddle`; off for
+    the linearity gate A4). Before this change P6's 500-step gradient differed from FD by 5e-3,
+    and after it by 5e-7. The full regression over the change passes (ops, step, control,
+    physics).
+
+13. **`cylinder_bf2_coarse` is not a flow case.** Symmetric as written, but it is the MMS mesh on
+    a different domain (record §S13), and production gives C_D < 0 within 100 steps at Re 40.
+
+## Running the rest locally
+
+    python test_uadj_ops.py                        # 1 s
+    python test_uadj_step.py                       # 35 s  (--production: + 11 min)
+    python test_uadj_control.py                    # 5-10 min (needs gymnasium)
+    python test_uadj_physics.py                    # P1, P2, P5, P6 (about 10 min)
+    python test_uadj_physics.py --only run_p4      # Orr-Sommerfeld, est. 30-60 min alone
+    python test_uadj_physics.py --only run_p8      # limit cycle; (b) is 15 periods of replay
+
+Dependencies: numpy 2.0, scipy 1.13, torch, pyamg, gymnasium.
+
 ## Open
 
-* P3–P12 (next: P5 symmetry zeros and P6 on a steady Re 40 state, P4 Orr–Sommerfeld, P8
-  limit-cycle time shift).
+* P4 and P8 (b), commands above. Then P3, P7, P9–P12.
+* Training: port `replay_policy_grad` (the action computed inside each replayed step from that
+  step's observation) with a replay == tape gate, then a DPC smoke run on the coarse cylinder's
+  jets before the NACA gust task.
 * U8: DPC through the replay on the NACA gust task.
 * Performance: the torch step is 1.3× production on the butterfly and 2.8× on the 17k-cell
   triangle mesh, mostly per-call Python overhead and the per-solve residual check. Not optimised
