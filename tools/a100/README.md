@@ -76,6 +76,23 @@ replaced by the MKM 395 mean (U_b/u_tau 17.54); reference `reference/mkm_chan395
 Mansour 1999, Re_tau 392.24, full box 2 pi x pi -- judge the log region and the peaks, the outer
 region is box-dependent). Smoke-tested on the GB10 at this size: 2.1-2.8 s/step.
 
+## The Re 3900 cylinder, V3 (`A100_cylinder_re3900.ipynb`)
+
+`run_ucylinder3900.py --device gpu --nz 64 --dt 0.004 --cfl-max 0.8 --sgs wale --t-sgs 2 --T 150 --t-stats 50`
+on `meshes/cylinder_re3900.msh` (generator `meshes/make_cylinder_re3900.py`): 60,000 quads, butterfly
+O-grid, wall cell 0.003 D at the shoulders (0.005 at the +-45 deg block corners), 288 wall faces,
+0.04 D cells to x = 6 D, |y| < 10 D (blockage 5%), outlet 20 D; span pi D, 64 planes (dz 0.049 D);
+impulsive start. `--t-sgs 2` is not optional: at t = 0 the impulsive field puts u = 1 in the
+0.003 D wall cells, WALE reads that as nu_t ~ 5000 nu and the run diverges in two steps; with the
+term off for the first two time units the same start runs at the full CFL. Statistics (span-and-
+time means of u, v, p, u'u', v'v', u'v', w'w', nu_t per cell; time-mean wall pressure per wall
+face) go out with every checkpoint; `plot_utility/plot_ucylinder_re3900.py` makes the force,
+wake and field figures and prints St, C_D, C_pb and the recirculation length against the
+references. Profiled on the GB10 at this size: 3.1 s/step (157 ms per 1e5 cell-modes with three
+non-orthogonal passes and WALE; the nonlinear term is a third of it), i.e. ~0.85 s/step on an
+A100 and 15-20 h for 150 D/U at dt 0.002. Plan on two or three Colab sessions; the run cell
+resumes from the Drive checkpoint.
+
 ## The runs
 
     # Taylor-Green Re 800 against the SEM DNS on disk (results/tgv_diag_re800_88.npz), section 58
@@ -84,7 +101,7 @@ region is box-dependent). Smoke-tested on the GB10 at this size: 2.1-2.8 s/step.
     python run_uchannel25.py --device gpu --T 30 --t-stats 10
     # spanwise-periodic cylinder (the V3 target at Re 3900 needs its own mesh; the Re 100 check is section 51)
     python run_ucylinder25.py meshes/cylinder_butterfly.msh --device gpu --nz 4 --T 150
-    python run_ucylinder25.py meshes/cylinder_butterfly_fine.msh --device gpu --nz 64 --Lz 3.14159 --Re 3900 --dt 0.002 --sgs wale --T 200   # the V3 shape; needs its own Re 3900 mesh first
+    python run_ucylinder3900.py --device gpu            # V3: Re 3900 on meshes/cylinder_re3900.msh, 64 planes, WALE from t = 2, statistics 50-150
 
 Both drivers take `--device gpu` (block AMG solves, momentum tolerance 1e-7) and were smoke-tested
 on the GB10. Inside them every field is a CuPy array on the GPU path; the drivers read back through

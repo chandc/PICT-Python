@@ -3600,3 +3600,48 @@ their spectra on the DNS is what a wall-resolved LES at this Δx⁺ should show.
 the MKM DNS to a few percent from the wall to y⁺ 100 and from λ_z⁺ 20 to 200; streak spacing 98 against
 116; ω_x rms 10% low in the buffer layer. What departs is the box, not the discretisation: the two
 longest spanwise modes and the pressure's outer footprint.
+
+## 64. V3 set up: the Re 3900 cylinder mesh, driver and A100 notebook (2026-09-26)
+
+**Mesh** (`meshes/make_cylinder_re3900.py` → `cylinder_re3900.{geo,msh}`, `figures/cylinder_re3900_mesh.png`).
+The butterfly topology of the validated Re 100 meshes (§38) with the radial ring re-graded for a
+laminar boundary layer 0.02–0.03 D thick at separation: 72 cells per quarter arc (288 wall faces, arc
+0.011 D), 58 radial cells at growth 1.05 from a 0.003 D wall cell (0.005 D at the ±45° block corners,
+where the ring's mapping stretches), ring edge at 1.5 D with 0.048 D cells meeting 0.042 D cells outside.
+Near wake 0.04 D uniform to x = 6 D (the shear-layer roll-up and the recirculation region), then growth
+1.035 to the outlet at 20 D; lateral extent 10 D (blockage 5%; the Re 100 meshes had 5 D, 10%); inlet
+10 D. 60,000 quads, orthogonality minimum 0.718 (the same as the fine butterfly). With 64 planes over
+πD the span cell is 0.049 D — the standard of Kravchenko & Moin (48) and Parnaudeau's LES (48).
+
+**Driver** (`run_ucylinder3900.py`): the Re 100 driver's boundary conditions and span-averaged wall-flux
+forces, plus what a production LES needs — CFL-limited step (`--cfl-max 0.8` on dt₀ 0.004), checkpoint
+with the statistics accumulator and force history, restart, `--outdir` for Drive, span-and-time means
+of u, v, p, u'u', v'v', u'v', w'w', ν_t per cell and the time-mean wall pressure per face (C_p
+distribution), base-pressure coefficient from the faces within 5° of the rear stagnation point
+referenced to the inlet mean, Strouhal number from the lift zero crossings in the report line.
+Post-processing `plot_utility/plot_ucylinder_re3900.py`: forces and spectrum, C_p(θ), centreline U and the
+recirculation length, cross-wake U, V and Reynolds stresses at Parnaudeau's stations x = 1.06, 1.54,
+2.02 D, near-wake mean fields; prints St, C_D, C_pb, L_r against the references. Forces are computed
+with device gathers on the wall cells, so the per-step cost of the diagnostics is negligible.
+
+**A finding on the way: WALE and the impulsive start.** With the SGS term on from t = 0 the run diverged
+at the third step at every dt down to dt₀/8, SGS off it ran at the full CFL. The impulsive field puts
+u = 1 in the 0.003 D wall cells: the gradient tensor there is not the pure shear WALE is blind to but a
+wall-normal jump with curvature, and the model returned ν_t up to 5,400 ν (mean 9.5 ν) over the ring.
+The explicit SGS term at that viscosity is unstable at any reasonable dt. `--t-sgs 2` (default) keeps
+the term off until the boundary layer exists; switched on at t = 2 the model gives ν_t max ≈ 5 ν and
+the run continues unperturbed. The channel never met this because it starts from a turbulent DNS
+field. Rule for the record: an eddy-viscosity LES must not start from a discontinuous field with the
+model on; either ramp the model in or start from a developed laminar/2D solution.
+
+**Cost.** GB10 profile on the mesh (`tools/a100/profile_step.py --mesh meshes/cylinder_re3900.msh --nz 64`):
+3.1 s per step, 157 ms per 10⁵ cell-modes with WALE and three non-orthogonal passes (nonlinear term
+321 ms per stage of ~1000, pressure 169 at 20 AMG-PCG iterations, momentum 21 × 6). The channel
+measured a 3.8× GB10→A100 ratio, so ~0.85 s/step on the A100: 75,000 steps (150 D/U at dt 0.002) is
+15–20 h, two or three Colab sessions on Drive checkpoints. A 48-plane, 125 D/U run is ~9 h.
+
+**Notebook** `tools/a100/A100_cylinder_re3900.ipynb`: the channel notebook's cells (root finder and
+auto-update, Drive mount and `--outdir`, dependency check with the CuPy driver test, profile on the
+actual mesh, TGV correctness check, foreground run with auto-resume, comparison cell calling the plot
+script). Smoke-tested on the CPU (6 steps, checkpoint, restart with the accumulator and history
+restored) and on the GB10 (below).

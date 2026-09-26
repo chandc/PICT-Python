@@ -191,7 +191,8 @@ floor; rerun `tools/a100/profile_step.py` after pulling.
    statistics (`figures/uchannel_re395_profiles.png`, `_nearwall_yp12.png`, `_spectra.png`); the outer layer
    is the minimal box's, a full 2π × π box (8× the cost) is the check if it ever matters.
 3. Fuse the nonlinear term's padded-plane gathers on the GPU. (CFL-adaptive stepping done 2026-09-25 [§61]: `--cfl-max`, face-flux Courant number, dt halves up to three times; the Re_τ 395 run at fixed dt 0.001 diverged at C ≈ 1.2 after ten time units.)
-4. A Re 3900 cylinder mesh (wall cell ~0.002 D, 10⁵ cells) for V3.
+4. ~~A Re 3900 cylinder mesh for V3~~ — built 2026-09-26 [§64]: `meshes/cylinder_re3900.msh` (60k quads, wall 0.003 D), driver
+   `run_ucylinder3900.py`, notebook `tools/a100/A100_cylinder_re3900.ipynb`; 15–20 h on the A100. **Run it.**
 5. Fourth-order in-plane reconstruction, only if a transition's peak timing becomes a criterion.
 
 ## Side result: the NACA0012 gust-control task (HydroGym's AoA 40 case) on our solver
