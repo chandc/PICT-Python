@@ -32,6 +32,14 @@ class Stats:
             self.acc[k] += self._binsum(f) / self.wsum
         self.n += 1
 
+    def save(self, path):
+        np.savez(path, n=self.n, y=self.y, **{f"acc_{k}": v for k, v in self.acc.items()})
+
+    def load(self, path):
+        d = np.load(path); self.n = int(d["n"])
+        for k in self.acc: self.acc[k] = d[f"acc_{k}"]
+        return self.n
+
     def profiles(self):
         n = max(self.n, 1); a = {k: v / n for k, v in self.acc.items()}
         U, V, W = a["u"], a["v"], a["w"]

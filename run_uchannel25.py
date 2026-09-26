@@ -135,6 +135,17 @@ def checkerboard():
 def cfl():
     return s.courant()                                                     # the face-flux Courant number the solver limits
 nsteps = a.nsteps or int(round((a.T - s.time) / a.dt)); stats = Stats(s, edges=(y_edges if a.mesh else None)); t0 = time.time(); hist = []; diverged = False
+if a.restart:
+    acc = a.restart.replace("_ckpt.npz", "_stats_acc.npz"); hp = a.restart.replace("_ckpt.npz", "_hist.npy")
+    if os.path.exists(acc): print(f"  statistics accumulator restored: {stats.load(acc)} samples", flush=True)
+    if os.path.exists(hp): hist = [tuple(r) for r in np.load(hp)]; print(f"  force/energy history restored: {len(hist)} entries", flush=True)
+def write_stats(path):
+    """fold the accumulated profiles onto the lower half and write them with the run's wall-stress history (the final file's schema)"""
+    pr = stats.profiles(); y = pr["y"]; h = np.array(hist); win = h[:, 0] >= a.t_stats; ut = np.sqrt(h[win, 1].mean()) if win.any() else float("nan"); re_tau = ut / NU
+    half = y <= 1.0; yl = y[half]; fold = lambda k, odd=False: 0.5 * (pr[k][half] + (-1 if odd else 1) * np.interp(LY - yl, y, pr[k]))
+    U = fold("U"); urms = np.sqrt(np.maximum(fold("uu"), 0)); vrms = np.sqrt(np.maximum(fold("vv"), 0)); wrms = np.sqrt(np.maximum(fold("ww"), 0)); uv = fold("uv", odd=True)
+    np.savez(path, y=yl, yp=yl * re_tau, U=U, urms=urms, vrms=vrms, wrms=wrms, uv=uv, prms=np.sqrt(np.maximum(fold("pp"), 0)), ut=ut, re_tau=re_tau, hist=h, nsamp=stats.n, nu=NU, model=a.model, forcing=a.forcing, cells=a.cells, re_tau_target=RE_TAU, Lx=LX, Lz=LZ, t_end=s.time)
+    return ut, re_tau, yl, U, urms, vrms, wrms, uv
 k = -1
 while True:
     k += 1
@@ -147,7 +158,10 @@ while True:
     if (k + 1) % a.report == 0:
         cbq, cbt, hp = checkerboard()
         print(f"  t={s.time:7.3f}  u_tau {np.sqrt(tw):.4f} (Re_tau {np.sqrt(tw)/NU:6.1f})  U_b {hist[-1][2]:.3f}  E/V {hist[-1][3]:.3f}  <nu_t>/nu {hist[-1][4]:.3f} max {hist[-1][5]:.2f}  CFL {cfl():.2f} dt {s.dt:.5f}  p two-colour quad {cbq:.4f} tri {cbt:.4f} hp {hp:.3f}  stats {stats.n}  ({(time.time()-t0)/(k+1)*1e3:.0f} ms/step)", flush=True)
-    if (k + 1) % a.checkpoint == 0: s.save(f"{a.outdir}/{tag}_ckpt.npz")
+    if (k + 1) % a.checkpoint == 0:
+        s.save(f"{a.outdir}/{tag}_ckpt.npz"); stats.save(f"{a.outdir}/{tag}_stats_acc.npz")           # fields + the statistics accumulator
+        np.save(f"{a.outdir}/{tag}_hist.npy", np.array(hist))
+        if stats.n: write_stats(f"{a.outdir}/{tag}_stats_partial.npz")                                   # interim profiles, same schema as the final file
 if not diverged: s.save(f"{a.outdir}/{tag}_final.npz")
 # ---- statistics against the DNS
 pr = stats.profiles(); y = pr["y"]
