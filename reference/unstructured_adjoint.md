@@ -13,8 +13,11 @@
 | U2 solution-dependent operators | ✅ | convection (matrix and deferred rhs), Laplacian (matrix and deferred rhs, linear in γ), SIMPLEC, Rhie–Chow with the dt-independent history, pressure-correction flux, `BC.effective` with differentiable boundary values |
 | U3 solves | ✅ | `src/uadj_solve.py`: SuperLU factor reused forward, **transpose solve** backward, pinned-row singular systems adjointed exactly, a **forward-mode rule** (needed by A12 now and P7 later), residual certificate that raises |
 | U4 BDF2 step | ✅ | `src/uadj_step.py` `TorchUPISO`: equal to `PISO.step()` to round-off on six meshes including two production cylinder meshes |
-| U5 gradient gates | 🔧 partly | A10 (state, body force, boundary values, ν), A11 (seven path cuts), A12 done on every mesh; A13–A15 open |
-| U6–U11 | not started | |
+| U5 gradient gates | ✅ | A10–A15 on every listed mesh (A13 bubble, A14 seam invariance, A15 every boundary type) |
+| U6 forces and actuation | ✅ | `src/uadj_control.py`: wall traction, cylinder jets, HydroGym's NACA jets from the production `JetSet`, rotation, inlet modulation |
+| U7 replay | ✅ | `src/uadj_replay.py`: replay == tape to 9e-14; memory flat in the horizon |
+| physical tests | 🔧 P1, P2 done | `test_uadj_physics.py` |
+| U8–U11 | not started | |
 
 ## Gate results
 
@@ -98,13 +101,105 @@ The whole production run takes 666 s.
    inputs (Ff_old, Fbar_old). The aC row is small because the SIMPLEC coefficient sits on its
    floor a_t V in most cells. That is the kink the recorded masks exist for.
 
-## Open (U5 remainder, then U6)
+## U5 remainder, U6, U7: `python test_uadj_control.py` (about 4 minutes)
 
-* A13: gradients in a recirculation bubble (faces with F ≈ 0) with switch counts reported.
-* A14: a seam-crossing source/loss pair on M7 (the seam is already inside A8/A10/A12, but not
-  isolated).
-* A15: per-boundary-type rows, including the jets.
+Butterfly cylinder at Re 100 after 20 steps, unless stated.
+
+| gate | measured | tol |
+|---|---|---|
+| A16 forces, torch vs the production formula | 2e-16 | 1e-14 |
+| A16 dC_D/d(u, v, p) vs FD | 3e-13 | 1e-8 |
+| A15 inflow u (Dirichlet) | 5e-12 | 1e-6 |
+| A15 wall u / wall v (no-slip) | 1e-10 / 4e-11 | 1e-6 |
+| A15 freestream v (symmetry) | 1e-12 | 1e-6 |
+| A15 outlet p (Dirichlet) | 9e-10 | 1e-6 |
+| A15 dL/d(u value) on the Neumann faces (freestream, outlet) | **exactly 0** | 0 |
+| U6 cylinder jets ±90°, opposing and symmetric: dC_D/da, dC_L/da, d(wake v)/da | ≤ 6e-9 | 1e-6 |
+| U6 rotation dC_L/dω | 2e-10 | 1e-6 |
+| A17 replay == tape, 5 control steps: loss / worst dL/da_k | 0 / 9e-14 | 1e-12 / 1e-9 |
+| A13 Re 40 bubble (112 cells; 159 faces with \|F\| < 1e-6 max\|F\|), recorded branch | 3e-11 | 1e-6 |
+| A14 seam moved by half a period: loss / gradient field cell for cell | 0 / 3e-12 | 1e-12 / 1e-10 |
+| U6 NACA α 40°: torch slot values vs production `JetSet.ramp` | 0 | 1e-15 |
+| U6 NACA: forces vs `env.forces()` | 0 | 1e-13 |
+| U6 NACA dC_L/da_j, j = 1, 2, 3 | 7e-11, 2e-10, 7e-11 | 1e-6 |
+
+**Memory and cost (A18, A19).** Saved-tensor bytes plus live LU-factor bytes, butterfly cylinder:
+
+| horizon H | tape MB | replay peak MB |
+|---|---|---|
+| 3 | 65 | 28 |
+| 10 | 230 | 28 |
+| 30 | 703 | 28 |
+
+The tape grows linearly (10.8× from H = 3 to 30). Replay is flat to 0.2 %. On an uncontended
+run the tape backward cost 0.2–0.4× its forward and a whole replay 1.0–2.0× a taped forward,
+inside the A19 bars (2.5× and 3.5×). The timing columns of the second run are not quoted: the
+Taylor–Green job was sharing the CPU.
+
+## Physical tests: `python test_uadj_physics.py` (about 4 minutes)
+
+**P1, plane Poiseuille, 200 steps from rest** (quads, ν = 0.1, f = 0.2):
+
+| ny | Q_h | A: dQ/dν, dQ/df vs FD | P: dQ/dν = −Q/ν | P: dQ/df = Q/f |
+|---|---|---|---|---|
+| 8 | 1.3750000 | 5e-12, 1e-12 | 6e-10 | 1e-15 |
+| 16 | 1.3437500 | 7e-12, 8e-13 | 5e-10 | 8e-16 |
+| 32 | 1.3359375 | 6e-12, 5e-13 | 4e-10 | 1e-16 |
+
+Continuum: dQ/df against 2/(3ν) is off by 3.1e-2, 7.8e-3, 2.0e-3, which is order 2.00 and
+identical (to 2e-16) to the forward Q's own error. The 4–6e-10 in the ν row is the residual time
+transient after 200 steps, not the adjoint: the FD agrees with the adjoint to 1e-11.
+
+**P2, 2D Taylor–Green, T = 1, ν = 0.05, dt ∝ h:**
+
+| n | steps | E(T) (exact 0.2046827) | A: vs FD | P: \|dE/dν + 4T E\| / \|4T E\| |
+|---|---|---|---|---|
+| 16 | 25 | 0.2036172 | 8e-13 | 2.0e-2 |
+| 32 | 50 | 0.2046238 | 2e-12 | 4.6e-3 |
+| 64 | 100 | 0.2046960 | 1e-12 | 1.1e-3 |
+
+The adjoint through 100 time steps equals the discrete derivative to 1e-12 and converges to the
+exact law dE/dν = −4T E at order 2.13.
+
+**A first physical reading of the NACA gradients (P10, preliminary).** At a developed α 40° state
+and over two steps, dC_L/da is +1.10 for the upper-surface jet, +1.24 for the nose jet and −1.07
+for the lower-surface jet. Blowing on the suction side raises lift and blowing on the pressure
+side lowers it. That is the direction the trained PPO policy used to hold C_L down during the gust
+(suction on the upper jet, blowing on the lower, record §56). P10 itself needs the gradient at the
+gust peak and over a control interval, so this is a sign check, not the test.
+
+## Findings, continued
+
+7. **A18 needs two counters.** Saved-tensor hooks see only tensors. The LU factors sit in the
+   solve's ctx and are invisible to them, and on the tape they are most of the memory. `LUFactor`
+   now keeps live and peak byte counts, and the gate adds both.
+
+8. **Live FD probes flip upwind decisions in the bubble.** A 1e-3 probe flips 12 upwind decisions
+   over two steps at Re 40. Unreplayed, those probes would compare two different discrete
+   operators. With the branch recorded and replayed, the bubble gradient is FD-exact to 3e-11.
+   The recorded masks are what make gradients through recirculation testable at all.
+
+9. **A14 was first posed as a ratio and failed at 2.0 against 10.** It asked that the gradient
+   across the seam be ten times the mid-domain gradient. That was mis-posed: the pressure solve
+   couples every cell in one step, so the ratio says nothing about the seam. It is replaced by an
+   exact invariance: the same box with the seam moved by half a period must give the same loss
+   and the same gradient field cell for cell. Measured 0 and 3e-12.
+
+10. **P1's continuum criterion was first posed as ≤ 1e-3 at ny = 32 and failed at 1.95e-3.** That
+    is exactly the forward solver's discretisation error of Q: Q_h = Q(1 + 2/ny²), from the
+    one-sided wall face. The plan's claim that the FV parabola is exact on uniform quads was
+    wrong. The gradient inherits the forward error and adds nothing (equal to 2e-16), so the
+    criterion is now that equality plus order ≥ 1.8.
+
+11. **P2 was first run at fixed dt and gave order 1.61 from 32² to 64², failing 1.8.** The plan
+    poses the refinement at fixed dt/h. At fixed dt, the O(dt) Rhie–Chow damping puts a floor
+    under the error. At fixed dt/h the order is 2.13.
+
+## Open
+
+* P3–P12 (next: P5 symmetry zeros and P6 on a steady Re 40 state, P4 Orr–Sommerfeld, P8
+  limit-cycle time shift).
+* U8: DPC through the replay on the NACA gust task.
 * Performance: the torch step is 1.3× production on the butterfly and 2.8× on the 17k-cell
-  triangle mesh. Most of it is per-call Python overhead in `index_add`/`index_copy` and the
-  per-solve residual check. Not optimised yet: correctness first.
-* U6: the wall-traction force routine in torch and actuation through boundary values.
+  triangle mesh, mostly per-call Python overhead and the per-solve residual check. Not optimised
+  yet: correctness first.
