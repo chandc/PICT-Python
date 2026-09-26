@@ -3550,3 +3550,53 @@ reaching y⁺ 300 in the y–z cut and the inclined shear layers over the low-sp
 near-wall statistics, the outer-layer departure identified as the minimal-box effect with the
 literature's y ≈ 0.3 L_z boundary reproduced. The A100 notebook, Drive checkpointing and adaptive step
 (§59, §61) carried the 7.8 h run across three session losses without intervention.
+
+### 63a. Near-wall u, p and ω_x against DNS at Re_τ 395 (2026-09-26)
+
+`plot_utility/plot_uchannel_re395_nearwall_dns.py`. There is no DNS *field* at Re_τ 395 — the Drive DNS
+folder holds only the Re_τ 180 FOSLS run and MKM 1999 publish statistics — so the comparison is made
+twice. `figures/uchannel_re395_nearwall_vs_dns.png` puts the LES plane at y⁺ 10 beside the FOSLS Re_τ 180
+plane at the same y⁺ and the same wall-unit scale (structure at this height scales in wall units): the same
+streak width and spacing, the same size of pressure patch and of the streamwise-vorticity pairs that flank
+the streaks; the LES box is 2.2 × 2.2 the DNS box in wall units, so it holds four streaks to the DNS's two.
+`figures/uchannel_re395_nearwall_stats.png` compares the same three quantities with the MKM data at the
+same Re, using the parts of the MKM tarball (`chandata.tar.gz`, UT Austin) now kept in
+`reference/mkm_chan395/`: `chan395.velp` (p variance), `chan395.vortvar` (vorticity variances),
+`chan395.zspec.10/.20` (spanwise spectra of u, v, w, p at y⁺ 9.5 and 19.7) and `chan395.zcorr.10/.20`
+(two-point correlations). MKM's E(k_z) is one-sided with Σ_k E = variance at Δk = 2 (L_z = π); ours is
+the one-sided per-mode power at Δk = 2π/L_z; both are plotted as k_z E/Δk.
+
+| at y⁺ ≈ 10 | LES (one field) | LES (t = 10–30 statistics) | MKM 395 DNS | FOSLS 180 field |
+|---|---|---|---|---|
+| u'⁺ rms | 2.54 (plane), 2.45 (folded) | 2.56 | 2.59 | 2.65 |
+| p'⁺ rms | 2.47 (plane), 2.13 (folded) | 2.19 | 2.20 | 1.52 |
+| ω_x ν/u_τ² rms | 0.135 | — | 0.150 | 0.139 |
+| R_uu minimum | Δz⁺ 49, −0.24 | | Δz⁺ 58, −0.14 | |
+| k_z E_uu peak | 105/141 bins | | ≈ 100 | 96 (box quantised) |
+
+**u.** The premultiplied spanwise spectra at y⁺ 10 and 20 lie on the MKM curves point for point from
+λ_z⁺ 20 to 200, including the peak at λ_z⁺ ≈ 100 and the y⁺ 20 curve sitting above the y⁺ 10 curve at
+long wavelengths; only the two box modes (211, 422) carry less than the DNS's continuum there. The
+correlation minimum, the classic streak-spacing measure, is at Δz⁺ 49 against 58 (spacing 98 vs 116), and
+deeper (−0.24 vs −0.14): the minimal box with four streaks across 422⁺ makes them slightly closer and
+more regular than the wide-box DNS. u' rms from the statistics is within 1.5% at y⁺ 10 and within 2% at
+the peak. The single snapshot is 4% low there — a normal one-field fluctuation, not a bias.
+
+**p.** The statistics reproduce the MKM p_rms profile to 1% at the wall and at y⁺ 10, 3% at the y⁺ 30
+peak and 4% at y⁺ 50; the near-wall pressure spectrum matches from λ_z⁺ 20 to 150. Above λ_z⁺ 200 the
+LES has only the two box modes and they hold about 60% of the DNS's premultiplied energy, and R_pp turns
+negative at Δz⁺ 175 where the DNS's stays positive to 600: the near-wall pressure carries the footprint of
+the outer flow, and the minimal box truncates that footprint — the same box effect as the core velocity
+in §63, seen in the one near-wall quantity that is not local. The single-plane p' rms (2.47 on one wall,
+1.78 on the other, 2.13 folded) shows how much of p' at this height is a few box-filling patches.
+
+**ω_x.** The single-field rms profile follows the MKM shape — minimum at y⁺ 5, maximum at y⁺ 18 — at
+8–10% below it through the buffer layer (0.137 vs 0.150 at y⁺ 10; 0.152 vs 0.164 at the maximum) and
+24% below at the wall (0.19 vs 0.25). The wall value is ∂w/∂y in the first cell and ∂w/∂x at Δx⁺ 12.9,
+the finest streamwise vortices are the scales the WALE term acts on; 10% low on ω_x rms with u', p' and
+their spectra on the DNS is what a wall-resolved LES at this Δx⁺ should show.
+
+**Verdict.** At the same Reynolds number, the near-wall u and p statistics and spectra of the LES are on
+the MKM DNS to a few percent from the wall to y⁺ 100 and from λ_z⁺ 20 to 200; streak spacing 98 against
+116; ω_x rms 10% low in the buffer layer. What departs is the box, not the discretisation: the two
+longest spanwise modes and the pressure's outer footprint.

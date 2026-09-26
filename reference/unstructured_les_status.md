@@ -108,6 +108,13 @@ below y ≈ 0.3 L_z (Flores & Jiménez 2010), and that is y⁺ 125 here [§63].*
 about 100 wall units, the DNS value — with the pressure patches and the streamwise-vorticity pairs
 that flank them; plane u' rms 2.62 against MKM's 2.68 [§63].*
 
+![near wall 395 vs DNS](../figures/uchannel_re395_nearwall_stats.png)
+
+*The same three quantities against the MKM DNS at the same Re: spanwise spectra of u and p at y⁺ 10 and
+20 on the DNS curves from λ_z⁺ 20 to 200, correlation minimum at Δz⁺ 49 vs 58, u' and p' rms within 2%
+near the wall, ω_x rms 10% low in the buffer layer. Only the two longest box modes and the pressure's
+outer footprint depart — the minimal box, not the scheme [§63a].*
+
 ![quads vs triangles](../figures/uchannel_re180_quad_vs_tri.png)
 
 *Why quads: the same case on isotropic graded triangles (orange) and on a hybrid mesh with triangles
