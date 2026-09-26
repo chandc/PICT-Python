@@ -3411,3 +3411,66 @@ estimated in section 56 for what these jets can do against a doubled free stream
 loophole logic of the cylinder case (section 43): the task as HydroGym defines it has no actuation
 cost, and the optimum found is open-loop steady suction, not gust-reactive control; the after-gust
 shedding penalty is untouched (0.09 vs 0.10).
+
+## 62. The fluidic pinball on HydroGym's mesh, against HydroGym's Firedrake (2026-09-25/26)
+
+Three cylinders of diameter 1 at the corners of an equilateral triangle of side 1.5 D, apex upstream
+(centres (0, 0), (1.30, +-0.75)); domain -6..20 x +-6; inlet u = 1, lateral symmetry, outlet p = 0.
+HydroGym ships two all-triangle meshes as LFS pointers; the real files were fetched from GitHub's LFS
+store and converted to msh2 (`meshes/pinball_medium.msh` 50864 cells, `pinball_fine.msh` 109258;
+96 wall faces per cylinder, wall cell h/D 0.030 on both -- "fine" refines only the far wake;
+`figures/pinball_meshes.png`). Drivers: `run_upinball.py` (ours, per-cylinder wall-flux forces),
+`tools/hydrogym_cmp/hg_pinball.py` (their Firedrake P2-P1, Newton steady solve then a transient;
+`--impulsive` starts from our initial condition instead). Same mesh in both.
+
+**Re 30.** Firedrake's Newton solve from a symmetric guess gives the symmetric steady state:
+C_D 1.488 / 1.571 / 1.571 (total 4.630), C_L 0 / +0.526 / -0.526, and its transient from that
+state plus a 1e-3 random perturbation stays there for 150 time units. Our run from an impulsive
+start (uniform flow plus a y-even blob) agrees with that near field but develops a growing
+oscillation of the far wake from t ~ 90 (`figures/pinball_re30_history.png`): frequency 0.083,
+rear-pair lift amplitude 0.08 by t = 150, total drag creeping 4.68 -> 4.81; the far-field
+vorticity meanders with a 10 D wavelength where Firedrake's is straight
+(`figures/pinball_re30_fields.png`). The pressure is smooth (face high-pass share 0.011, ten times
+below the quad channel's): not the triangle pressure mode. Three runs then located it:
+
+| Re 30 discriminators | result |
+|---|---|
+| ours, RK3, dt 0.005 | same oscillation: f 0.081, amplitudes 0.037 / 0.062 / 0.063, drag 4.79 |
+| ours, Re 15 | steady to 1e-7 in dC_D/dt; C_L amplitudes 0.001: no numerical instability |
+| **Firedrake, from OUR impulsive start** | **the same oscillation**: f 0.081, amplitudes 0.036 / 0.060 / 0.060, drag 4.69 |
+
+`figures/pinball_re30_forces_compare.png`: from the same start the two solvers' rear-pair lift
+histories lie on top of each other -- same phase, amplitude and period from t = 60 to 120 -- and
+in the window t 90-120 the drag is 1.500 / 1.602 / 1.606 (Firedrake) against 1.517 / 1.620 / 1.624
+(ours), +1.1% in total, a uniform 0.017 per cylinder (the one-sided wall-flux stress on 96 faces,
+the same offset direction as the single cylinder, section 38). The symmetric steady state is one
+solution; a far-wake oscillation that a finite disturbance excites in this confined domain is
+another, and both solvers find the second when started the same way. **The reference number for
+the pinball at Re 30 depends on how the reference was started**, which matters before a controller
+is trained against the steady value; the published bifurcation sequence for this geometry (pitchfork
+near Re 18, Hopf near 68) is for a different confinement and was not used as a criterion.
+
+**Re 100.** Firedrake from the Newton state + 1e-3 noise held the (unstable) symmetric branch for the
+whole 200 time units (total drag 3.53, C_L +-0.090, amplitudes 0.005 only at the end); from the
+impulsive start it leaves it within 40 time units. Ours from the impulsive start: total drag 3.72
+with the rear pair asymmetric (1.41 / 1.32) at t 150. Matched-start comparison:
+
+| Re 100, both from the impulsive start | Firedrake P2-P1 (t 150-250) | ours (t 120-200) | difference |
+|---|---|---|---|
+| C_D front / top / bottom | 0.9809 / 1.3974 / 1.3068 | 0.9925 / 1.4106 / 1.3197 | +1.2 / +0.9 / +1.0% |
+| total C_D | 3.6852 | 3.7228 | +1.0% |
+| C_L mean front / top / bottom | +0.0064 / +0.1121 / -0.0658 | +0.0065 / +0.1078 / -0.0639 | -4% / -3% on the rear pair |
+| C_L amplitude front / top / bottom | 0.0032 / 0.0170 / 0.0282 | 0.0035 / 0.0172 / 0.0290 | +1 / +3% |
+| St (total lift) | 0.1112 | 0.1110 | -0.2% |
+
+`figures/pinball_re100_fields_matched.png`: the same asymmetric shedding state -- top rear cylinder
+carrying the higher drag, the staggered street of the far wake, the pressure around the bodies --
+with the near-wake vortex pattern the same and the street's phase differing (the two snapshots are
+at t = 250 and t = 200). Drag is again a uniform 1% above Firedrake's (the wall-flux stress), lift
+amplitudes within 3%, Strouhal within 0.2%: the same margins as the single cylinder on their mesh
+(section 45). The pinball on HydroGym's own mesh is therefore validated against their solver at both
+Reynolds numbers, once both are started the same way -- and at Re 30 that condition is the finding.
+The asymmetric mean lift at Re 100 (+0.11 top, -0.065 bottom, net +0.05) is the pitchfork-broken
+state of the literature, reached by both solvers from the y-even impulsive start through numerical
+asymmetry; the mirror image is the other attractor.
+
