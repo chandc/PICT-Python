@@ -3484,3 +3484,69 @@ The asymmetric mean lift at Re 100 (+0.11 top, -0.065 bottom, net +0.05) is the 
 state of the literature, reached by both solvers from the y-even impulsive start through numerical
 asymmetry; the mirror image is the other attractor.
 
+
+## 63. The Re_τ 395 channel on the A100, against MKM 1999 (2026-09-26)
+
+The run §61 prepared finished: `run_uchannel25.py --re-tau 395 --nx 96 --ny 160 --nz 128 --cfl-max 0.8
+--device gpu`, WALE, constant pressure gradient, minimal box L_x = π, L_z = 0.34π (L_x⁺ 1241, L_z⁺ 422),
+Δx⁺ 12.9, Δy⁺ 1.0 at the wall and 9.4 at the centre, Δz⁺ 3.3, to t = 30 with statistics over t = 10–30
+(46,582 samples, about ten flow-through times). Initial field: the Re_τ 180 FOSLS DNS field with its mean
+shifted to the MKM 395 mean. Outputs: `results/uchan395/uchan395_96x160x128_wale_cpg/` (statistics,
+final field, checkpoint, history, log); Google Drive `PICT-Python_runs/uchan395_96x160x128_wale_cpg`.
+Figures: `figures/uchannel_re395_profiles.png` (`plot_utility/plot_uchannel_re395.py`),
+`figures/uchannel_re395_nearwall_yp12.png`, `_planes.png`, `_spectra.png`
+(`plot_utility/plot_uchannel_re395_nearwall.py`).
+
+**Cost and stepping.** 68,656 steps at 380–440 ms on the A100 (about 7.8 h of GPU time; the §59
+estimate was 10.7 h at fixed dt 0.001, which C ≈ 1.2 made impossible — §61). The adaptive step sat at
+dt 0.0005 for 77% of the reports and 0.00025 for 23%, face-flux Courant number never above 0.80; no
+divergence, no two-colour pressure mode (0.00% of p_rms on the quads throughout). Three Colab session
+losses were absorbed by the Drive checkpoints (restarts at t = 4.64 and twice at t = 6.90); the
+statistics window is untouched.
+
+**Statistics against MKM 1999 (Re_τ 392.24):**
+
+| | LES | MKM DNS | |
+|---|---|---|---|
+| u_τ (window mean), Re_τ | 0.9958, 393.4 | 1, 392.2 | +0.3% |
+| U⁺ in 30 < y⁺ < 120 | | | mean +0.10, max 0.17 u_τ (+0.6%) |
+| u'⁺ peak (at y⁺) | 2.687 (14.4) | 2.739 (14.2) | −1.9% |
+| v'⁺ max | 0.988 | 0.997 | −1.0% |
+| w'⁺ max | 1.243 | 1.289 | −3.6% |
+| −⟨u'v'⟩⁺ max | 0.830 | 0.837 | −0.9% |
+| U_c⁺ | 20.99 | 20.13 | +4.3% |
+| ⟨ν_t⟩/ν over the window | 0.118 | | |
+
+The V2 criteria (U⁺ within 3% in the log region, u_rms peak within 5%, Re_τ within 2%, two-colour
+mode < 1%) are all met at more than twice the validation Reynolds number, on the same quad topology
+and the same solver settings as the Re_τ 180 run, with 20% of the cells per wall unit in x
+(Δx⁺ 12.9 against 23.6) and the same y⁺ 1 wall cell.
+
+**Where it departs, and why.** Above y⁺ ≈ 150 the LES core runs high (U_c⁺ +4.3%) and u' runs low
+(−15% at y⁺ 200, −25% at y⁺ 300); v' and w' stay within 5% to the centreline and the shear stress
+follows the DNS line to the centre. This is the box, not the model: Jiménez & Moin (1991) and Flores &
+Jiménez (2010, *Phys. Fluids* 22, 071704) show the minimal unit reproduces the full-channel statistics
+only below y ≈ 0.3 L_z — here 0.3 × 1.07h = 0.32h, i.e. y⁺ ≈ 125, exactly where the departure begins —
+and above it the flow is a single box-filling structure with a higher core velocity and starved
+streamwise fluctuations. The spanwise spectrum at y⁺ 153 confirms it: all of k_z E_uu sits in the
+first box mode (λ_z⁺ 422). The Re_τ 180 run had L_z⁺ 192, 0.3 L_z = y⁺ 58, and showed the same
+signature in a milder form (§54: U_c⁺ high, u' low in the core). A full MKM box (2π × π, four times the
+cells and eight times the cost) is the check, if the outer layer ever becomes a target; the near-wall
+comparison, which is what the LES is for, does not need it.
+
+**The field.** MKM publish statistics only, so the instantaneous field is checked the way the DNS
+papers characterise it. On the wall-parallel plane y⁺ 11.4 (`_nearwall_yp12.png`): four low-speed
+streaks across L_z⁺ 422 — spacing ≈ 100 wall units — meandering over the whole 1241⁺ box length,
+u' rms 2.62 (MKM 2.68 at this y⁺), p' rms 2.49 u_τ², streamwise vorticity ν ω_x/u_τ² rms 0.141 in
+streak-flanking pairs. The premultiplied spanwise spectrum of u at y⁺ 11 (one field, x-averaged) puts
+its two largest bins at λ_z⁺ 105 and 211 — the box quantises λ_z⁺ to 422/n, so the DNS spacing of
+100 falls in the 105 bin and the 105/211 pair brackets it; at y⁺ 50 the peak moves to 141, the
+outward growth of the spacing that Kim, Moin & Moser (1987) report. The single field's rms profile
+(walls folded) lies on the 20-turnover statistics to within the sampling noise, so t = 30 is a
+representative state and not a transient. Cross planes (`_planes.png`) show the wall-normal ejections
+reaching y⁺ 300 in the y–z cut and the inclined shear layers over the low-speed regions in the x–y cut.
+
+**Verdict.** T19 done: first LES beyond the validation Reynolds number, all V2 criteria met on the
+near-wall statistics, the outer-layer departure identified as the minimal-box effect with the
+literature's y ≈ 0.3 L_z boundary reproduced. The A100 notebook, Drive checkpointing and adaptive step
+(§59, §61) carried the 7.8 h run across three session losses without intervention.

@@ -38,9 +38,10 @@ Stokes, cavity, Orr–Sommerfeld, cylinder, energy conservation) carries over to
 ```mermaid
 flowchart LR
   G0["G0 attribute<br/>energy loss ✅"] --> G1["G1 RK3 per-stage<br/>projection ✅*"] --> G2["G2 2.5D<br/>Fourier span ✅"] --> G3["G3 SGS ✅"] --> G4["G4 solvers,<br/>GPU speed ✅"] --> G5["G5 forcing, stats,<br/>restart ✅"]
-  G5 --> V1["V1 Taylor–Green Re 800<br/>value ✅ time ❌"] --> V2["V2 channel Re_τ 180<br/>quads ✅ triangles ❌"] --> V3["V3 cylinder Re 3900<br/>not started"]
+  G5 --> V1["V1 Taylor–Green Re 800<br/>value ✅ time ❌"] --> V2["V2 channel Re_τ 180<br/>quads ✅ triangles ❌"] --> R395["channel Re_τ 395<br/>near-wall ✅"] --> V3["V3 cylinder Re 3900<br/>not started"]
   style V1 fill:#fff3cd,stroke:#c90
   style V2 fill:#e6f4ea,stroke:#393
+  style R395 fill:#e6f4ea,stroke:#393
   style V3 fill:#eee,stroke:#999
 ```
 
@@ -54,6 +55,7 @@ flowchart LR
 | G5 infrastructure | lossless restart; statistics reproduce an analytic mean | passed [§53] |
 | V1 Taylor–Green (Re 800, in-house SEM DNS) | peak time 3%, value 5%, WALE | **value met** (−4.8/−5.2% at 96²/128²), curve rms 5.9% (128² implicit); **time not met**: 6% early at every resolution, orientation-dependent [§58] |
 | V2 channel Re_τ 180 (FOSLS DNS) | U⁺ 3%, u_rms 5%, Re_τ 2%, pressure two-colour mode < 1% | **passed on quads**: Re_τ 179.1, U⁺ +1.0%, u_rms −0.3%, −u'v' −1.2%, two-colour 0.00% [§54]. **Fails on every triangle mesh** [§55] |
+| Re_τ 395 channel (MKM 1999), 96×160 × 128 modes, A100 | V2 criteria at 2.2× the validation Re | **passed on the near-wall statistics**: Re_τ 393.4, U⁺ +0.6%, u_rms −1.9%, −u'v' −0.9%, two-colour 0.00%; core high above y⁺ 150 = minimal-box limit y ≈ 0.3 L_z [§63] |
 | V3 cylinder Re 3900, periodic span | St 3%, C_D 5%, recirculation 10% | not started: needs a Re 3900 mesh; 10–20 h on an A100 for the fine butterfly [§59] |
 
 ### Evidence for G1 and G2
@@ -92,6 +94,19 @@ does, ⟨ν_t⟩/ν (dashed) at 0.19 [§54].*
 *The same run's instantaneous planes at y⁺ ≈ 12 against the FOSLS field at the same time: pressure,
 streamwise velocity and streamwise vorticity fluctuations. The same streaks, pressure patches and
 vortex streaks, ours at the LES resolution; no period-2 content in either [§54].*
+
+![channel 395](../figures/uchannel_re395_profiles.png)
+
+*Re_τ 395 on the A100: 96×160 quads × 128 modes, WALE, ten flow-throughs of statistics, against MKM
+1999. Re_τ 393.4, U⁺ within 0.17 u_τ in the log region, u_rms peak −1.9%, shear stress −0.9%; the
+core runs high above y⁺ ≈ 150 because the minimal box (L_z ≈ 1.07h) only reproduces the full channel
+below y ≈ 0.3 L_z (Flores & Jiménez 2010), and that is y⁺ 125 here [§63].*
+
+![near wall 395](../figures/uchannel_re395_nearwall_yp12.png)
+
+*The Re_τ 395 field at t = 30, plane y⁺ 11: four low-speed streaks across L_z⁺ 422 — a spacing of
+about 100 wall units, the DNS value — with the pressure patches and the streamwise-vorticity pairs
+that flank them; plane u' rms 2.62 against MKM's 2.68 [§63].*
 
 ![quads vs triangles](../figures/uchannel_re180_quad_vs_tri.png)
 
@@ -156,7 +171,7 @@ cell-modes at every size, inside the G4 bar, and at 140 on a real stretched mesh
 | TGV 128²×64 | 340 | 63 |
 | TGV 384²×64 | 3,275 | 67 |
 | fine butterfly 27,968 quads × 64 modes, WALE | 1,290 | 140 |
-| channel Re_τ 395, 96×160 × 128 modes | ~1,400 (A100: 645) | ~140 |
+| channel Re_τ 395, 96×160 × 128 modes | ~1,400 (A100 measured: 380–440) | ~140 (A100: 20–22) |
 
 Launch floor ~46 ms per step; the nonlinear term is now 40% of the step. The first A100 profile
 (before the last optimisation) gave 47.6 ms per 10⁵ cell-modes at 384²×64 behind a 237 ms launch
@@ -165,8 +180,9 @@ floor; rerun `tools/a100/profile_step.py` after pulling.
 ## Open items (in order)
 
 1. Port the σ-model; gate: TGV Re 800 curve rms at 96²×96 below the implicit run's.
-2. Run the Re_τ 395 channel on the A100 (`tools/a100/A100_channel_re395.ipynb`; MKM 1999
-   reference in `reference/mkm_chan395/`; initial field = the 180 DNS field with the mean shifted).
+2. ~~Run the Re_τ 395 channel on the A100~~ — done 2026-09-26 [§63]: all V2 criteria met on the near-wall
+   statistics (`figures/uchannel_re395_profiles.png`, `_nearwall_yp12.png`, `_spectra.png`); the outer layer
+   is the minimal box's, a full 2π × π box (8× the cost) is the check if it ever matters.
 3. Fuse the nonlinear term's padded-plane gathers on the GPU. (CFL-adaptive stepping done 2026-09-25 [§61]: `--cfl-max`, face-flux Courant number, dt halves up to three times; the Re_τ 395 run at fixed dt 0.001 diverged at C ≈ 1.2 after ten time units.)
 4. A Re 3900 cylinder mesh (wall cell ~0.002 D, 10⁵ cells) for V3.
 5. Fourth-order in-plane reconstruction, only if a transition's peak timing becomes a criterion.
