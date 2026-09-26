@@ -145,7 +145,7 @@ class TorchUPISO:
         rs = pat.rowsum(A); floor = a_t * tm.vol
         keep = self.masks("simplec", lambda: rs >= floor)       # np.maximum(rowsum, a_t V)
         tie = self.masks("simplec_tie", lambda: (rs - floor).abs() <= TIE * floor)
-        if self.masks.mode == "replay":
+        if self.masks.mode == "replay" and self.masks.straddle:
             keep = torch.where(tie, rs.detach() >= floor, keep)
         # value: production's branch; derivative: the midpoint where rowsum sits on its floor (the
         # viscous row sum is zero, so interior cells are within round-off of the floor: finding 12)

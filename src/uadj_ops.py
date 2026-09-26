@@ -40,6 +40,9 @@ class Masks:
 
     def __init__(self, mode="live"):
         self.mode, self.log, self.k = mode, [], 0
+        # replay: re-decide tie faces live, so a central FD straddles the kink (st_mask). Off for a
+        # fully pinned operator, e.g. the linearity gate A4.
+        self.straddle = True
 
     def __call__(self, name, compute):
         if self.mode == "replay":
@@ -55,7 +58,7 @@ class Masks:
 
     def replay(self):
         """A replaying copy of a recorded log, rewound."""
-        r = Masks("replay"); r.log = self.log; return r
+        r = Masks("replay"); r.log = self.log; r.straddle = self.straddle; return r
 
 
 TIE = 1e-12          # |F| <= TIE * max|F| (or rowsum within TIE of its floor) is a tie
@@ -246,7 +249,7 @@ def convection_vals(tm, pat, F, masks):
     """Implicit upwind part of `uops.convection` on the superset pattern."""
     pos = masks("upwind", lambda: F >= 0.0)
     tie = masks("upwind_tie", lambda: F.abs() <= TIE * F.abs().max())
-    if masks.mode == "replay":
+    if masks.mode == "replay" and masks.straddle:
         # FD probes: pinned to the recorded branch EXCEPT at ties, where the live decision lets the
         # +-h pair straddle the kink, so the central difference measures the same midpoint slope
         # the adjoint returns (the value is continuous there: F * phi = 0 on both sides of F = 0)

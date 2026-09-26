@@ -92,7 +92,8 @@ def run(case):
     Mk = Masks("record"); convection_vals(tm, pat, _t(F), Mk)
     F1, F2 = _t(F) + 0.1 * torch.randn(m.nface), _t(F) + 0.1 * torch.randn(m.nface)
     def cv(x):
-        M = Mk.replay(); return convection_vals(tm, pat, x, M)[0]
+        M = Mk.replay(); M.straddle = False        # fully pinned: ties included
+        return convection_vals(tm, pat, x, M)[0]
     lin = cv(2.0 * F1 - 3.0 * F2) - 2.0 * cv(F1) + 3.0 * cv(F2)
     check(f"A4 {case}: convection values linear in F (fixed mask)", float(lin.abs().max() / cv(F1).abs().max()), 1e-14)
     g1, g2 = _t(gam), _t(np.abs(rng.standard_normal(m.nface)))
