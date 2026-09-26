@@ -3443,7 +3443,12 @@ below the quad channel's): not the triangle pressure mode. Three runs then locat
 histories lie on top of each other -- same phase, amplitude and period from t = 60 to 120 -- and
 in the window t 90-120 the drag is 1.500 / 1.602 / 1.606 (Firedrake) against 1.517 / 1.620 / 1.624
 (ours), +1.1% in total, a uniform 0.017 per cylinder (the one-sided wall-flux stress on 96 faces,
-the same offset direction as the single cylinder, section 38). The symmetric steady state is one
+the same offset direction as the single cylinder, section 38). Firedrake's rerun to t = 150 with the field
+saved (window 90-150: C_D 1.503 / 1.613 / 1.612, total 4.728; amplitudes 0.045 / 0.078 / 0.078; f
+0.082 -- against ours 4.780, 0.046 / 0.079 / 0.079, 0.083) gives the matched field figure
+`figures/pinball_re30_fields_matched.png`: at the same instant the two far wakes meander in phase,
+crest for crest, with peak vorticity 11.07 against 11.28 and identical pressure fields
+(-0.526..+1.037 against -0.526..+1.035). The symmetric steady state is one
 solution; a far-wake oscillation that a finite disturbance excites in this confined domain is
 another, and both solvers find the second when started the same way. **The reference number for
 the pinball at Re 30 depends on how the reference was started**, which matters before a controller
