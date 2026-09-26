@@ -217,6 +217,80 @@ def run_p5_p6():
     check("P6-P sign: blowing raises drag, suction lowers it (dC_D/da_sym > 0)", g, 0.0, lower=True)
 
 
+# ---------------------------------------------------------------------------------------------
+def run_p4(ny=100, T_end=100.0, t_fit=30.0, every=20):
+    """P4: sensitivity of the Tollmien-Schlichting growth rate to viscosity, T8's case (Re 7500,
+    alpha 1, 48 x ny quads, periodic x, BDF2, dt 0.05) and T8's measurement: growth = LSQ slope of
+    ln|a(t)| over t >= 30, a(t) the projection of the first streamwise Fourier mode on its initial
+    shape. The slope is a fixed linear combination of the sampled ln|a|, so it is differentiable;
+    nu enters as a per-step 'action' of the replay (with f = 2 nu, so the base flow stays 1 - y^2).
+    Reference: d sigma/d nu = -Re^2 d sigma/d Re from the Chebyshev OS solver by central difference."""
+    import os
+    os.environ.setdefault("OS_NX", "48"); os.environ.setdefault("OS_DT", "0.05")
+    import test_uorr_sommerfeld as OS
+    from orr_sommerfeld import least_stable
+    from src.uadj_replay import replay_grad
+    print(f"  P4 Orr-Sommerfeld growth-rate sensitivity: Re 7500, 48 x {ny}, T = {T_end}", flush=True)
+    s, m, idx, c = OS.build(ny)
+    s.init_flux()
+    T = TorchUPISO(s)
+    st0 = T.state_from_solver()
+    dt = s.dt; n = int(round(T_end / dt)); nu0 = s.nu
+    idx_t = torch.as_tensor(idx)
+    NX = idx.shape[0]
+    xc = (np.arange(NX) + 0.5) * (OS.LX / NX)
+    cw, sw = torch.as_tensor(np.cos(OS.ALPHA * xc))[:, None], torch.as_tensor(-np.sin(OS.ALPHA * xc))[:, None]
+
+    def amp(st):
+        out = []
+        for f in ("u", "v"):
+            F = st[f][idx_t]
+            Fp = F - F.mean(dim=0, keepdim=True)
+            out += [(Fp * cw).mean(dim=0), (Fp * sw).mean(dim=0)]      # Re, Im of e^{-i alpha x} mode
+        return out
+    A0 = [a.detach() for a in amp(st0)]
+    den = sum((a * a).sum() for a in A0)
+
+    def lna(st):
+        A = amp(st)
+        re = sum((A0[2 * q] * A[2 * q] + A0[2 * q + 1] * A[2 * q + 1]).sum() for q in (0, 1)) / den
+        im = sum((A0[2 * q] * A[2 * q + 1] - A0[2 * q + 1] * A[2 * q]).sum() for q in (0, 1)) / den
+        return 0.5 * torch.log(re * re + im * im)
+    ts = np.array([(k + 1) * dt for k in range(n) if (k + 1) % every == 0])
+    sel = ts >= t_fit
+    tt = ts[sel]; wts = (tt - tt.mean()) / ((tt - tt.mean()) ** 2).sum()   # LSQ slope weights
+    wmap = {int(round(t / dt)) - 1: float(w) for t, w in zip(tt, wts)}
+
+    def step_loss(st, k):
+        return wmap[k] * lna(st) if k in wmap else torch.zeros((), dtype=torch.float64)
+
+    def apply(st, nu_):
+        T.nu_t = nu_; T.fx = 2.0 * nu_ * torch.ones(m.ncell)
+        return st
+    t0 = time.time()
+    growth, ga = replay_grad(T, st0, [nu0] * n, apply, step_loss=step_loss)
+    g_ad = float(sum(ga))
+    t_ad = time.time() - t0
+
+    def growth_of(nu_):
+        with torch.no_grad():
+            st, acc = dict(st0), 0.0
+            for k in range(n):
+                st = T.step(apply(st, torch.tensor(nu_)))
+                acc += float(step_loss(st, k))
+        return acc
+    h = 1e-3 * nu0
+    fd = (growth_of(nu0 + h) - growth_of(nu0 - h)) / (2 * h)
+    Re = 1.0 / nu0; dRe = 1.0
+    sig = lambda R: float(OS.ALPHA * least_stable(R, OS.ALPHA, 120)[0].imag)
+    dsig_dnu = -Re ** 2 * (sig(Re + dRe) - sig(Re - dRe)) / (2 * dRe)
+    print(f"      growth {growth:.6f} (OS {OS.G_REF})   d growth/d nu: adjoint {g_ad:+.5e}  FD {fd:+.5e}  "
+          f"OS {dsig_dnu:+.5e}   (adjoint by replay {t_ad:.0f}s, {n} steps)")
+    check(f"P4-A ny={ny}: d growth/d nu, replay adjoint vs FD (live, 2-point)", abs(g_ad - fd) / abs(fd), 1e-4)
+    check(f"P4-P ny={ny}: d growth/d nu vs Orr-Sommerfeld", abs(g_ad - dsig_dnu) / abs(dsig_dnu), 5e-2)
+    return g_ad, dsig_dnu
+
+
 if __name__ == "__main__":
     t0 = time.time()
     if "--only" in sys.argv:
