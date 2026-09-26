@@ -79,7 +79,12 @@ class TorchUPISO:
         Call before EVERY replayed forward: it rewinds to the start of the recording."""
         if self.masks.mode == "record":
             self._frozen = (self.masks.log, list(self.poisson_counts))
-        log, counts = self._frozen
+        self.replay_from(self._frozen)
+
+    def replay_from(self, frozen):
+        """Replay a recording kept elsewhere: (mask log, Poisson counts), as `replay` stores it."""
+        self._frozen = frozen
+        log, counts = frozen
         self.masks = Masks("replay"); self.masks.log = log
         self._plan = list(counts); self._pk = 0
         self.poisson_counts = []

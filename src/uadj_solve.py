@@ -16,6 +16,8 @@ map b -> x for fixed A, x = P Ã^-1 E b with E zeroing entry 0 and P = I - 11^T/
 is exact too: lambda = Ã^-T P g, dL/db = E lambda, and dL/dA vanishes on row 0, whose entries the
 pin overwrites.
 """
+import weakref
+
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
@@ -37,7 +39,21 @@ def _check(A, x, b, what):
 
 
 class LUFactor:
-    """One factorisation of a (possibly pinned) matrix, shared by every solve with those values."""
+    """One factorisation of a (possibly pinned) matrix, shared by every solve with those values.
+
+    `LUFactor.live_bytes` / `.peak_bytes` track the memory of the factors currently alive (L and U
+    as CSC: 12 bytes per nonzero plus the permutations) -- the part of a tape that saved-tensor
+    hooks cannot see, because the factor sits in the solve's ctx, not in a tensor (gate A18)."""
+    live_bytes = 0
+    peak_bytes = 0
+
+    @classmethod
+    def reset_peak(cls):
+        cls.peak_bytes = cls.live_bytes
+
+    @classmethod
+    def _free(cls, nbytes):
+        cls.live_bytes -= nbytes
 
     def __init__(self, pattern, vals, singular=False):
         v = vals.detach().numpy() if torch.is_tensor(vals) else np.asarray(vals)
@@ -54,6 +70,10 @@ class LUFactor:
             A.data[r0 + d[0]] = 1.0
         self.A = A
         self.lu = spla.splu(A.tocsc())
+        nbytes = 12 * (self.lu.L.nnz + self.lu.U.nnz) + 16 * A.shape[0]
+        LUFactor.live_bytes += nbytes
+        LUFactor.peak_bytes = max(LUFactor.peak_bytes, LUFactor.live_bytes)
+        weakref.finalize(self, LUFactor._free, nbytes)
         # pattern entries overwritten by the pin get no gradient
         self.last_resid = (None, None)
 
