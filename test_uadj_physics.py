@@ -291,6 +291,70 @@ def run_p4(ny=100, T_end=100.0, t_fit=30.0, every=20):
     return g_ad, dsig_dnu
 
 
+# ---------------------------------------------------------------------------------------------
+def run_p8(state="results/uadj_shed_cylinder_butterfly_coarse.npz", N=100, periods=(1, 2, 4, 8)):
+    """P8: time-shift invariance on the Re 100 limit cycle (coarse butterfly, spun up to t = 200,
+    C_L amplitude 0.278 constant to 4 digits since t = 75).
+
+    (a) Autonomy: with dx = x_1 - x_0 the whole state difference over one step (every history
+        array included), <grad_x0 C_L(t_N), dx> = C_L(t_N+1) - C_L(t_N) + O(|dx|^2). The O(|dx|^2)
+        is checked by halving dx: the linearisation error must fall ~4x.
+    (b) The neutral phase mode: ||grad_x0 C_L(t_0 + k periods)|| neither decays nor grows
+        exponentially. Posed before the run as a fitted log-log exponent in [-0.2, 1.2] (the
+        plan wrote [0, 1.2]; a bounded gradient on a periodic orbit fits near 0 either side).
+    St is reported, not gated: T9 validated the FINE butterfly, and this is the coarse one."""
+    from src.uadj_cases import cylinder
+    from src.uadj_control import WallForces
+    from src.uadj_replay import replay_grad
+    print("  P8 Re 100 limit cycle: time-shift identity and bounded gradients", flush=True)
+    d = np.load(state)
+    s = cylinder(mesh="meshes/cylinder_butterfly_coarse.msh", Re=100.0, dt=0.01, nsteps=0)
+    for k in ("u", "v", "p", "Ff", "Ff_prev", "Ff_old", "Fbar_old", "u_old", "v_old"):
+        setattr(s, k, np.array(d[k])); 
+    s.time = float(d["t"]); s.nstep = 20000; s._flux_init = True
+    h = d["hist"]; t, cl = h[:, 0], h[:, 2]
+    w = t > t[-1] - 60; tw, cw = t[w], cl[w] - cl[w].mean()
+    z = np.flatnonzero(np.diff(np.sign(cw)) > 0); tz = tw[z] - cw[z] * (tw[z + 1] - tw[z]) / (cw[z + 1] - cw[z])
+    period = float(np.diff(tz).mean()); print(f"      period {period:.4f}  St {1 / period:.4f} (coarse butterfly; reported only)")
+    T = TorchUPISO(s)
+    W = WallForces(T, s.wall_faces)
+    st0 = T.state_from_solver()
+    keys = ("u", "v", "p", "Ff", "Ff_prev", "Ff_old", "Fbar_old", "u_old", "v_old")
+    with torch.no_grad():
+        st1 = T.step(dict(st0))
+    dx = {k: st1[k] - st0[k] for k in keys}
+    noop = lambda st, a: st
+    final = lambda st: W(st)[1]
+
+    def CL_after(st, n):
+        with torch.no_grad():
+            for _ in range(n):
+                st = T.step(st)
+        return float(W(st)[1])
+    _, _, lam = replay_grad(T, st0, [0.0] * N, noop, final_loss=final, want_state_grad=True)
+    lin = sum(float((lam[k] * dx[k]).sum()) for k in keys)
+    cN, cN1 = CL_after(dict(st0), N), CL_after(dict(st1), N)
+    shift = cN1 - cN
+    err1 = abs(lin - shift) / abs(shift)
+    half = {**st0, **{k: st0[k] + 0.5 * dx[k] for k in keys}}
+    err_half = abs(0.5 * lin - (CL_after(half, N) - cN)) / abs(0.5 * lin)
+    print(f"      N={N}: <grad C_L, dx> {lin:+.6e}   C_L(N+1) - C_L(N) {shift:+.6e}   "
+          f"linearisation error: full dx {err1:.2e}, half dx {err_half:.2e} (ratio {err1 / err_half:.2f}, expect ~2)")
+    check(f"P8-P time shift: <grad C_L(t_N), x_1 - x_0> vs C_L(t_N+1) - C_L(t_N), N={N}", err1, 1e-2)
+    check("P8-P linearisation error is O(|dx|^2): relative error halves with dx", abs(np.log2(err1 / err_half) - 1.0), 0.3)
+    norms = []
+    for kper in periods:
+        n = int(round(kper * period / s.dt))
+        t0 = time.time()
+        _, _, lam = replay_grad(T, st0, [0.0] * n, noop, final_loss=final, want_state_grad=True)
+        g = float(torch.sqrt(sum((lam[k] ** 2).sum() for k in ("u", "v", "p"))))
+        norms.append(g)
+        print(f"      {kper} period(s) = {n} steps: ||grad_x0 C_L|| (u, v, p) = {g:.4e}  ({time.time() - t0:.0f}s)", flush=True)
+    expo = np.polyfit(np.log(periods), np.log(norms), 1)[0]
+    check("P8-P gradient norm over 1-8 periods: fitted exponent >= -0.2", expo, -0.2, lower=True)
+    check("P8-P gradient norm over 1-8 periods: fitted exponent <= 1.2", expo, 1.2)
+
+
 if __name__ == "__main__":
     t0 = time.time()
     if "--only" in sys.argv:
