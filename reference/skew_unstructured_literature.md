@@ -3404,13 +3404,18 @@ each with and without the jets; `figures/naca40_gust_control_eval.png`, `results
 | jets off | -64.24 +- 0.05 | 0.71 | 0.10 | 2.97 | 0 |
 | learned policy, no exploration noise | **-30.33 +- 0.15** | **0.21** | 0.09 | 1.87 | -0.275, -0.006, +0.036 |
 
-**A 53% better return and a 70% smaller lift excursion during the gust**, from steady suction on the
-upper-surface jet at 0.14 U_inf with the nose jet off -- the deterministic policy is a constant, the
-noise in training cost the 22 points between -52 and -30. This lands at the good end of the -35 to -45
-estimated in section 56 for what these jets can do against a doubled free stream. It also confirms the
-loophole logic of the cylinder case (section 43): the task as HydroGym defines it has no actuation
-cost, and the optimum found is open-loop steady suction, not gust-reactive control; the after-gust
-shedding penalty is untouched (0.09 vs 0.10).
+**A 53% better return and a 70% smaller lift excursion during the gust**, and -- the field
+episodes (`eval_naca_fields.py`, `figures/naca40_gust_control_fields.png`) corrected an earlier
+reading of the mean action -- **the policy is gust-reactive, not a constant**: from the probe's
+velocity it ramps the upper-surface jet from -0.3 before the gust to -0.75/-0.80 (suction at
+0.4 U_inf) at the gust peak and the lower jet from +0.07 to +0.6 (blowing), holding C_L at 0.95-1.05
+against the 1.9-2.2 of the uncontrolled airfoil while the free stream doubles, then relaxes to
+(-0.17, +0.03, -0.09) after it; C_D at the peak 1.79 against 2.50. The upper-surface suction thins
+the separated shear layer over the suction side and the lower blowing weakens the trailing-edge
+vortex (t = 21.6 panels). The noise in training cost the 22 points between -52 and -30. This
+lands at the good end of the -35 to -45 estimated above. The after-gust shedding penalty is
+untouched (0.09 vs 0.10): with no actuation cost in the task the policy keeps a mild suction on
+afterwards but does not attempt to suppress the shedding.
 
 ## 62. The fluidic pinball on HydroGym's mesh, against HydroGym's Firedrake (2026-09-25/26)
 
