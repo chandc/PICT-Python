@@ -399,6 +399,36 @@ suggest -- part of the 57× is genuine gradient-vs-policy-gradient efficiency, p
 DPC's eval metric against PPO's training metric rather than PPO's own eval metric at matched training
 budgets (which we don't have, since PPO was only evaluated at the end of each stage, not continuously).
 
+**A cold-start gap found and fixed, impact measured.** Asked whether PPO and DPC run the literal same
+solver: yes -- `naca_env.py` calls production `src.upiso.PISO` directly, `uadj_dpc_naca.py` wraps that
+same solver instance in `TorchUPISO`. Direct step-for-step comparison on the NACA mesh (never gated
+before: every other step-equality gate warm-starts its solver with real steps or a restart file before
+calling `state_from_solver()`, so the cold-start branch was never exercised) found a genuine 1-2%
+relative difference in u, v, p after 5 steps from `env.reset()`'s actual state. Cause: production's
+`PISO.step()` lazily bootstraps the face flux from the current velocity field (`init_flux()`) the first
+time it steps with Ff identically zero and (u, v) not -- exactly what a fresh `env.reset()` produces,
+and exactly the state every DPC episode starts from. `TorchUPISO.step()` never replicated that
+bootstrap, so its first cold step convected nothing, the same historical bug production's own code
+comment describes and calls "a one-off O(dt) error... invisible in windowed statistics." Fixed
+(`src/uadj_step.py`, commit `787c859`): the same lazy bootstrap via `tm.interp`, matching `init_flux()`'s
+formula. Warm-started step equality was already round-off; cold-started step equality is now round-off
+too (1e-13 to 1e-15, was 1-2%).
+
+**Measured impact on the already-reported returns: negligible, exactly as production's comment
+predicts for a long window.** Re-evaluated the three trained policies (no retraining) with the fix:
+
+| seed | before the fix | after the fix |
+|---|---|---|
+| 0 | −30.40 | −30.41 |
+| 1 | −28.96 | −28.97 |
+| 2 | −30.85 | −30.85 |
+
+A one-step transient at t = 0 of a 10,800-step (200-action) evaluation washes out, as expected. The
+U8 step 2 numbers stand. The fix matters going forward regardless: it removes a real discrepancy
+between what DPC's gradient sees and what the environment (and PPO) actually experiences at the start
+of every training window, not just the final evaluation, and closes a gap in gate coverage that no
+existing test had caught.
+
 **Next (U8 step 2).** The NACA α 40° gust task with PPO's observation and reward, ≥ 3 seeds, horizon sweep —
 `reference/unstructured_adjoint_plan.md` §0. The H 240 protocol here (rolling start, w_a 0.5, lr 1e-2) is
 the starting point.
