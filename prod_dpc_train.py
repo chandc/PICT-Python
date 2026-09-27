@@ -59,7 +59,8 @@ MESHES = {
 }
 
 
-def build(restart=None, mesh="coarse", dt=0.01, picard=2, momdc=2, tol=1e-8):
+def build(restart=None, mesh="coarse", dt=0.01, picard=2, momdc=2, tol=1e-8,
+          backend="scipy"):
     d, idx = ring_rect_domain(**MESHES[mesh])
     kindmap = {"inlet": "inflow", "outlet": "outflow",
                "lateral": "wall", "body": "wall"}
@@ -70,7 +71,7 @@ def build(restart=None, mesh="coarse", dt=0.01, picard=2, momdc=2, tol=1e-8):
     m = MultiBlockPISO(d, NU, dt, 2, tol, time_scheme="bdf2",
                        scheme="rotational", picard_iters=picard, rhie_chow=True,
                        persistent_flux=True, ddt_corr=False,
-                       implicit_cross=True, linear_backend="scipy")
+                       implicit_cross=True, linear_backend=backend)
     m.momentum_dc_iters = momdc
     for b in range(len(d.blocks)):
         m.u[b][:] = U_INF
@@ -144,6 +145,11 @@ def make_policy(nin=453, hidden=64, seed=0):
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--backend", default="scipy",
+                   help="forward linear backend. 'amgx' puts the PRESSURE solve on the GPU "
+                        "(15x on that bucket); momentum stays on scipy by construction, and "
+                        "the ADJOINT is scipy either way -- it has no GPU path. Run under "
+                        "/usr/bin/python3 in pict-amgx, not the python3 on PATH.")
     p.add_argument("--selftest", action="store_true")
     p.add_argument("--train", action="store_true")
     p.add_argument("--restart", default="results/fields/coarse_dev.npz")
@@ -165,7 +171,7 @@ def main():
     LIFT_W[0] = a.lift_weight
     d, m, tps, body_faces = build(a.restart if a.train else None, mesh=a.mesh,
                                   dt=a.dt, picard=a.picard, momdc=a.momdc,
-                                  tol=a.tol)
+                                  tol=a.tol, backend=a.backend)
     hz = Harness(d, tps, body_faces)
     policy = make_policy()
     if getattr(a, "init", None) and os.path.exists(a.init):

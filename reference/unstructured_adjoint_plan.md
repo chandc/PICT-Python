@@ -6,6 +6,42 @@ unstructured solver nor the Stage 9 adjoint.*
 
 ---
 
+## 0. Status and next steps (2026-09-26, hand-over from the remote session)
+
+| stage | state | evidence |
+|---|---|---|
+| U0–U4 decisions, operators, solves, BDF2 step | ✅ | `test_uadj_ops.py`, `test_uadj_step.py`: the torch step equals production to round-off on six meshes incl. two production cylinder meshes |
+| U5 gradient gates A1–A15 | ✅ | FD vs adjoint ≤ 5e-8 through 1–3 steps, every path live, ⟨w,Jv⟩ = ⟨Jᵀw,v⟩ |
+| U6 forces and actuation | ✅ | wall traction, cylinder jets, HydroGym NACA jets, rotation, inlet gust; symmetry zeros (P5), blowing sign (P6) |
+| U7 memory-flat replay | ✅ | replay == tape to 9e-14; memory flat in the horizon |
+| training bridge (policy in the replayed loop) | ✅ | `uadj_replay.replay_policy_grad`, gates A20–A22 in `test_uadj_train.py`: replay == tape on all parameter gradients to 1e-15, FD 8e-10 |
+| physical tests | 🔧 | P1, P2, P5, P6, P8(a) pass; P4 adjoint = FD (6e-7), 5.5% from the eigenvalue derivative at 48×100 → convergence statement, 96×200 pending; P8(b) pending (run on the Spark); P3, P7, P9–P12 not run |
+| U8 first control result | ▶ next | see below |
+| U9 RK3, U10 2.5D + GPU, U11 cross-code | not started | |
+
+**Environment.** CPU float64; torch ≥ 2 (a torch 1.13 kernel cannot build a tensor from a numpy 2 boolean
+array — the local venv was upgraded to 2.8). Fast suite: ops 1 s, step 15 s, train 4 s.
+
+**U8 in three steps, in order.**
+
+1. **DPC smoke on the coarse cylinder** (`cylinder_butterfly_coarse`, Re 100, ±90° jets, the limit-cycle
+   state `results/uadj_shed_cylinder_butterfly_coarse.npz`): drag over 1, 2 and 4 shedding periods with the
+   pressure-probe policy of `test_uadj_train.py`, Adam, horizon sweep H ∈ {8, 40} control steps of 5 solver
+   steps. Deliverable: loss against iteration and against solver steps consumed; the first check of the
+   FluidGym horizon finding (paper outline C1) on this solver. Budget: ~1 s per solver step forward+backward
+   on the CPU, so a 40-step horizon is ~3–4 min per gradient; 50 iterations in an afternoon.
+2. **NACA α 40° gust task** (`naca_env.py`, 8,260 cells): the same observation (probe velocity) and reward
+   (−|ΔC_L| − 0.25 |ΔC_D|) as the PPO run of record §56, the gust as the inlet modulation of U6. One
+   gradient through H = 40 actions × 54 steps is ~25–35 min on the CPU; 30–50 iterations is 1–2 days, so
+   this either runs on the Spark's cores or waits for U10's GPU path. ≥ 3 seeds each side.
+3. **The comparison** with the same evaluation protocol as PPO (deterministic policy, the fixed gust
+   episode, `eval_naca_policy.py`): return, C_L excursion, and the two efficiencies — solver steps consumed
+   and wall-clock to a given return. Expected: DPC one to two orders of magnitude fewer solver steps, slower
+   in wall-clock until the GPU port.
+
+**Remaining effort** (from the table in §4, U0–U7 spent): U8 1–2 weeks, U9 1 week, U10 3–4 weeks, U11 ½ week;
+the physical tests 1 week spread over them.
+
 ## 1. What exists, and what carries over
 
 **The structured adjoint (Stage 9, `reference/production_adjoint.md`)** differentiates one
