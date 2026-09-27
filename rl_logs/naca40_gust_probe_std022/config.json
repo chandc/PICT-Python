@@ -1,0 +1,17 @@
+{
+ "task": "gust",
+ "obs": "probe",
+ "n_envs": 8,
+ "total_steps": 40000,
+ "episode_steps": 200,
+ "mesh": "meshes/naca0012_a40_coarse.msh",
+ "snapshots": "results/naca/a40_coarse_snapshots.npz",
+ "logdir": "/work/rl_logs/naca40_gust_probe_std022",
+ "seed": 0,
+ "device": "auto",
+ "lr": 0.0003,
+ "ent": 0.0,
+ "resume": null,
+ "log_std_init": -1.5,
+ "vmax": 0.52
+}

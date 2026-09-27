@@ -1,0 +1,67 @@
+policy initialised from results/uadj_dpc/dpc_naca_h10_s1_c2_policy.pt
+dpc_naca_h10_s1_c3: NACA0012 alpha 40, 8260 cells, Re 100, snapshot seed 1; action = 54 steps x dt 0.01 (0.54 time units), gust to t = 28.9 (54 actions); window H 10 actions (540 solver steps per gradient), episode 60 actions; policy 4547 parameters on (u, v) at the probe; C_D0 1.0344 C_L0 0.9762; 6 threads
+/work/upict/uadj_dpc_naca.py:41: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:820.)
+  t = float(st["t"]) if "t" in st else 0.0; a_prev = st["a_prev"] if st.get("a_prev") is not None else torch.zeros(3)
+  it   0  window actions 0-10 (t   0.0-  5.4)  return   -1.056  zero-action   -0.802  |grad| 1.06e+01  (193s)
+  it   1  window actions 10-20 (t   5.4- 10.8)  return   -1.348  zero-action   -3.255  |grad| 1.11e+01  (187s)
+  it   2  window actions 20-30 (t  10.8- 16.2)  return   -2.017  zero-action   -9.675  |grad| 7.37e+00  (188s)
+  it   3  window actions 30-40 (t  16.2- 21.6)  return   -7.393  zero-action  -18.095  |grad| 3.40e+01  (186s)
+  it   4  window actions 40-50 (t  21.6- 27.0)  return   -6.031  zero-action  -13.359  |grad| 2.85e+01  (1167s)  EVAL return   -78.68  ** new best (saved dpc_naca_h10_s1_c3_best.pt) **
+  it   5  window actions 50-60 (t  27.0- 32.4)  return   -4.424  zero-action   -4.984  |grad| 2.44e+01  (186s)
+  it   6  window actions 0-10 (t   0.0-  5.4)  return   -3.394  zero-action   -0.802  |grad| 2.57e+01  (184s)
+  it   7  window actions 10-20 (t   5.4- 10.8)  return   -2.262  zero-action   -3.463  |grad| 2.41e+01  (186s)
+  it   8  window actions 20-30 (t  10.8- 16.2)  return   -1.846  zero-action   -9.713  |grad| 5.66e+00  (187s)
+  it   9  window actions 30-40 (t  16.2- 21.6)  return   -6.506  zero-action  -17.980  |grad| 3.39e+01  (1164s)  EVAL return   -51.23  ** new best (saved dpc_naca_h10_s1_c3_best.pt) **
+  it  10  window actions 40-50 (t  21.6- 27.0)  return   -4.926  zero-action  -13.225  |grad| 1.58e+01  (185s)
+  it  11  window actions 50-60 (t  27.0- 32.4)  return   -2.515  zero-action   -4.888  |grad| 1.53e+01  (183s)
+  it  12  window actions 0-10 (t   0.0-  5.4)  return   -1.170  zero-action   -0.802  |grad| 1.33e+01  (182s)
+  it  13  window actions 10-20 (t   5.4- 10.8)  return   -1.533  zero-action   -3.345  |grad| 8.72e+00  (186s)
+  it  14  window actions 20-30 (t  10.8- 16.2)  return   -2.678  zero-action   -9.625  |grad| 2.33e+01  (1179s)  EVAL return   -31.35  ** new best (saved dpc_naca_h10_s1_c3_best.pt) **
+  it  15  window actions 30-40 (t  16.2- 21.6)  return   -5.628  zero-action  -18.018  |grad| 9.76e+00  (189s)
+  it  16  window actions 40-50 (t  21.6- 27.0)  return   -3.787  zero-action  -13.117  |grad| 7.49e+00  (186s)
+  it  17  window actions 50-60 (t  27.0- 32.4)  return   -2.078  zero-action   -4.725  |grad| 1.51e+01  (189s)
+  it  18  window actions 0-10 (t   0.0-  5.4)  return   -2.000  zero-action   -0.802  |grad| 2.53e+01  (186s)
+  it  19  window actions 10-20 (t   5.4- 10.8)  return   -3.006  zero-action   -3.237  |grad| 2.58e+01  (1170s)  EVAL return   -45.41  (best so far -31.35)
+  it  20  window actions 20-30 (t  10.8- 16.2)  return   -2.878  zero-action   -9.608  |grad| 2.23e+01  (186s)
+  it  21  window actions 30-40 (t  16.2- 21.6)  return   -5.649  zero-action  -18.089  |grad| 1.74e+01  (184s)
+  it  22  window actions 40-50 (t  21.6- 27.0)  return   -3.588  zero-action  -13.180  |grad| 5.64e+00  (185s)
+  it  23  window actions 50-60 (t  27.0- 32.4)  return   -2.118  zero-action   -4.735  |grad| 9.77e+00  (182s)
+  it  24  window actions 0-10 (t   0.0-  5.4)  return   -1.628  zero-action   -0.802  |grad| 2.03e+01  (1161s)  EVAL return   -36.04  (best so far -31.35)
+  it  25  window actions 10-20 (t   5.4- 10.8)  return   -2.361  zero-action   -3.214  |grad| 2.54e+01  (184s)
+  it  26  window actions 20-30 (t  10.8- 16.2)  return   -2.709  zero-action   -9.641  |grad| 9.20e+00  (186s)
+  it  27  window actions 30-40 (t  16.2- 21.6)  return   -6.220  zero-action  -18.113  |grad| 3.46e+01  (188s)
+  it  28  window actions 40-50 (t  21.6- 27.0)  return   -3.965  zero-action  -13.304  |grad| 1.50e+01  (186s)
+  it  29  window actions 50-60 (t  27.0- 32.4)  return   -1.747  zero-action   -4.836  |grad| 4.38e+00  (1171s)  EVAL return   -30.17  ** new best (saved dpc_naca_h10_s1_c3_best.pt) **
+  it  30  window actions 0-10 (t   0.0-  5.4)  return   -0.862  zero-action   -0.802  |grad| 3.47e+00  (185s)
+  it  31  window actions 10-20 (t   5.4- 10.8)  return   -1.577  zero-action   -3.298  |grad| 1.07e+01  (186s)
+  it  32  window actions 20-30 (t  10.8- 16.2)  return   -2.482  zero-action   -9.662  |grad| 9.47e+00  (185s)
+  it  33  window actions 30-40 (t  16.2- 21.6)  return   -6.435  zero-action  -18.089  |grad| 3.45e+01  (184s)
+  it  34  window actions 40-50 (t  21.6- 27.0)  return   -4.143  zero-action  -13.339  |grad| 1.51e+01  (1169s)  EVAL return   -30.15  ** new best (saved dpc_naca_h10_s1_c3_best.pt) **
+  it  35  window actions 50-60 (t  27.0- 32.4)  return   -1.786  zero-action   -4.867  |grad| 4.36e+00  (187s)
+  it  36  window actions 0-10 (t   0.0-  5.4)  return   -0.856  zero-action   -0.802  |grad| 2.67e+00  (185s)
+  it  37  window actions 10-20 (t   5.4- 10.8)  return   -1.604  zero-action   -3.289  |grad| 1.06e+01  (185s)
+  it  38  window actions 20-30 (t  10.8- 16.2)  return   -2.462  zero-action   -9.664  |grad| 9.58e+00  (183s)
+  it  39  window actions 30-40 (t  16.2- 21.6)  return   -6.282  zero-action  -18.097  |grad| 3.48e+01  (1164s)  EVAL return   -29.35  ** new best (saved dpc_naca_h10_s1_c3_best.pt) **
+  it  40  window actions 40-50 (t  21.6- 27.0)  return   -4.071  zero-action  -13.298  |grad| 1.52e+01  (184s)
+  it  41  window actions 50-60 (t  27.0- 32.4)  return   -1.744  zero-action   -4.840  |grad| 6.56e+00  (186s)
+  it  42  window actions 0-10 (t   0.0-  5.4)  return   -0.852  zero-action   -0.802  |grad| 3.93e+00  (187s)
+  it  43  window actions 10-20 (t   5.4- 10.8)  return   -1.570  zero-action   -3.281  |grad| 1.19e+01  (185s)
+  it  44  window actions 20-30 (t  10.8- 16.2)  return   -2.425  zero-action   -9.654  |grad| 1.02e+01  (1168s)  EVAL return   -29.29  ** new best (saved dpc_naca_h10_s1_c3_best.pt) **
+  it  45  window actions 30-40 (t  16.2- 21.6)  return   -6.094  zero-action  -18.084  |grad| 2.61e+01  (183s)
+  it  46  window actions 40-50 (t  21.6- 27.0)  return   -4.081  zero-action  -13.246  |grad| 1.52e+01  (184s)
+  it  47  window actions 50-60 (t  27.0- 32.4)  return   -1.835  zero-action   -4.823  |grad| 7.75e+00  (183s)
+  it  48  window actions 0-10 (t   0.0-  5.4)  return   -0.853  zero-action   -0.802  |grad| 4.57e+00  (188s)
+  it  49  window actions 10-20 (t   5.4- 10.8)  return   -1.540  zero-action   -3.297  |grad| 1.05e+01  (1161s)  EVAL return   -28.96  ** new best (saved dpc_naca_h10_s1_c3_best.pt) **
+  it  50  window actions 20-30 (t  10.8- 16.2)  return   -2.475  zero-action   -9.648  |grad| 1.30e+01  (187s)
+  it  51  window actions 30-40 (t  16.2- 21.6)  return   -5.935  zero-action  -18.071  |grad| 2.62e+01  (185s)
+  it  52  window actions 40-50 (t  21.6- 27.0)  return   -3.896  zero-action  -13.217  |grad| 1.00e+01  (182s)
+  it  53  window actions 50-60 (t  27.0- 32.4)  return   -1.627  zero-action   -4.798  |grad| 4.49e+00  (189s)
+  it  54  window actions 0-10 (t   0.0-  5.4)  return   -1.010  zero-action   -0.802  |grad| 1.10e+01  (1162s)  EVAL return   -29.96  (best so far -28.96)
+  it  55  window actions 10-20 (t   5.4- 10.8)  return   -1.733  zero-action   -3.262  |grad| 1.60e+01  (184s)
+  it  56  window actions 20-30 (t  10.8- 16.2)  return   -2.456  zero-action   -9.656  |grad| 1.02e+01  (186s)
+  it  57  window actions 30-40 (t  16.2- 21.6)  return   -6.103  zero-action  -18.094  |grad| 2.61e+01  (185s)
+  it  58  window actions 40-50 (t  21.6- 27.0)  return   -4.098  zero-action  -13.248  |grad| 1.52e+01  (184s)
+  it  59  window actions 50-60 (t  27.0- 32.4)  return   -1.810  zero-action   -4.833  |grad| 6.52e+00  (1166s)  EVAL return   -30.04  (best so far -28.96)
+  final evaluation uses the BEST checkpoint (return -28.96), not the last gradient step
+RESULT dpc_naca_h10_s1_c3: return policy -28.96  zero-action -64.24  improvement +54.9%  mean |dC_L| during the gust 0.254 (zero 0.715) after 0.090 (zero 0.101)  peak C_L 2.05 (zero 2.97)  mean action [-0.141, 0.004, 0.16]  [PPO of record: -30.3 vs -64.2, +53%]

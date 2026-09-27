@@ -370,6 +370,35 @@ six CPU threads.
     the same degenerate policy PPO finds — this is the benchmark-audit replication of §14, now shown to
     dominate PPO in the metric that matters (steps to a given drag reduction), not just to reproduce it.
 
+**The training histories, pulled and compared directly.** PPO's actual training logs (`rl_logs/`,
+recovered from the Spark's `hgrl` container where the original training ran -- five progressive stages:
+an abandoned std_init=1.0 attempt, then the successful std_init=-1.5 lineage that reached the recorded
+result) and all three DPC seeds' full curves (`results/uadj_dpc/dpc_naca_h10_s{0,1,2}[_c2][_c3]`) are
+plotted on the same metric in `figures/naca_ppo_vs_dpc_training.png`
+(`plot_utility/plot_naca_ppo_vs_dpc_training.py`): return over the deterministic 200-action gust
+episode, PPO's own evaluation convention. One correction on the way: PPO's `monitor.csv` counts gym
+`env.step()` calls, and each of those runs 54 real CFD solver steps (`naca_env.py`'s `action_interval`
+0.54 / `dt` 0.01) -- the first pass at this plot undercounted PPO's true cost by exactly that factor.
+
+| | solver steps to PPO's recorded return (-30.3) |
+|---|---|
+| PPO (successful lineage: std022 → cont → cont2 → cont3) | 11,134,800 |
+| PPO (+ the abandoned std_init=1.0 attempt) | 13,294,800 |
+| DPC (mean of 3 seeds, all reach the same return) | ≈194,400 |
+| **ratio** | **≈57×** |
+
+Two things this makes visible that weren't in the earlier estimate (`~1/20`, a rough per-iteration
+guess, not pulled data): first, the true gap is larger, 57× not 20×, because of the 54-substeps-per-
+action correction above. Second, PPO's *training-time* return (stochastic policy, exploration noise
+active, plotted as the grey cloud and its rolling mean) sits well below its *deterministic-evaluation*
+return at every point during training -- the rolling mean is still at −49 after the full 11M-step
+budget, while the deterministic checkpoint evaluates to −30.3. DPC has no such gap: its replay-computed
+gradient is deterministic, so its plotted curve already is the evaluation metric, every point. That is
+a second, independent reason DPC looks more sample-efficient than a naive step-count comparison would
+suggest -- part of the 57× is genuine gradient-vs-policy-gradient efficiency, part of it is comparing
+DPC's eval metric against PPO's training metric rather than PPO's own eval metric at matched training
+budgets (which we don't have, since PPO was only evaluated at the end of each stage, not continuously).
+
 **Next (U8 step 2).** The NACA α 40° gust task with PPO's observation and reward, ≥ 3 seeds, horizon sweep —
 `reference/unstructured_adjoint_plan.md` §0. The H 240 protocol here (rolling start, w_a 0.5, lr 1e-2) is
 the starting point.
