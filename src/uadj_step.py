@@ -232,6 +232,16 @@ class TorchUPISO:
             raise NotImplementedError("PIMPLE outer iterations: not needed for the U4 gates")
         Fn = st["Ff"]
         u_n, v_n = st["u"], st["v"]
+        if bool(torch.all(Fn == 0)) and (bool(torch.any(u_n != 0)) or bool(torch.any(v_n != 0))):
+            # production's init_flux() (src/upiso.py): a cold-started Ff (state_from_solver() taken before
+            # the solver's own first step, e.g. right after an env reset()) must be bootstrapped from the
+            # current velocity by plain face interpolation, or this step convects nothing -- an O(dt) error
+            # in u, v, p that production patches lazily on its own nstep == 0. Not exercised by any other
+            # gate: every other gate's TorchUPISO is built from an already-stepped or restart-file solver,
+            # whose Ff is nonzero, so this branch is never taken there (found via a direct torch-vs-
+            # production comparison on the NACA mesh from env.reset()'s actual cold state, 2026-09-27).
+            ub0 = self.bc_u.effective(u_n, st["ub"]); vb0 = self.bc_v.effective(v_n, st["vb"])
+            Fn = (tm.interp(u_n, ub0) * tm.normal[:, 0] + tm.interp(v_n, vb0) * tm.normal[:, 1]) * tm.span
         u, v, F, p = u_n, v_n, Fn, st["p"]
         if s.conv_flux_extrap and st["Ff_prev"] is not None:
             Fconv = 2.0 * Fn - st["Ff_prev"]
