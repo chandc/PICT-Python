@@ -1,0 +1,6 @@
+dpc_h80x5_znmf: coarse butterfly 1776 cells, Re 100, period 5.939 (594 steps), window H 80 x 5 steps = 4.00 time units (0.67 periods); ZNMF (+a, -a); 4 phases; uncontrolled window C_D by phase [1.4894, 1.4893, 1.4894, 1.4893]; policy 833 parameters, 24 pressure probes, |a| <= 0.5; 6 threads
+  it   0 ph 0  window loss 119.12845  mean C_D 1.48810 (uncontrolled 1.48944, -0.09%)  |a| 0.019  |grad| 4.40e+00  (36s)
+  it   1 ph 1  window loss 119.08517  mean C_D 1.48800 (uncontrolled 1.48926, -0.08%)  |a| 0.032  |grad| 2.34e+00  (44s)
+  it   2 ph 2  window loss 119.32687  mean C_D 1.49165 (uncontrolled 1.48942, +0.15%)  |a| 0.032  |grad| 4.24e+00  (52s)
+  it   3 ph 3  window loss 119.21071  mean C_D 1.48996 (uncontrolled 1.48927, +0.05%)  |a| 0.032  |grad| 1.96e+00  (59s)
+  it   4 ph 0  window loss 118.95070  mean C_D 1.48664 (uncontrolled 1.48944, -0.19%)  |a| 0.036  |grad| 4.54e+00  (53s)

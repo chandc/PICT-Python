@@ -10,13 +10,13 @@ fig, ax = plt.subplots(2, 3, figsize=(18, 8.5)); rows = []
 for i, tag in enumerate(tags):
     c = np.load(f"{d}/{tag}_curve.npy"); H = int(tag.split("_h")[1].split("x")[0]); sub = int(tag.split("x")[1].split("_")[0]) if "x" in tag else 5
     it, ph, L, cd, cd0, act, gn, sec = c.T; rel = (cd / cd0 - 1) * 100; steps = np.cumsum(np.full_like(it, 2 * H * sub))     # forward + replayed backward, in solver steps
-    lab = f"H {H} x {sub} ({H*sub*0.01:.1f} time units, {sec.mean():.0f} s/it)"
+    kind = ("ZNMF" if "znmf" in tag else "free jets") + (", rolling" if "roll" in tag else ""); lab = f"H {H} x {sub}, {kind} ({H*sub*0.01:.1f} time units, {sec.mean():.0f} s/it)"
     ax[0, 0].plot(it, rel, f"C{i}", lw=1.2, label=lab); ax[0, 1].plot(steps, rel, f"C{i}", lw=1.2, label=lab); ax[0, 2].plot(it, act, f"C{i}", lw=1.2, label=lab)
     ev = f"{d}/{tag}_eval.npz"
     if _os.path.exists(ev):
         e = np.load(ev); cc, uu = e["controlled"], e["uncontrolled"]; tt = (cc[:, 0] + 1) * int(e["sub"]) * 0.01 / float(e["period"])
-        ax[1, 0].plot(tt, cc[:, 1], f"C{i}", lw=1.2, label=f"H {H}: mean {cc[:, 1].mean():.4f} ({(cc[:, 1].mean()/uu[:, 1].mean()-1)*100:+.2f}%)")
-        ax[1, 1].plot(tt, cc[:, 2], f"C{i}", lw=1.2, label=f"H {H}: rms {cc[:, 2].std():.4f}"); ax[1, 2].plot(tt, cc[:, 3], f"C{i}", lw=1.2, label=f"H {H} jet +90"); ax[1, 2].plot(tt, cc[:, 4], f"C{i}", lw=1.2, ls="--", label=f"H {H} jet -90")
+        ax[1, 0].plot(tt, cc[:, 1], f"C{i}", lw=1.2, label=f"H {H} {kind}: mean {cc[:, 1].mean():.4f} ({(cc[:, 1].mean()/uu[:, 1].mean()-1)*100:+.2f}%)")
+        ax[1, 1].plot(tt, cc[:, 2], f"C{i}", lw=1.2, label=f"H {H} {kind}: rms {cc[:, 2].std():.4f}"); ax[1, 2].plot(tt, cc[:, 3], f"C{i}", lw=1.2, label=f"H {H} {kind} +90"); ax[1, 2].plot(tt, cc[:, 4], f"C{i}", lw=1.2, ls="--", label=f"H {H} {kind} -90")
         if i == 0: ax[1, 0].plot(tt, uu[:, 1], "k", lw=1.8, label=f"uncontrolled: mean {uu[:, 1].mean():.4f}"); ax[1, 1].plot(tt, uu[:, 2], "k", lw=1.8, label=f"uncontrolled: rms {uu[:, 2].std():.4f}")
         rows.append((H, sub, len(it), rel[-5:].mean(), cc[:, 1].mean(), uu[:, 1].mean(), cc[:, 2].std(), uu[:, 2].std(), np.abs(cc[:, 3:]).mean(), sec.sum() / 60))
 ax[0, 0].set(xlabel="iteration", ylabel="window mean $C_D$ change (%)", title="training: window C_D vs the uncontrolled window"); ax[0, 0].axhline(0, color="k", lw=0.6); ax[0, 0].legend(fontsize=8)
