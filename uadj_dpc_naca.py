@@ -19,7 +19,7 @@ ap.add_argument("--H", type=int, default=10, help="actions per gradient window")
 ap.add_argument("--iters", type=int, default=60); ap.add_argument("--ep-actions", type=int, default=60, help="actions per training episode before restarting from the snapshot (the gust lasts 54)")
 ap.add_argument("--lr", type=float, default=3e-3); ap.add_argument("--clip", type=float, default=1.0); ap.add_argument("--hidden", type=int, default=64); ap.add_argument("--w-act", type=float, default=0.0)
 ap.add_argument("--seed", type=int, default=0); ap.add_argument("--threads", type=int, default=6); ap.add_argument("--init", default=None); ap.add_argument("--eval-only", default=None)
-ap.add_argument("--eval-actions", type=int, default=200); ap.add_argument("--tag", default=None); ap.add_argument("--outdir", default="results/uadj_dpc")
+ap.add_argument("--eval-every", type=int, default=0, help="0: no periodic eval (old behaviour). >0: closed-loop-eval the current policy every N iterations and checkpoint it as <tag>_best.pt whenever its return improves on the best so far"); ap.add_argument("--eval-actions", type=int, default=200); ap.add_argument("--tag", default=None); ap.add_argument("--outdir", default="results/uadj_dpc")
 a = ap.parse_args(); torch.set_default_dtype(torch.float64); torch.set_num_threads(a.threads); torch.manual_seed(a.seed); os.makedirs(a.outdir, exist_ok=True)
 tag = a.tag or f"dpc_naca_h{a.H}_s{a.seed}"
 env = NACAJetEnv(seed=a.seed); env.reset(seed=a.seed)                     # the snapshot phase eval_naca_policy.py uses for this seed
@@ -58,7 +58,8 @@ def rollout(st, n, policy=None):
 print(f"{tag}: NACA0012 alpha 40, {m.ncell} cells, Re 100, snapshot seed {a.seed}; action = {n_sub} steps x dt {dt} ({n_sub*dt:.2f} time units), gust to t = {env.gust_T} (54 actions); "
       f"window H {a.H} actions ({a.H*n_sub} solver steps per gradient), episode {a.ep_actions} actions; policy {sum(p.numel() for p in params)} parameters on (u, v) at the probe; C_D0 {cd0:.4f} C_L0 {cl0:.4f}; {a.threads} threads", flush=True)
 if a.eval_only is None:
-    opt = torch.optim.Adam(params, lr=a.lr); hist = []; st = dict(st_snap, t=torch.tensor(0.0), a_prev=torch.zeros(3)); k_ep = 0
+    opt = torch.optim.Adam(params, lr=a.lr); hist = []; ehist = []; best_ret = -1e18
+    st = dict(st_snap, t=torch.tensor(0.0), a_prev=torch.zeros(3)); k_ep = 0
     for it in range(a.iters):
         t0 = time.time()
         if k_ep + a.H > a.ep_actions: st = dict(st_snap, t=torch.tensor(0.0), a_prev=torch.zeros(3)); k_ep = 0
@@ -67,9 +68,21 @@ if a.eval_only is None:
         gn = float(torch.nn.utils.clip_grad_norm_(params, a.clip)); opt.step()
         base, _ = rollout(dict(st), a.H)                                             # zero action over the same window, for the reward comparison
         hist.append((it, k_ep, float(st["t"]), -L, base[:, -1].sum(), gn, time.time() - t0))
-        print(f"  it {it:3d}  window actions {k_ep}-{k_ep+a.H} (t {float(st['t']):5.1f}-{float(st_end['t']):5.1f})  return {-L:8.3f}  zero-action {base[:, -1].sum():8.3f}  |grad| {gn:.2e}  ({time.time()-t0:.0f}s)", flush=True)
+        eval_msg = ""
+        if a.eval_every > 0 and ((it + 1) % a.eval_every == 0 or it == a.iters - 1):
+            st_e = dict(st_snap, t=torch.tensor(0.0), a_prev=torch.zeros(3))
+            tp_e, _ = rollout(dict(st_e), a.eval_actions, pol); ret = float(tp_e[:, -1].sum())
+            ehist.append((it, ret)); np.save(f"{a.outdir}/{tag}_ehist.npy", np.array(ehist))
+            if ret > best_ret:
+                best_ret = ret; torch.save(pol.state_dict(), f"{a.outdir}/{tag}_best.pt")
+                eval_msg = f"  EVAL return {ret:8.2f}  ** new best (saved {tag}_best.pt) **"
+            else:
+                eval_msg = f"  EVAL return {ret:8.2f}  (best so far {best_ret:.2f})"
+        print(f"  it {it:3d}  window actions {k_ep}-{k_ep+a.H} (t {float(st['t']):5.1f}-{float(st_end['t']):5.1f})  return {-L:8.3f}  zero-action {base[:, -1].sum():8.3f}  |grad| {gn:.2e}  ({time.time()-t0:.0f}s){eval_msg}", flush=True)
         st = st_end; k_ep += a.H
         torch.save(pol.state_dict(), f"{a.outdir}/{tag}_policy.pt"); np.save(f"{a.outdir}/{tag}_curve.npy", np.array(hist))
+    if a.eval_every > 0 and os.path.exists(f"{a.outdir}/{tag}_best.pt"):
+        pol.load_state_dict(torch.load(f"{a.outdir}/{tag}_best.pt")); print(f"  final evaluation uses the BEST checkpoint (return {best_ret:.2f}), not the last gradient step", flush=True)
 else:
     pol.load_state_dict(torch.load(a.eval_only))
 # ---- evaluation on PPO's protocol
