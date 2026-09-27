@@ -299,6 +299,7 @@ Evaluation: closed loop from the limit cycle against the uncontrolled wake. Torc
 | ZNMF, rolling start | 40 | controlled trajectory | 0.05 | 100 (warm) | −5.8 % (6 periods) | bang-bang (+0.5, −0.5), constant |
 | ZNMF, rolling start | 240 (2 periods) | controlled trajectory | 0.5 | 40 | **−8.4 % over 6 periods, −11.0 % over the last two** | mean (−0.26, +0.26), modulated ±0.14 |
 | ZNMF, rolling start | 240 (2 periods) | controlled trajectory | 0.05 | 40 | **−8.9 % over 6 periods, −11.1 % over the last two** | mean (+0.34, −0.34), modulated ±0.06; its open-loop constant gives −2.6 % |
+| ZNMF, rolling start, **+ C_L² (w_L 1)** | 240 (2 periods) | controlled trajectory | 0.5 | 40 | **−6.1 % over 6 periods, −8.5 % over the last two; C_L mean −0.06, rms 0.035; jets ≈ 0.03 once there** | the centred, shedding-suppressed wake of the literature |
 
 Open-loop controls over the same six periods (`--const-action`): (+0.5, −0.5) gives −5.8 % — identical to
 the rolling H 40 policy, which is therefore pure steady forcing; (−0.255, +0.255), the H 240 policy's mean,
@@ -331,6 +332,17 @@ six CPU threads.
     11 % on a coarse Re 100 mesh; it carries a mean lift of +0.36 (deflected wake) that the loss did not
     penalise. It is not yet the zero-mean-lift Rabault controller; a C_L² term is the next constraint.
     One seed per arm, coarse mesh: the numbers are the mechanism, not a benchmark.
+
+18. *A C_L² term finds the wake-centred controller.* With w_L 1 (`--w-lift`) the same two-period rolling
+    protocol converges in 40 gradients (1.5 h) to a policy whose closed loop from the limit cycle brings the
+    wake to a centred, shedding-suppressed state — C_L mean −0.06, rms 0.035 against 0.197 — and holds it at
+    a drag 8.5 % below the limit cycle with a jet amplitude of about 0.03 U (0.31 at most during the
+    two-period transient). That is the Rabault et al. (2019) controller in mechanism and in magnitude
+    (their ≈ 8 % with |a| ≲ 0.06 and zero mean lift), at ~10⁵ solver steps against their ~10⁶. The
+    training log shows how: the rolled reference drag falls from 1.475 to 1.35 over the first 30 windows
+    while the per-window gain stays near zero — the controller steers the wake into the low-drag state
+    over several periods and then maintains it almost for free. `figures/uadj_dpc_cylinder_eval6.png`.
+    Findings 17's caveat is answered; one seed and the coarse mesh remain.
 
 **Next (U8 step 2).** The NACA α 40° gust task with PPO's observation and reward, ≥ 3 seeds, horizon sweep —
 `reference/unstructured_adjoint_plan.md` §0. The H 240 protocol here (rolling start, w_a 0.5, lr 1e-2) is
