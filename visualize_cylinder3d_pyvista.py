@@ -15,8 +15,9 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--mesh", default="meshes/cylinder_re3900.msh")
 ap.add_argument("--field", default="results/ucyl3900_a100/ucyl3900_cylinder_re3900_nz64_wale/ucyl3900_cylinder_re3900_nz64_wale_final.npz")
 ap.add_argument("--box", type=float, nargs=3, default=(-1.0, 4.0, 1.8), help="x0 x1 |y|max of the near-wake region to extrude")
-ap.add_argument("--iso", type=float, default=None, help="|omega| isosurface level; default: a percentile of the field")
-ap.add_argument("--percentile", type=float, default=85.0)
+ap.add_argument("--criterion", default="q", choices=["q", "omega"], help="vortex identifier to isosurface: Q-criterion (rotation-dominated regions, filters out shear) or |omega| (raw vorticity magnitude)")
+ap.add_argument("--iso", type=float, default=None, help="isosurface level; default: a percentile of the field within the box")
+ap.add_argument("--percentile", type=float, default=90.0)
 ap.add_argument("--offscreen", default=None, help="save a screenshot to this path instead of opening an interactive window")
 a = ap.parse_args()
 
@@ -25,15 +26,23 @@ nodes, cells, ctag, edges, etag, names = read_gmsh22(a.mesh); m = Mesh(nodes, ce
 d = np.load(a.field); u, v, w = d["u"], d["v"], d["w"]; nz = int(d["nz"]); Lz = float(d["Lz"]); t = float(d["time"])
 assert (m.nvert == 4).all(), "extrusion assumes an all-quad plane"
 
-print("computing vorticity (in-plane LSQ gradient + spectral d/dz) ...", flush=True)
+print("computing the velocity-gradient tensor (in-plane LSQ gradient + spectral d/dz) ...", flush=True)
 g = Gradient(m)                                            # phi_b defaults to 0: exact for the cylinder no-slip wall, and the box below touches no other boundary
 zb = np.zeros((g.Bx.shape[1], nz))
 gu, gv, gw = g(u, zb), g(v, zb), g(w, zb)                     # (ncell, 2, nz): d/dx, d/dy
 kz = 2 * np.pi / Lz * np.arange(nz // 2 + 1)
 def ddz(f): return np.fft.irfft(np.fft.rfft(f, axis=1) * 1j * kz, n=nz, axis=1)
 dudz, dvdz, dwdz = ddz(u), ddz(v), ddz(w)
-omx = gw[:, 1] - dvdz; omy = dudz - gw[:, 0]; omz = gv[:, 0] - gu[:, 1]
-omag = np.sqrt(omx ** 2 + omy ** 2 + omz ** 2)              # (ncell, nz)
+dudx, dudy = gu[:, 0], gu[:, 1]; dvdx, dvdy = gv[:, 0], gv[:, 1]; dwdx, dwdy = gw[:, 0], gw[:, 1]
+
+if a.criterion == "omega":
+    field = np.sqrt((dwdy - dvdz) ** 2 + (dudz - dwdx) ** 2 + (dvdx - dudy) ** 2)   # |omega| (ncell, nz)
+    field_name, field_label = "omega_mag", "|omega|"
+else:
+    # Q = -1/2 trace(J^2) = -1/2 (dudx^2+dvdy^2+dwdz^2) - (dudy dvdx + dudz dwdx + dvdz dwdy);
+    # positive where rotation dominates strain -- the standard vortex-core identifier (filters out shear layers)
+    field = -0.5 * (dudx ** 2 + dvdy ** 2 + dwdz ** 2) - (dudy * dvdx + dudz * dwdx + dvdz * dwdy)
+    field_name, field_label = "Q", "Q"
 
 x0, x1, ymax = a.box
 C = m.centroid; sel = np.flatnonzero((C[:, 0] > x0) & (C[:, 0] < x1) & (np.abs(C[:, 1]) < ymax))
@@ -65,15 +74,16 @@ cell_types = np.full(nsel * nz, pv.CellType.HEXAHEDRON, dtype=np.uint8)
 grid = pv.UnstructuredGrid(hexcells.ravel(), cell_types, pts)
 
 # ---- cell data: one value per (selected cell, z-slab k), ordered to match hexcells' (k, cell) layout above
-omag_sel = omag[sel]                                        # (nsel, nz)
+field_sel = field[sel]                                      # (nsel, nz)
 u_sel = u[sel]
-grid.cell_data["omega_mag"] = omag_sel.T.ravel()             # (nz, nsel) -> ravel matches the k-major hex ordering
+grid.cell_data[field_name] = field_sel.T.ravel()             # (nz, nsel) -> ravel matches the k-major hex ordering
 grid.cell_data["u"] = u_sel.T.ravel()
 grid = grid.cell_data_to_point_data()
 
-iso = a.iso if a.iso is not None else float(np.percentile(omag_sel, a.percentile))
-print(f"isosurface |omega| = {iso:.3f} (percentile {a.percentile} of the box; field range {omag_sel.min():.2f}-{omag_sel.max():.2f})", flush=True)
-surf = grid.contour([iso], scalars="omega_mag")
+iso = a.iso if a.iso is not None else float(np.percentile(field_sel, a.percentile))
+if a.criterion == "q" and iso <= 0: iso = float(np.percentile(field_sel[field_sel > 0], 50)) if (field_sel > 0).any() else 1e-3
+print(f"isosurface {field_label} = {iso:.3f} (percentile {a.percentile} of the box; field range {field_sel.min():.2f}-{field_sel.max():.2f})", flush=True)
+surf = grid.contour([iso], scalars=field_name)
 print(f"isosurface: {surf.n_points:,} points, {surf.n_cells:,} triangles", flush=True)
 
 # ---- cylinder geometry for reference
@@ -86,7 +96,7 @@ pl.add_mesh(cyl, color=[0.25, 0.25, 0.25])
 pl.add_axes(); pl.show_bounds(grid="back", location="outer", ticks="outside", xtitle="x/D", ytitle="y/D", ztitle="z/D")
 print("surf bounds", surf.bounds, "grid bounds", grid.bounds)
 pl.view_isometric(); pl.reset_camera()
-pl.add_text(f"Re 3900 cylinder LES, t = {t:.0f}: |omega| = {iso:.2f} isosurface, coloured by u/U_inf\n"
+pl.add_text(f"Re 3900 cylinder LES, t = {t:.0f}: {field_label} = {iso:.2f} isosurface, coloured by u/U_inf\n"
             f"box x in [{x0},{x1}], |y|<{ymax}, full span L_z = {Lz:.2f} D  ({surf.n_cells:,} triangles)", font_size=11)
 if a.offscreen:
     pl.show(screenshot=a.offscreen); print("wrote", a.offscreen)
