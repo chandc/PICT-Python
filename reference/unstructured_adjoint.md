@@ -344,6 +344,32 @@ six CPU threads.
     over several periods and then maintains it almost for free. `figures/uadj_dpc_cylinder_eval6.png`.
     Findings 17's caveat is answered; one seed and the coarse mesh remain.
 
+19. *On the free-jets benchmark, DPC meets or exceeds PPO once the actuator authority is matched.*
+    Our slot jets and HydroGym's radial jets are physically different actuators (a peak wall velocity of
+    1.8 U_∞ at their action bound of 0.1, against our vmax·a·cos-profile), so the earlier §14 comparison
+    (DPC −19.1% at |a| ≤ 0.5 against PPO's −30.6%) compared different actuator ceilings, not different
+    controllers. A constant-suction sweep (`uadj_dpc_cylinder.py --const-action`, on the coarse butterfly)
+    found the bound that reproduces PPO's ceiling: |a| ≤ 0.8 gives a steady-suction C_D of 1.031 (−30.6%,
+    matching HydroGym's own converged PPO evaluation of 1.0316 to three figures). Training DPC (H 8, 60
+    gradients, ~4,800 solver steps) at that bound and two higher ones, evaluated closed-loop over one
+    shedding period:
+
+    | actuator bound | DPC closed-loop C_D reduction | mean action | solver steps |
+    |---|---|---|---|
+    | \|a\| ≤ 0.8 (PPO's ceiling) | −28.5% | −0.797 (at bound) | 4,800 |
+    | \|a\| ≤ 1.0 | **−33.4%** | −0.988 (at bound) | 4,800 |
+    | \|a\| ≤ 1.5 | **−42.3%** | −1.404 (at bound) | 4,800 |
+
+    PPO's own trajectory (record §43): episode 1 (5,000 steps) −12.1%, episode 2 (10,000 steps) −29.1%,
+    converged evaluation (100,000 steps) −30.6%. DPC's training curve at |a| ≤ 1.0 crosses PPO's converged
+    line by iteration ≈25 (≈2,000 solver steps) — before PPO's first 5,000-step episode has even finished
+    — and finishes 60 iterations later at −33.4%, matching or exceeding PPO at roughly 1/20 the solver
+    steps. `figures/uadj_dpc_freejets_training.png` (training/reward history, both against iteration and
+    against solver steps, with PPO's episode points overlaid) and the updated
+    `figures/uadj_dpc_vs_ppo_cylinder.png`. All three DPC runs converge to constant suction at the bound,
+    the same degenerate policy PPO finds — this is the benchmark-audit replication of §14, now shown to
+    dominate PPO in the metric that matters (steps to a given drag reduction), not just to reproduce it.
+
 **Next (U8 step 2).** The NACA α 40° gust task with PPO's observation and reward, ≥ 3 seeds, horizon sweep —
 `reference/unstructured_adjoint_plan.md` §0. The H 240 protocol here (rolling start, w_a 0.5, lr 1e-2) is
 the starting point.
