@@ -282,11 +282,61 @@ reading pressure at six wake probes, loss = C_D + 0.1 Σ u_b²:
 
 One normalised gradient step lowers the 5 × 2 loss by 1.4e-3 (sanity, not a gate).
 
+## U8 step 1: DPC on the coarse-cylinder jets through the replay (2026-09-26/27, Spark CPU cores)
+
+`uadj_dpc_cylinder.py`, `plot_utility/plot_uadj_dpc.py`; figures `figures/uadj_dpc_cylinder_sweep.png`,
+`figures/uadj_dpc_cylinder_eval6.png`; every run's log, curve, policy and evaluation in `results/uadj_dpc/`.
+Coarse butterfly (1,776 cells), Re 100, the t = 200 limit cycle (period 5.94, C_L amplitude 0.28), ±90° slot
+jets with |a| ≤ 0.5 U, a 24-probe pressure → tanh network (833–866 parameters), loss C_D + w_a ā², Adam,
+one gradient per iteration through H control steps × 5 solver steps (dt 0.01) by `replay_policy_grad`.
+Evaluation: closed loop from the limit cycle against the uncontrolled wake. Torch float64 on 4–8 threads:
+3 s (H 8), 17 s (H 40), 34 s (H 80), 130 s (H 240) per iteration.
+
+| arm | H | start | w_a | iterations | closed-loop C_D | what the policy is |
+|---|---|---|---|---|---|---|
+| free jets | 8 / 40 / 80 | limit cycle | 0.05 | 50 | −19.1 / −19.2 / −19.2 % (1 period) | constant maximal suction on both jets |
+| ZNMF (+a, −a) | 8 / 40 / 80 | limit cycle | 0.05 | 50 | −0.4 / −0.7 / −1.1 % (1 period) | small antisymmetric oscillation; not converged |
+| ZNMF, rolling start | 40 | controlled trajectory | 0.05 | 100 (warm) | −5.8 % (6 periods) | bang-bang (+0.5, −0.5), constant |
+| ZNMF, rolling start | 240 (2 periods) | controlled trajectory | 0.5 | 40 | **−8.4 % over 6 periods, −11.0 % over the last two** | mean (−0.26, +0.26), modulated ±0.14 |
+
+Open-loop controls over the same six periods (`--const-action`): (+0.5, −0.5) gives −5.8 % — identical to
+the rolling H 40 policy, which is therefore pure steady forcing; (−0.255, +0.255), the H 240 policy's mean,
+gives −0.2 %, and its mirror (+0.255, −0.255) −2.0 %. **The H 240 policy's 11 % is not its steady
+component: it is the modulation the network applies from the pressure probes.** Within one period it
+settles to a near-steady antisymmetric pair with a ±0.14 modulation, the shedding is suppressed (C_L
+ripple ≈ 0.05 about a mean of +0.36 — the wake is deflected), and C_D falls over three periods to a new
+level 11 % below the limit cycle. Rabault et al. (2019) report ≈ 8 % at Re 100 with the same jet pair and
+PPO over ~10⁶ solver steps; this used 40 gradients × 2 × 1,200 steps ≈ 96,000 solver steps and 1.5 h on
+six CPU threads.
+
+**Findings.**
+14. *Free jets find the suction loophole at every horizon.* The steepest descent direction for drag is
+    steady suction; the horizon only sets how many iterations the optimiser needs (all 50 here) and the
+    solver steps consumed (4,000 at H 8, 40,000 at H 80). This is the HydroGym `Cylinder` PPO result of
+    record §38/§56 reproduced by the adjoint at 1/500 of the cost, and it says the same thing: without a
+    mass-flux constraint the task is not a wake-control benchmark.
+15. *With ZNMF the result is horizon-limited, as the FluidGym study found.* From the limit cycle, −0.4,
+    −0.7, −1.1 % at H 8, 40, 80 (0.07, 0.34, 0.67 periods), monotone in H and still descending at
+    iteration 50; the wake's response to antisymmetric forcing develops over periods, and a window
+    shorter than that cannot see it. Rolling the window along the controlled trajectory and reaching two
+    periods (H 240) is what produced the 11 %.
+16. *A weak actuation penalty leaves a second static solution.* With w_a 0.05 the rolling H 40 run pinned
+    both jets at the bound (tanh saturated, gradient norm 1e-4): steady antisymmetric forcing worth
+    5.8 %. w_a 0.5 keeps the policy off the bound and the optimiser finds the unsteady controller.
+17. *What this is and is not.* A certified-gradient controller that suppresses shedding and cuts drag
+    11 % on a coarse Re 100 mesh; it carries a mean lift of +0.36 (deflected wake) that the loss did not
+    penalise. It is not yet the zero-mean-lift Rabault controller; a C_L² term is the next constraint.
+    One seed per arm, coarse mesh: the numbers are the mechanism, not a benchmark.
+
+**Next (U8 step 2).** The NACA α 40° gust task with PPO's observation and reward, ≥ 3 seeds, horizon sweep —
+`reference/unstructured_adjoint_plan.md` §0. The H 240 protocol here (rolling start, w_a 0.5, lr 1e-2) is
+the starting point.
+
 ## Open
 
 * P8 (b) (15 periods of replay; run on the Spark's cores), P4-P at 96 × 200. Then P3, P7, P9–P12.
-* ~~Training: port `replay_policy_grad`~~ done (A20–A22). Next: a DPC smoke run on the coarse
-  cylinder's jets (drag over a few shedding periods, horizon sweep), then the NACA gust task.
+* ~~Training bridge~~ done (A20–A22); ~~DPC smoke on the coarse cylinder~~ done (U8 step 1 above: 11 % with feedback,
+  loopholes and horizon dependence measured). Next: a C_L² penalty variant, then the NACA gust task (U8 step 2).
 * U8: DPC through the replay on the NACA gust task.
 * Performance: the torch step is 1.3× production on the butterfly and 2.8× on the 17k-cell
   triangle mesh, mostly per-call Python overhead and the per-solve residual check. Not optimised

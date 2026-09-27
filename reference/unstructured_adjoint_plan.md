@@ -16,7 +16,7 @@ unstructured solver nor the Stage 9 adjoint.*
 | U7 memory-flat replay | ✅ | replay == tape to 9e-14; memory flat in the horizon |
 | training bridge (policy in the replayed loop) | ✅ | `uadj_replay.replay_policy_grad`, gates A20–A22 in `test_uadj_train.py`: replay == tape on all parameter gradients to 1e-15, FD 8e-10 |
 | physical tests | 🔧 | P1, P2, P5, P6, P8(a) pass; P4 adjoint = FD (6e-7), 5.5% from the eigenvalue derivative at 48×100 → convergence statement, 96×200 pending; P8(b) pending (run on the Spark); P3, P7, P9–P12 not run |
-| U8 first control result | ▶ next | see below |
+| U8 first control result | 🔧 step 1 done 2026-09-27 | DPC on the coarse-cylinder jets: free jets → suction loophole (−19 %) at every H; ZNMF horizon-limited (−0.4/−0.7/−1.1 % at H 8/40/80); rolling two-period window with w_a 0.5 → **−11 % with shedding suppression, a feedback controller** (its steady mean alone gives −0.2 %). Step 2, the NACA gust task, next |
 | U9 RK3, U10 2.5D + GPU, U11 cross-code | not started | |
 
 **Environment.** CPU float64; torch ≥ 2 (a torch 1.13 kernel cannot build a tensor from a numpy 2 boolean

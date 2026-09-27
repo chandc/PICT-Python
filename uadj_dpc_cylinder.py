@@ -18,7 +18,7 @@ ap.add_argument("--H", type=int, default=8, help="control steps per gradient win
 ap.add_argument("--iters", type=int, default=50); ap.add_argument("--lr", type=float, default=3e-3); ap.add_argument("--amax", type=float, default=0.5); ap.add_argument("--w-act", type=float, default=0.05)
 ap.add_argument("--hidden", type=int, default=32); ap.add_argument("--nprobe", type=int, default=24); ap.add_argument("--seed", type=int, default=0); ap.add_argument("--threads", type=int, default=4)
 ap.add_argument("--phases", type=int, default=4); ap.add_argument("--eval-periods", type=float, default=1.0); ap.add_argument("--eval-only", default=None, help="policy .pt to evaluate")
-ap.add_argument("--init", default=None, help="start from a saved policy .pt"); ap.add_argument("--rolling", action="store_true", help="after each iteration advance the start state by the window under the new policy (train along the controlled trajectory instead of restarting from the uncontrolled limit cycle)"); ap.add_argument("--clip", type=float, default=0.5); ap.add_argument("--znmf", action="store_true", help="zero-net-mass-flux: one amplitude, applied as (+a, -a) on the +-90 deg slots, so steady suction is not available"); ap.add_argument("--state", default="results/uadj_shed_cylinder_butterfly_coarse.npz"); ap.add_argument("--tag", default=None); ap.add_argument("--outdir", default="results/uadj_dpc")
+ap.add_argument("--const-action", type=float, nargs=2, default=None, help="evaluation only: open-loop constant (a1, a2) instead of a policy, to separate the steady-forcing part of a result"); ap.add_argument("--init", default=None, help="start from a saved policy .pt"); ap.add_argument("--rolling", action="store_true", help="after each iteration advance the start state by the window under the new policy (train along the controlled trajectory instead of restarting from the uncontrolled limit cycle)"); ap.add_argument("--clip", type=float, default=0.5); ap.add_argument("--znmf", action="store_true", help="zero-net-mass-flux: one amplitude, applied as (+a, -a) on the +-90 deg slots, so steady suction is not available"); ap.add_argument("--state", default="results/uadj_shed_cylinder_butterfly_coarse.npz"); ap.add_argument("--tag", default=None); ap.add_argument("--outdir", default="results/uadj_dpc")
 a = ap.parse_args(); torch.set_default_dtype(torch.float64); torch.set_num_threads(a.threads); torch.manual_seed(a.seed); np.random.seed(a.seed); os.makedirs(a.outdir, exist_ok=True)
 tag = a.tag or f"dpc_h{a.H}x{a.sub}_s{a.seed}" + ("_znmf" if a.znmf else "")
 # ---- the limit-cycle state into the torch step
@@ -64,7 +64,7 @@ base_cd = [rollout(dict(p), a.H, a.sub)[0][:, 1].mean() for p in phases]
 print(f"{tag}: coarse butterfly {m.ncell} cells, Re 100, period {period:.3f} ({per_steps} steps), window H {a.H} x {a.sub} steps = {a.H*a.sub*0.01:.2f} time units ({a.H*a.sub*0.01/period:.2f} periods); "
       f"{'ZNMF (+a, -a)' if a.znmf else 'independent jets'}; {'rolling start' if a.rolling else 'fixed start'}; lr {a.lr} clip {a.clip}; {a.phases} phases; uncontrolled window C_D by phase {np.round(base_cd, 4).tolist()}; policy {sum(p.numel() for p in params)} parameters, {a.nprobe} pressure probes, |a| <= {a.amax}; {a.threads} threads", flush=True)
 # ---- training
-if a.eval_only is None:
+if a.eval_only is None and a.const_action is None:
     opt = torch.optim.Adam(params, lr=a.lr); hist = []
     for it in range(a.iters):
         t0 = time.time(); ph = it % a.phases
@@ -76,6 +76,8 @@ if a.eval_only is None:
         hist.append((it, ph, L, fwd[:, 1].mean(), base_cd[ph], np.abs(fwd[:, 3:]).mean(), gn, time.time() - t0))
         print(f"  it {it:3d} ph {ph}  window loss {L:9.5f}  mean C_D {fwd[:, 1].mean():.5f} (uncontrolled {base_cd[ph]:.5f}, {(fwd[:, 1].mean()/base_cd[ph]-1)*100:+.2f}%)  |a| {np.abs(fwd[:, 3:]).mean():.3f}  |grad| {gn:.2e}  ({time.time()-t0:.0f}s)", flush=True)
         torch.save(pol.state_dict(), f"{a.outdir}/{tag}_policy.pt"); np.save(f"{a.outdir}/{tag}_curve.npy", np.array(hist))
+elif a.const_action is not None:
+    ca = torch.tensor(a.const_action); pol = lambda st: ca; print(f"open-loop constant action {a.const_action}", flush=True)
 else:
     pol.load_state_dict(torch.load(a.eval_only))
 # ---- closed-loop evaluation over whole periods from phase 0
