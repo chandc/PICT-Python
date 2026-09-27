@@ -3694,3 +3694,40 @@ standing as recorded); together with §63's Re_τ 395 channel it is the second L
 validation case, and the first on curved, separating geometry — the near-wall model question raised when
 asked "do we have a near-wall LES model for curvilinear walls" is now answered by a passing case, not
 only by the mechanism argument of that answer.
+
+## 65a. Direct comparison against the PIV field data of Parnaudeau et al. 2008 (2026-09-27)
+
+V3's gate used one summary number from Parnaudeau et al. 2008 (recirculation length). Their paper
+publishes no downloadable dataset — their own reference 31 states the statistics "are available by
+contacting the authors" — but the paper itself (open access,
+`https://www.irisa.fr/fluminance/team/Carlier/publications/ParnaudeauCarlierHeitzLamballais_2008_POF.pdf`)
+carries the actual PIV profile figures and a table of derived scalars beyond L_r. `plot_utility/
+plot_ucylinder_re3900_vs_piv.py` (`figures/ucylinder_re3900_vs_piv.png`) checks against both: Table
+II's U_min and L_⟨u'u'⟩ (unused by the V3 gate) computed from our own field the same way they define
+them, and their Figs. 9–10 (cropped from the PDF, `reference/parnaudeau2008_fig9/10.png`) placed next
+to our own centreline curves for a direct look at the field data itself, not just its headline
+numbers. x/D throughout is measured from the cylinder centre, Parnaudeau's own convention.
+
+| centreline quantity | this LES | PIV (Table II) | difference |
+|---|---|---|---|
+| L_r (recirculation length) | 1.53 D | 1.51 D | +1.3% |
+| U_min (trough of ⟨u⟩) | −0.325 at x/D = 1.52 | −0.34 | −4.4% |
+| L_⟨u'u'⟩ (peak location, from the base) | 0.92 D | 0.87 D | +5.9% |
+| peak ⟨u'u'⟩/U∞² | 0.084 | not tabulated; ≈0.10–0.12 by eye off Fig. 10 | ≈25–30% low |
+
+Three independent scalars derived from the mean-velocity trough and its location, and the turbulent
+peak's location, all agree with PIV to 6% or better — a broader check than L_r alone, on data the V3
+gate did not use. The shape match is visible directly in the figure: our ⟨u⟩ centreline curve overlays
+Parnaudeau's Fig. 9 essentially exactly (trough depth, location, and the recovery toward U∞ by x/D ≈ 4).
+
+**Where it doesn't match: the peak turbulence intensity.** Our ⟨u'u'⟩ centreline curve is a single
+broad hump; Parnaudeau's PIV (and their own LES, the solid curve in their Fig. 10) show two sharper
+peaks reaching about 0.10–0.12, roughly 25–30% above our 0.084. This is the same coarse-mesh signature
+already on record for the cross-wake ⟨u'u'⟩ profile (§65: twin peaks at |y| ≈ 0.65 D against
+Parnaudeau's |y| ≈ 0.5 D) — the near-wake turbulence intensity is under-resolved at this mesh's
+Δx⁺-equivalent spacing in the separating shear layers, while its *location* (the formation length) is
+right. The far-wake decay (x/D > 4, both curves settling to 0.03–0.04) matches well; the discrepancy is
+confined to the shear-layer formation region. Not gated by V3, and not grounds to revisit the pass —
+but the honest next step if a tighter LES is ever wanted here is shear-layer mesh refinement, not a
+different SGS model: the same peak-underprediction pattern would be expected of any eddy-viscosity
+closure at this near-wall resolution.
