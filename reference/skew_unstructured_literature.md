@@ -3695,34 +3695,39 @@ validation case, and the first on curved, separating geometry — the near-wall 
 asked "do we have a near-wall LES model for curvilinear walls" is now answered by a passing case, not
 only by the mechanism argument of that answer.
 
-## 65a. Direct comparison against the PIV field data of Parnaudeau et al. 2008 (2026-09-27)
+## 65a. Direct comparison against the field data of Parnaudeau et al. 2008 (2026-09-27, revised)
 
 V3's gate used one summary number from Parnaudeau et al. 2008 (recirculation length). Their paper
 publishes no downloadable dataset — their own reference 31 states the statistics "are available by
-contacting the authors" — but the paper itself (open access,
-`https://www.irisa.fr/fluminance/team/Carlier/publications/ParnaudeauCarlierHeitzLamballais_2008_POF.pdf`)
-carries the actual PIV profile figures and a table of derived scalars beyond L_r. `plot_utility/
-plot_ucylinder_re3900_vs_piv.py` (`figures/ucylinder_re3900_vs_piv.png`) checks against both: Table
-II's U_min and L_⟨u'u'⟩ (unused by the V3 gate) computed from our own field the same way they define
-them, and their Figs. 9–10 (cropped from the PDF, `reference/parnaudeau2008_fig9/10.png`) placed next
-to our own centreline curves for a direct look at the field data itself, not just its headline
-numbers. x/D throughout is measured from the cylinder centre, Parnaudeau's own convention.
+contacting the authors" — so this check uses their open-access PDF
+(`https://www.irisa.fr/fluminance/team/Carlier/publications/ParnaudeauCarlierHeitzLamballaisPOF.pdf`)
+two ways: their Table II's U_min and L_⟨u'u'⟩ (text, verbatim, unused by the V3 gate), and points
+digitized from their Figs. 9–10 by calibrated pixel analysis of the vector-rendered PDF page (axis
+pixel positions verified against the tick marks, not eyeballed) — median per x-column across all eight
+series their figures plot, so a consensus trace rather than the PIV series alone, though PIV dominates
+by density in x/D < 3 where the paper says its field of view lives. Full methodology and a sanity check
+against Table II in `reference/parnaudeau2008_digitized/README.md`; digitized points in the same
+directory (`fig9_centerline_u.csv`, `fig10_centerline_uu.csv`). **No image from their paper is
+reproduced anywhere in this repository or in any figure** — `plot_utility/plot_ucylinder_re3900_vs_piv.py`
+draws only our own curve, the digitized points as data, and their Table II numbers as reference lines.
+Figure: `figures/ucylinder_re3900_vs_piv.png`. x/D throughout is measured from the cylinder centre,
+Parnaudeau's own convention.
 
 | centreline quantity | this LES | PIV (Table II) | difference |
 |---|---|---|---|
 | L_r (recirculation length) | 1.53 D | 1.51 D | +1.3% |
 | U_min (trough of ⟨u⟩) | −0.325 at x/D = 1.52 | −0.34 | −4.4% |
 | L_⟨u'u'⟩ (peak location, from the base) | 0.92 D | 0.87 D | +5.9% |
-| peak ⟨u'u'⟩/U∞² | 0.084 | not tabulated; ≈0.10–0.12 by eye off Fig. 10 | ≈25–30% low |
+| peak ⟨u'u'⟩/U∞² | 0.084 | ~0.10–0.12 (digitized consensus) | ≈25–30% low |
 
 Three independent scalars derived from the mean-velocity trough and its location, and the turbulent
 peak's location, all agree with PIV to 6% or better — a broader check than L_r alone, on data the V3
-gate did not use. The shape match is visible directly in the figure: our ⟨u⟩ centreline curve overlays
-Parnaudeau's Fig. 9 essentially exactly (trough depth, location, and the recovery toward U∞ by x/D ≈ 4).
+gate did not use. The shape match is visible directly in the redrawn figure: our ⟨u⟩ centreline curve
+tracks the digitized consensus band closely through the trough and the recovery toward U∞ by x/D ≈ 4.
 
 **Where it doesn't match: the peak turbulence intensity.** Our ⟨u'u'⟩ centreline curve is a single
-broad hump; Parnaudeau's PIV (and their own LES, the solid curve in their Fig. 10) show two sharper
-peaks reaching about 0.10–0.12, roughly 25–30% above our 0.084. This is the same coarse-mesh signature
+broad hump reaching 0.084; the digitized consensus (and Table II's implied peak) sit around 0.10–0.12,
+roughly 25–30% higher. This is the same coarse-mesh signature
 already on record for the cross-wake ⟨u'u'⟩ profile (§65: twin peaks at |y| ≈ 0.65 D against
 Parnaudeau's |y| ≈ 0.5 D) — the near-wake turbulence intensity is under-resolved at this mesh's
 Δx⁺-equivalent spacing in the separating shear layers, while its *location* (the formation length) is
