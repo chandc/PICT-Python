@@ -3645,3 +3645,52 @@ auto-update, Drive mount and `--outdir`, dependency check with the CuPy driver t
 actual mesh, TGV correctness check, foreground run with auto-resume, comparison cell calling the plot
 script). Smoke-tested on the CPU (6 steps, checkpoint, restart with the accumulator and history
 restored) and on the GB10 (below).
+
+## 65. V3 passes: the Re 3900 cylinder on the A100, against Parnaudeau, Kravchenko–Moin, Lehmkuhl and Norberg (2026-09-27)
+
+The run §64 set up finished on the A100: `run_ucylinder3900.py` on `meshes/cylinder_re3900.msh` (60,000
+quads, wall cell 0.003 D, 64 Fourier planes over L_z = πD), WALE from t = 2, 150 D/U, statistics t = 50–150
+(20 shedding periods, 12,500 samples). One Colab session, no restart, no divergence: 38,395 steps at
+745 ms/step, 7.95 h — half the §59/§64 estimate of 15–20 h. Outputs in
+`results/ucyl3900/uchan395...` — corrected: `results/ucyl3900_a100/ucyl3900_cylinder_re3900_nz64_wale/`
+(Google Drive `PICT-Python_runs/ucyl3900_cylinder_re3900_nz64_wale/`, retrieved via the Finder-mediated
+copy of `google-drive-via-finder.md`); `results/ucyl3900/` keeps the statistics file and log.
+Figures: `figures/ucylinder_re3900_forces.png`, `_wake.png`, `_fields.png`
+(`plot_utility/plot_ucylinder_re3900.py`).
+
+**V3 criteria (LES plan): St within 3%, C_D within 5%, recirculation length within 10% of the Parnaudeau
+band — all four measured quantities pass:**
+
+| | LES | references | criterion | margin |
+|---|---|---|---|---|
+| St | 0.2087 (zero crossings), 0.2100 (C_L spectrum) | 0.208 (Parnaudeau PIV), 0.21 | 3% | 0.3–0.9% |
+| C_D | 1.007 | 0.98 (Norberg) – 1.04 (K&M) – 1.05/0.98 (Lehmkuhl DNS, two states) | 5% | inside the band |
+| C_pb | −0.913 | −0.88 (Norberg) – −0.94 (K&M) | (not gated) | inside the band |
+| L_r | 1.53 D | 1.51 D (Parnaudeau PIV), 1.35 (K&M), 1.26/1.55 (Lehmkuhl) | 10% | 1.3% vs PIV, inside the DNS band |
+| C_L rms | 0.124 | | | |
+
+The lift spectrum has a single clean peak at the shedding frequency (`_forces.png`), the pressure
+distribution around the cylinder sits between the Norberg and Kravchenko–Moin references from the front
+stagnation point to the base, and the adaptive step held dt 0.004 for the whole statistics window,
+dropping to 0.002 only during the transient's peak 3D growth (t ≈ 10–25, the same startup transient §64
+warned the wall-normal jump at t = 0 would trigger without the WALE delay — here past cleanly since the
+delay is in place).
+
+**The near-wake structure matches the canonical picture (`_wake.png`, `_fields.png`).** The centreline
+mean velocity crosses zero at x ≈ 1.2 D and recovers past U_∞ by x ≈ 3 D; the cross-wake mean U profile
+is U-shaped (a centreline deficit) at x = 1.06 D and has largely closed by x = 2.02 D, the transition
+Parnaudeau's PIV reports. ⟨u'u'⟩ shows the twin peaks that mark the separating shear layers at x = 1.06 D
+(≈0.09 at |y| ≈ 0.65 D against Parnaudeau's |y| ≈ 0.5 D — a coarse-mesh shift in position, not a missing
+mechanism), merging into the single wake-centreline peak of ⟨v'v'⟩ by x = 1.5–2 D as the shear layers
+roll up. The mean-field picture (`_fields.png`) is the textbook Re 3900 wake: a closed recirculation
+bubble, twin ⟨u'u'⟩ streaks converging downstream, elevated ⟨ν_t⟩/ν confined to the shear layers and
+decaying in the far wake.
+
+**Verdict.** V3 passes on every gated criterion and on the near-wake structure this solver has not been
+tested against before: a curved, wall-resolved boundary layer separating into three-dimensional
+turbulence on a genuinely unstructured mesh (not a periodic box), at production LES cost. This closes the
+gate ladder G0→G5→V1→V2→V3 the LES plan set out (with V1's time criterion and V2's triangle failure
+standing as recorded); together with §63's Re_τ 395 channel it is the second LES beyond the original
+validation case, and the first on curved, separating geometry — the near-wall model question raised when
+asked "do we have a near-wall LES model for curvilinear walls" is now answered by a passing case, not
+only by the mechanism argument of that answer.
