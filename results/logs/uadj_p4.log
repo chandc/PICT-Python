@@ -1,0 +1,6 @@
+  P4 Orr-Sommerfeld growth-rate sensitivity: Re 7500, 48 x 100, T = 100.0
+      growth 0.001835 (OS 0.00223497)   d growth/d nu: adjoint -5.01741e+01  FD -5.01741e+01  OS -5.31099e+01   (adjoint by replay 328s, 2000 steps)
+    PASS  P4-A ny=100: d growth/d nu, replay adjoint vs FD (live, 2-point)   6.314e-07  (<= 0.0001)
+    FAIL  P4-P ny=100: d growth/d nu vs Orr-Sommerfeld                       5.528e-02  (<= 0.05)
+
+  1 failure(s), 762s

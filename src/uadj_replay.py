@@ -111,3 +111,62 @@ class SavedBytes:
 
     def __exit__(self, *a):
         self._ctx.__exit__(*a)
+
+
+def replay_policy_grad(T, st0, policy_action, n_ctrl, apply_action, step_loss, final_loss=None, substeps=1):
+    """Memory-flat policy gradient over a control window (the structured code's `prod_replay.replay_policy_grad`,
+    ported to the unstructured step). policy_action(st) -> action tensor computed from st's tensors and the
+    policy parameters, called INSIDE each replayed control step on the leaf state, so dL/dtheta carries the
+    action path and the observation path (full BPTT, not observation-detached). Each control step is
+    apply_action(st, a) then `substeps` solver steps; step_loss(st, k) the per-step scalar, final_loss(st) optional.
+    Parameter gradients ACCUMULATE into .grad of the tensors policy_action closes over (zero them first).
+    Returns the forward loss value. Branch masks and Poisson sweep counts are recorded forward and replayed
+    backward exactly as in `replay_grad`, so replay == tape holds with the policy in the loop (gate A20)."""
+    snaps, logs = [_detach(st0)], []
+    loss_val = 0.0
+    with torch.no_grad():
+        st = _detach(st0)
+        for k in range(n_ctrl):
+            T.record()
+            st = apply_action(st, policy_action(st))
+            for _ in range(substeps):
+                st = T.step(st)
+            logs.append((T.masks.log, list(T.poisson_counts)))
+            snaps.append(_detach(st))
+            loss_val += float(step_loss(st, k))
+        if final_loss is not None:
+            loss_val += float(final_loss(st))
+    lam = None
+    for k in range(n_ctrl - 1, -1, -1):
+        leaf = _leaf(snaps[k])
+        T.replay_from(logs[k])
+        out = apply_action(leaf, policy_action(leaf))
+        for _ in range(substeps):
+            out = T.step(out)
+        sur = step_loss(out, k)
+        if k == n_ctrl - 1 and final_loss is not None:
+            sur = sur + final_loss(out)
+        if lam is not None:
+            for key in STATE_KEYS:
+                if out[key] is not None and lam.get(key) is not None:
+                    sur = sur + (out[key] * lam[key]).sum()
+        sur.backward()                                                    # accumulates the policy-parameter grads
+        lam = {key: (leaf[key].grad.detach() if leaf[key].grad is not None else torch.zeros_like(leaf[key]))
+               for key in STATE_KEYS if leaf[key] is not None}
+    T.live()
+    return loss_val
+
+
+def tape_policy_grad(T, st0, policy_action, n_ctrl, apply_action, step_loss, final_loss=None, substeps=1):
+    """The same policy gradient with one graph over the whole window: the replay must equal it."""
+    st = dict(st0)
+    loss = torch.zeros((), dtype=torch.float64)
+    for k in range(n_ctrl):
+        st = apply_action(st, policy_action(st))
+        for _ in range(substeps):
+            st = T.step(st)
+        loss = loss + step_loss(st, k)
+    if final_loss is not None:
+        loss = loss + final_loss(st)
+    loss.backward()
+    return float(loss.detach())

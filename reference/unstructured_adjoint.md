@@ -16,7 +16,8 @@
 | U5 gradient gates | ✅ | A10–A15 on every listed mesh (A13 bubble, A14 seam invariance, A15 every boundary type) |
 | U6 forces and actuation | ✅ | `src/uadj_control.py`: wall traction, cylinder jets, HydroGym's NACA jets from the production `JetSet`, rotation, inlet modulation |
 | U7 replay | ✅ | `src/uadj_replay.py`: replay == tape to 9e-14; memory flat in the horizon |
-| physical tests | 🔧 P1, P2, P5, P6 pass; P8 (a) passes; P4 and P8 (b) not yet run | `test_uadj_physics.py` |
+| physical tests | 🔧 P1, P2, P5, P6 pass; P8 (a) passes; **P4 run 2026-09-26: adjoint = FD to 6e-7, 5.5% from the Orr–Sommerfeld value at 48×100 (see below)**; P8 (b) not yet run | `test_uadj_physics.py` |
+| training bridge | ✅ 2026-09-26 | `uadj_replay.replay_policy_grad` / `tape_policy_grad`: the action computed inside each replayed step from that step's observation; gates A20–A22 in `test_uadj_train.py` |
 | U8–U11 | not started | |
 
 ## Gate results
@@ -252,12 +253,40 @@ wait loop's `pgrep -f` matched its own command line.
 
 Dependencies: numpy 2.0, scipy 1.13, torch, pyamg, gymnasium.
 
+## P4, Orr–Sommerfeld (run 2026-09-26, 762 s): `python test_uadj_physics.py --only run_p4`
+
+Re 7500, 48 × 100, T = 100 (2000 steps through the replay, 328 s): growth rate 0.001835 against the
+Orr–Sommerfeld 0.002235; d(growth)/dν adjoint −50.174, FD −50.174 (6.3e-7, **P4-A pass**), Orr–Sommerfeld
+−53.110: 5.5% against a 5% tolerance (**P4-P fails by the margin**). The forward growth rate itself is 18%
+below the eigenvalue at this resolution, so a 5.5% error in its ν-derivative is the discretisation's,
+not the adjoint's: the adjoint is the exact derivative of the discrete growth rate. Re-pose as the record
+did for the others: P4-P is a convergence statement (the error must fall with resolution), to be checked
+at 96 × 200 when a machine is free; the 48 × 100 point stands as the first entry.
+
+## Training bridge: `python test_uadj_train.py` (4 s)
+
+`replay_policy_grad(T, st0, policy, n_ctrl, apply_action, step_loss, ...)` is the structured code's
+`prod_replay.replay_policy_grad` on the unstructured step: the forward sweep records masks and sweep
+counts per control step under `no_grad`, the backward sweep rebuilds one control step at a time from
+the leaf state, computes the action from the leaf inside the graph, adds ⟨λ, out⟩ and calls
+`.backward()`, so parameter gradients accumulate with full BPTT semantics (action and observation
+paths) at one step's memory. Coarse butterfly, Re 100, ±90° jets, a 146-parameter tanh network
+reading pressure at six wake probes, loss = C_D + 0.1 Σ u_b²:
+
+| gate | H 3 × 1 | H 5 × 2 | tol |
+|---|---|---|---|
+| A20 replay == tape: loss | 0 | 0 | 1e-12 |
+| A20 replay == tape: dL/dθ, worst of 146 (relative to max) | 1.3e-15 | 1.4e-15 | 1e-9 |
+| A21 dL/dθ along the gradient vs FD (recorded branch) | 8.3e-10 | | 1e-6 |
+| A22 replay memory per step, H 12 / H 3 − 1 | 2e-3 | | 0.1 |
+
+One normalised gradient step lowers the 5 × 2 loss by 1.4e-3 (sanity, not a gate).
+
 ## Open
 
-* P4 and P8 (b), commands above. Then P3, P7, P9–P12.
-* Training: port `replay_policy_grad` (the action computed inside each replayed step from that
-  step's observation) with a replay == tape gate, then a DPC smoke run on the coarse cylinder's
-  jets before the NACA gust task.
+* P8 (b) (15 periods of replay; run on the Spark's cores), P4-P at 96 × 200. Then P3, P7, P9–P12.
+* ~~Training: port `replay_policy_grad`~~ done (A20–A22). Next: a DPC smoke run on the coarse
+  cylinder's jets (drag over a few shedding periods, horizon sweep), then the NACA gust task.
 * U8: DPC through the replay on the NACA gust task.
 * Performance: the torch step is 1.3× production on the butterfly and 2.8× on the 17k-cell
   triangle mesh, mostly per-call Python overhead and the per-solve residual check. Not optimised
