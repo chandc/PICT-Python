@@ -170,3 +170,57 @@ def tape_policy_grad(T, st0, policy_action, n_ctrl, apply_action, step_loss, fin
         loss = loss + final_loss(st)
     loss.backward()
     return float(loss.detach())
+
+
+def _leaf_all(snap):
+    return {k: (None if v is None else v.detach().clone().requires_grad_(True)) for k, v in snap.items()}
+
+
+def replay_policy_grad_sub(T, st0, policy_action, n_ctrl, control_step, final_loss=None):
+    """`replay_policy_grad` with a user-defined control step: control_step(st, a, k) performs the substeps of
+    control step k (actuator ramp, time-dependent boundary values, T.step calls, per-substep force averaging)
+    and returns (st_out, loss_k). Extra tensor entries the user carries in the state dict (e.g. the actuator's
+    previous amplitude 'a_prev') are treated as state: they get leaves and adjoints like the solver's own
+    entries, so the gradient through them is kept. Returns (loss_value, final_state). Parameter gradients
+    accumulate into .grad of the tensors policy_action closes over."""
+    snaps, logs = [_detach(st0)], []
+    loss_val = 0.0
+    with torch.no_grad():
+        st = _detach(st0)
+        for k in range(n_ctrl):
+            T.record()
+            st, lk = control_step(st, policy_action(st), k)
+            logs.append((T.masks.log, list(T.poisson_counts)))
+            snaps.append(_detach(st)); loss_val += float(lk)
+        if final_loss is not None:
+            loss_val += float(final_loss(st))
+    final_state = snaps[-1]
+    lam = None
+    for k in range(n_ctrl - 1, -1, -1):
+        leaf = _leaf_all(snaps[k])
+        T.replay_from(logs[k])
+        out, sur = control_step(leaf, policy_action(leaf), k)
+        if k == n_ctrl - 1 and final_loss is not None:
+            sur = sur + final_loss(out)
+        if lam is not None:
+            for key, lk in lam.items():
+                if out.get(key) is not None:
+                    sur = sur + (out[key] * lk).sum()
+        sur.backward()
+        lam = {key: (leaf[key].grad.detach() if leaf[key].grad is not None else torch.zeros_like(leaf[key]))
+               for key in leaf if leaf[key] is not None}
+    T.live()
+    return loss_val, final_state
+
+
+def tape_policy_grad_sub(T, st0, policy_action, n_ctrl, control_step, final_loss=None):
+    """The same with one graph over the whole window: the replay must equal it."""
+    st = dict(st0)
+    loss = torch.zeros((), dtype=torch.float64)
+    for k in range(n_ctrl):
+        st, lk = control_step(st, policy_action(st), k)
+        loss = loss + lk
+    if final_loss is not None:
+        loss = loss + final_loss(st)
+    loss.backward()
+    return float(loss.detach())

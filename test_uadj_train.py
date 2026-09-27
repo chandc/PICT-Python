@@ -80,4 +80,27 @@ def main():
             l_after += float(sl(st, k))
     print(f"    (one normalised gradient step, H 5 x 2: loss {l_before:.6f} -> {l_after:.6f}, change {l_after - l_before:+.2e})")
     print(f"\n  {len(FAILS)} failure(s), {time.time() - t00:.0f}s"); return len(FAILS)
-if __name__ == "__main__": sys.exit(main())
+if __name__ == "__main__" and "--naca" not in sys.argv: sys.exit(main())
+
+def naca_gate():
+    """A23: the substep-level policy replay (jets ramp + gust + force averaging inside the control step) equals the tape on the NACA case."""
+    from src.uadj_replay import replay_policy_grad_sub, tape_policy_grad_sub
+    import subprocess, json
+    sys.argv = [sys.argv[0]]; print("  NACA0012 alpha 40, substep-level policy replay", flush=True)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("dpcn", os.path.join(os.path.dirname(os.path.abspath(__file__)), "uadj_dpc_naca.py"))
+    src = open(spec.origin).read().split("if a.eval_only is None:")[0].replace("a = ap.parse_args()", "a = ap.parse_args(['--n-sub', '3', '--threads', '4'])")
+    g = {"__name__": "dpcn", "__file__": spec.origin}; exec(compile(src, spec.origin, "exec"), g)
+    T, pol, control_step, st_snap = g["T"], g["pol"], g["control_step"], g["st_snap"]; params = list(pol.parameters())
+    st0 = dict(st_snap, t=torch.tensor(0.0), a_prev=torch.zeros(3))
+    for p_ in params: p_.grad = None
+    lt = tape_policy_grad_sub(T, st0, pol, 2, control_step); gt = [p_.grad.detach().clone() for p_ in params]
+    for p_ in params: p_.grad = None
+    lr, _ = replay_policy_grad_sub(T, st0, pol, 2, control_step); gr = [p_.grad.detach().clone() for p_ in params]
+    gn = max(float(x.abs().max()) for x in gt); err = max(float((x - y).abs().max()) for x, y in zip(gr, gt)) / max(gn, 1e-300)
+    check("A23 NACA substep replay == tape, 2 actions x 3 steps: loss", abs(lr - lt) / abs(lt), 1e-12)
+    check("A23 NACA substep replay == tape: dL/dtheta (worst, rel. to max)", err, 1e-9)
+    print(f"    (loss {lt:.6f}, |dL/dtheta|max {gn:.3e}, {sum(p_.numel() for p_ in params)} parameters)")
+
+if __name__ == "__main__" and "--naca" in sys.argv:
+    naca_gate(); print(f"\n  {len(FAILS)} failure(s)"); sys.exit(len(FAILS))
