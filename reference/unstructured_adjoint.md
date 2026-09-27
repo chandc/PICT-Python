@@ -298,11 +298,15 @@ Evaluation: closed loop from the limit cycle against the uncontrolled wake. Torc
 | ZNMF (+a, −a) | 8 / 40 / 80 | limit cycle | 0.05 | 50 | −0.4 / −0.7 / −1.1 % (1 period) | small antisymmetric oscillation; not converged |
 | ZNMF, rolling start | 40 | controlled trajectory | 0.05 | 100 (warm) | −5.8 % (6 periods) | bang-bang (+0.5, −0.5), constant |
 | ZNMF, rolling start | 240 (2 periods) | controlled trajectory | 0.5 | 40 | **−8.4 % over 6 periods, −11.0 % over the last two** | mean (−0.26, +0.26), modulated ±0.14 |
+| ZNMF, rolling start | 240 (2 periods) | controlled trajectory | 0.05 | 40 | **−8.9 % over 6 periods, −11.1 % over the last two** | mean (+0.34, −0.34), modulated ±0.06; its open-loop constant gives −2.6 % |
 
 Open-loop controls over the same six periods (`--const-action`): (+0.5, −0.5) gives −5.8 % — identical to
 the rolling H 40 policy, which is therefore pure steady forcing; (−0.255, +0.255), the H 240 policy's mean,
-gives −0.2 %, and its mirror (+0.255, −0.255) −2.0 %. **The H 240 policy's 11 % is not its steady
-component: it is the modulation the network applies from the pressure probes.** Within one period it
+gives −0.2 %, and its mirror (+0.255, −0.255) −2.0 %. **The H 240 policies' 11 % is not their steady
+component: it is the modulation the network applies from the pressure probes.** The weak-penalty H 240 run
+landed on the mirror-image deflection (mean lift −0.49) with the same −11 %, so at two periods the horizon,
+not the penalty, is what finds the controller; the penalty only matters where a short window would otherwise
+saturate (finding 16). Within one period it
 settles to a near-steady antisymmetric pair with a ±0.14 modulation, the shedding is suppressed (C_L
 ripple ≈ 0.05 about a mean of +0.36 — the wake is deflected), and C_D falls over three periods to a new
 level 11 % below the limit cycle. Rabault et al. (2019) report ≈ 8 % at Re 100 with the same jet pair and

@@ -38,3 +38,5 @@ dpc_h240x5_znmf_roll: coarse butterfly 1776 cells, Re 100, period 5.939 (594 ste
   it  36 ph 0  window loss 321.91146  mean C_D 1.34365 (uncontrolled 1.35910, -1.14%)  |a| 0.289  |grad| 1.92e+01  (154s)
   it  37 ph 1  window loss 322.23309  mean C_D 1.34205 (uncontrolled 1.34817, -0.45%)  |a| 0.275  |grad| 1.76e+01  (159s)
   it  38 ph 0  window loss 319.89851  mean C_D 1.32981 (uncontrolled 1.34939, -1.45%)  |a| 0.283  |grad| 1.76e+01  (157s)
+  it  39 ph 1  window loss 318.61555  mean C_D 1.32262 (uncontrolled 1.37607, -3.88%)  |a| 0.309  |grad| 1.53e+01  (189s)
+RESULT dpc_h240x5_znmf_roll: closed loop over 2 period(s) from phase 0 (238 control steps): mean C_D 1.31917 vs uncontrolled 1.34926 (-2.23%)  C_L rms 0.0251 vs 0.1376  mean |a| 0.308  mean (a1, a2) (+0.308, -0.308)
