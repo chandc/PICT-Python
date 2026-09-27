@@ -18,9 +18,9 @@ ap.add_argument("--H", type=int, default=8, help="control steps per gradient win
 ap.add_argument("--iters", type=int, default=50); ap.add_argument("--lr", type=float, default=3e-3); ap.add_argument("--amax", type=float, default=0.5); ap.add_argument("--w-act", type=float, default=0.05)
 ap.add_argument("--hidden", type=int, default=32); ap.add_argument("--nprobe", type=int, default=24); ap.add_argument("--seed", type=int, default=0); ap.add_argument("--threads", type=int, default=4)
 ap.add_argument("--phases", type=int, default=4); ap.add_argument("--eval-periods", type=float, default=1.0); ap.add_argument("--eval-only", default=None, help="policy .pt to evaluate")
-ap.add_argument("--state", default="results/uadj_shed_cylinder_butterfly_coarse.npz"); ap.add_argument("--tag", default=None); ap.add_argument("--outdir", default="results/uadj_dpc")
+ap.add_argument("--znmf", action="store_true", help="zero-net-mass-flux: one amplitude, applied as (+a, -a) on the +-90 deg slots, so steady suction is not available"); ap.add_argument("--state", default="results/uadj_shed_cylinder_butterfly_coarse.npz"); ap.add_argument("--tag", default=None); ap.add_argument("--outdir", default="results/uadj_dpc")
 a = ap.parse_args(); torch.set_default_dtype(torch.float64); torch.set_num_threads(a.threads); torch.manual_seed(a.seed); np.random.seed(a.seed); os.makedirs(a.outdir, exist_ok=True)
-tag = a.tag or f"dpc_h{a.H}x{a.sub}_s{a.seed}"
+tag = a.tag or f"dpc_h{a.H}x{a.sub}_s{a.seed}" + ("_znmf" if a.znmf else "")
 # ---- the limit-cycle state into the torch step
 d = np.load(a.state); s = cylinder(mesh="meshes/cylinder_butterfly_coarse.msh", Re=100.0, dt=0.01, nsteps=0)
 for k in ("u", "v", "p", "Ff", "Ff_prev", "Ff_old", "Fbar_old", "u_old", "v_old"): setattr(s, k, np.array(d[k]))
@@ -31,9 +31,11 @@ T = TorchUPISO(s); W = WallForces(T, s.wall_faces); jets = SlotJets.cylinder(T, 
 C = m.centroid; near = np.flatnonzero((C[:, 0] > 0.6) & (C[:, 0] < 3.0) & (np.abs(C[:, 1]) < 1.0)); probes = torch.as_tensor(np.sort(np.random.choice(near, a.nprobe, replace=False)))
 class Policy(torch.nn.Module):
     def __init__(self):
-        super().__init__(); self.net = torch.nn.Sequential(torch.nn.Linear(a.nprobe, a.hidden), torch.nn.Tanh(), torch.nn.Linear(a.hidden, 2))
+        super().__init__(); self.net = torch.nn.Sequential(torch.nn.Linear(a.nprobe, a.hidden), torch.nn.Tanh(), torch.nn.Linear(a.hidden, 1 if a.znmf else 2))
         with torch.no_grad(): self.net[2].weight *= 0.1; self.net[2].bias.zero_()
-    def forward(self, st): return a.amax * torch.tanh(self.net(st["p"][probes]))
+    def forward(self, st):
+        out = a.amax * torch.tanh(self.net(st["p"][probes]))
+        return torch.cat([out, -out]) if a.znmf else out
 pol = Policy(); params = list(pol.parameters())
 apply = lambda st, act: jets.apply(st, act)
 def step_loss(st, k): return W(st)[0] + a.w_act * (jets.last_action ** 2).sum() if hasattr(jets, "last_action") else W(st)[0]
@@ -59,7 +61,7 @@ def rollout(st, n_ctrl, sub, policy=None):
     return np.array(rows), st
 base_cd = [rollout(dict(p), a.H, a.sub)[0][:, 1].mean() for p in phases]
 print(f"{tag}: coarse butterfly {m.ncell} cells, Re 100, period {period:.3f} ({per_steps} steps), window H {a.H} x {a.sub} steps = {a.H*a.sub*0.01:.2f} time units ({a.H*a.sub*0.01/period:.2f} periods); "
-      f"{a.phases} phases; uncontrolled window C_D by phase {np.round(base_cd, 4).tolist()}; policy {sum(p.numel() for p in params)} parameters, {a.nprobe} pressure probes, |a| <= {a.amax}; {a.threads} threads", flush=True)
+      f"{'ZNMF (+a, -a)' if a.znmf else 'independent jets'}; {a.phases} phases; uncontrolled window C_D by phase {np.round(base_cd, 4).tolist()}; policy {sum(p.numel() for p in params)} parameters, {a.nprobe} pressure probes, |a| <= {a.amax}; {a.threads} threads", flush=True)
 # ---- training
 if a.eval_only is None:
     opt = torch.optim.Adam(params, lr=a.lr); hist = []
