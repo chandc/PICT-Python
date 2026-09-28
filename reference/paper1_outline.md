@@ -38,7 +38,7 @@ are finite-difference-certified end to end and whose memory stays flat in the ho
 | C6 | HydroGym's jet cylinder as shipped: PPO converges to constant maximal suction, C_D −30.6%, with no feedback; the zero-net-mass-flux variant learns nothing in the same budget | **landed** | `skew_unstructured_literature.md` §43–44 |
 | C7 | A production-solver adjoint, field-for-field equal to the forward step (u 3e-9, p 5e-9), FD-exact through assembly, jets and forces (3.9e-7), memory 180 MB vs 581 MB tape at 3 steps (≈200 MB vs ≈15 GB projected at H = 80) | **landed as machinery** | `production_adjoint.md` 9.1–9.5 |
 | C8 | Training *on our solver* reproduces C1 on a shedding wake | **NOT landed** — 15 noisy DPC iterations (≈2% drag dips bought with lift, `figures/dpc_shed_regimes.png`); SAC flat below baseline on the shedding mesh (`figures/sac_mid_progress.png`) | commits `ed6714d`, `ac00343` |
-| C9 | The solver underneath is validated: Re 100 cylinder St 0.1673 / C_D 1.321; pinball and NACA0012 within 1–3% of HydroGym's Firedrake | **landed** | `hydrogym_backend.md`, `cylrect_r11_adjustments.md`, §45–46, pinball commits |
+| C9 | The solver underneath is validated: Re 100 cylinder St 0.1673 / C_D 1.321; pinball and NACA0012 within 1–3% of HydroGym's Firedrake; **and, well beyond the control-task Reynolds number, a wall-resolved LES at Re 3900 passes St, C_D, C_pb and recirculation length against Parnaudeau/Kravchenko–Moin/Lehmkuhl/Norberg (V3, all four within the literature band), plus two structural diagnostics beyond the gate: spanwise two-point correlation decorrelates at 22–38% of the half-span (genuinely 3D, not a periodic-image artifact) and the temporal spectrum carries a clean −5/3 decade matching Parnaudeau's own probe spectra** | **landed** | `hydrogym_backend.md`, `cylrect_r11_adjustments.md`, §45–46, pinball commits; V3 and the diagnostics: `skew_unstructured_literature.md` §65, §65a, §65b |
 
 **The framing question to settle first.** C1 was obtained in *FluidGym's own* stack with its
 ordinary tape; memory did not bind on the GB10's unified memory. So the horizon result does not
@@ -74,7 +74,13 @@ depend on our adjoint. That leaves two honest framings:
 * 3.3 The certified adjoint (C7): affine momentum assembly probed once per mesh (A = A₀ + T x);
   every linear map probed from the production code; residual-gated solves; replay for flat memory.
   **Figure 1** — architecture diagram (the mermaid in `fluidgym_parity.md`, redrawn).
-* 3.4 Solver validation summary (C9), one paragraph plus **Table 2** (St, C_D, pinball, NACA).
+* 3.4 Solver validation summary (C9), one paragraph plus **Table 2** (St, C_D, pinball, NACA, **+ the
+  Re 3900 cylinder LES row: St 0.209, C_D 1.007, C_pb −0.913, L_r 1.53 D, all within the Parnaudeau/
+  Kravchenko–Moin/Lehmkuhl/Norberg band**). **Figure 1b** — the two diagnostics beyond the gate
+  (`figures/ucylinder_re3900_spectra_probes.png`): spanwise R_uu(Δz) falling to zero well inside the
+  half-span at four probes, and the temporal spectrum's −5/3 decade — evidence the validation is not
+  merely force-matching but a genuinely resolved three-dimensional turbulent solution, which is the
+  property this paper's control results actually need from "a validated production solver."
 
 ### 4. Result 1 — the horizon decides the ordering (≈1.5 pages)
 * **Table 3** — the closing table (uncontrolled, D-MPC artifacts, H 8, their DPC, our exact
@@ -115,7 +121,8 @@ depend on our adjoint. That leaves two honest framings:
 ### Appendices
 * A. Exact hyperparameters of every arm; FluidGym artefact provenance (HF dataset paths).
 * B. Gate tables for the adjoint (9.1–9.5).
-* C. Solver validation detail (R11 table, pinball, NACA).
+* C. Solver validation detail (R11 table, pinball, NACA, Re 3900 cylinder LES V3 table and the
+  spanwise-correlation/spectrum diagnostics).
 * D. Engineering notes needed to reproduce (container recipe, `sm_120` arch flag, weak-pointer
   keepalive for `set_state`).
 
