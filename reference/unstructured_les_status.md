@@ -210,6 +210,10 @@ floor; rerun `tools/a100/profile_step.py` after pulling.
 ## Open items (in order)
 
 1. Port the σ-model; gate: TGV Re 800 curve rms at 96²×96 below the implicit run's.
+2b. **The Re 3900 shear-layer refinement (104k cells) is a negative result** [§65c]: peak centreline
+   <u'u'> unchanged (0.084 -> 0.085, PIV/LES band 0.10-0.12), while St/C_D/C_pb/L_r all drifted worse
+   than the 60k V3 mesh. The mesh was not the limiting factor at this refinement level; the sigma-model
+   (item 1 above) is the more likely next step, not further refinement.
 2. ~~Run the Re_τ 395 channel on the A100~~ — done 2026-09-26 [§63]: all V2 criteria met on the near-wall
    statistics (`figures/uchannel_re395_profiles.png`, `_nearwall_yp12.png`, `_spectra.png`); the outer layer
    is the minimal box's, a full 2π × π box (8× the cost) is the check if it ever matters.

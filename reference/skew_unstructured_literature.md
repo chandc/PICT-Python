@@ -3776,3 +3776,47 @@ three-dimensional with an adequate (if minimal) span, and the resolved spectrum 
 inertial range. Neither finding changes the V3 pass or motivates a rerun; they close out items A and B
 of the reviewer's list. C (shear-layer refinement) is running on Colab as of §65's refined-mesh setup;
 D (cross-wake PIV digitization at Parnaudeau's three stations) remains open.
+
+## 65c. The shear-layer refinement: a negative result (2026-09-28)
+
+The refined mesh set up in §65 (60k → 104k cells, ring wall cell and arc roughly halved, near-wake
+cells 0.04 → 0.028 D), warm-started from the finished V3 field and run 60 D/U (40 D/U of statistics,
+7 shedding periods) on the A100, finished. `plot_utility/plot_ucylinder_re3900_refinement.py`,
+`figures/ucylinder_re3900_refinement_compare.png`.
+
+| quantity | V3 (60k) | refined (104k) | reference |
+|---|---|---|---|
+| St | 0.209 | 0.214 | 0.208–0.21 |
+| C_D | 1.007 | 1.063 | 0.98–1.05 |
+| C_pb | −0.913 | −1.005 | −0.94 to −0.88 |
+| C_L rms | 0.124 | 0.229 | — |
+| L_r | 1.53 D | 1.25 D | 1.51 D (PIV) |
+| peak centreline ⟨u'u'⟩ | 0.084 | **0.085** | 0.10–0.12 (PIV/LES) |
+
+**The one quantity the refinement targeted did not move.** Peak centreline ⟨u'u'⟩ went from 0.0838 to
+0.0849 — unchanged within the run-to-run noise of a 40 D/U statistics window, nowhere near the
+0.10–0.12 band. The two centreline profiles overlay almost exactly in *magnitude*; what moved is the
+*location* — the peak (and the whole recirculation) shifted from x/D 1.42 to 1.06, because the
+refined mesh's recirculation bubble is shorter (L_r 1.25 D against V3's 1.53 D, now 17% *short* of
+Parnaudeau's 1.51 D where V3 was 1% long) and C_L rms nearly doubled (0.124 → 0.229).
+
+**So refinement did not confirm the diagnosis, and made three passing quantities worse.** St still
+holds, but C_D, C_pb and L_r have all drifted outside or further from their bands, in the same
+direction, while the target quantity is flat. This does not look like statistical noise (a noisy
+result would not reproduce V3's peak value to three figures while shifting three other quantities
+systematically) — it looks like a real, if unwelcome, finding: at this refinement level the mesh was
+not the limiting factor for the turbulence-intensity peak, and the extra resolution instead let the
+shear layers roll up and close a shorter bubble, which is a genuine change in the mean-flow solution,
+not a refinement artifact.
+
+**What this does and does not mean.** It does not overturn V3 — the original 60k mesh remains the
+one meeting all four gated criteria, and is the recommended configuration; this refined mesh is
+*worse* on three of them. It does weaken the reviewer's specific diagnosis ("the mesh isn't fine
+enough... causing the SGS model to over-damp the initial energy production", §65a) as the primary
+explanation, at least at the 1.7x refinement level tested here. Two honest paths forward, neither
+attempted yet: (a) a substantially more aggressive refinement (well past 1.7x, since this one moved
+the bubble length but not the peak intensity, so the resolution the peak actually needs may be much
+finer than what was tried), or (b) the σ-model already on the open-items list (§61) — WALE is already
+on record as over-dissipative in at least one other regime (the Taylor–Green laminar phase, V1); this
+may be the same mechanism showing up here, in which case no amount of mesh refinement fixes it and the
+model is the right thing to change next, not the mesh.
