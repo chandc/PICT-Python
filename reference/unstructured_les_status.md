@@ -123,6 +123,13 @@ transition from x = 1.06 to 2.02 D and the twin ⟨u'u'⟩ shear-layer peaks Par
 curved, wall-resolved separating boundary layer — this solver's first LES on real (non-periodic-box)
 unstructured geometry [§65].*
 
+![cylinder 3900 spectra](../figures/ucylinder_re3900_spectra_probes.png)
+
+*Reviewer diagnostics beyond the V3 gate: spanwise correlation R_uu(Δz) at four probes falls to zero
+by 22-38% of the half-span (not near it — genuinely 3D, not a periodic-image artifact) and the
+temporal spectrum carries a clean decade of -5/3-consistent decay, matching Parnaudeau et al. 2008's
+own probe spectra [§65b].*
+
 ![near wall 395 vs DNS](../figures/uchannel_re395_nearwall_stats.png)
 
 *The same three quantities against the MKM DNS at the same Re: spanwise spectra of u and p at y⁺ 10 and

@@ -3736,3 +3736,43 @@ confined to the shear-layer formation region. Not gated by V3, and not grounds t
 but the honest next step if a tighter LES is ever wanted here is shear-layer mesh refinement, not a
 different SGS model: the same peak-underprediction pattern would be expected of any eddy-viscosity
 closure at this near-wall resolution.
+
+## 65b. Reviewer diagnostics A and B: spanwise correlation and the inertial-range spectrum (2026-09-28)
+
+Two of the reviewer's four requests beyond the V3 gate (record §65/§65a; items C and D are the
+shear-layer mesh refinement and the cross-wake PIV digitization, tracked separately). Both answered
+from one continuation run: `run_ucylinder3900_probes.py`, restarted from the finished V3 field (no
+need to repeat the 150 D/U production run), 35 D/U (≈ 6 shedding periods) at four probes — the
+reviewer's suggested (1.5, 0.5) plus (1.5, 0), (3, 0.5), (5, 0) for spatial coverage — accumulating
+the time-mean spanwise power spectrum (for R_uu via Wiener–Khinchin, no extra cost: the solver already
+holds u(z) spectrally) and a per-step (u, v, w) time series at each probe. `plot_utility/
+plot_ucylinder_re3900_spectra.py`, figure `figures/ucylinder_re3900_spectra_probes.png`.
+
+**A — spanwise two-point correlation.** The reviewer's own criterion: R_uu should fall to ~0 well
+before L_z/2. It does, at every probe:
+
+| probe (x/D, y/D) | R_uu first zero at Δz/D | R_uu at L_z/2 (= 1.571 D) |
+|---|---|---|
+| (1.5, 0.5) — shear layer | 0.59 | −0.23 |
+| (1.5, 0.0) — centreline | 0.39 | −0.23 |
+| (3.0, 0.5) | 0.34 | −0.21 |
+| (5.0, 0.0) | 0.44 | −0.25 |
+
+All four cross zero at 22–38% of the half-span, not near it — the turbulence is genuinely
+three-dimensional and decorrelates well inside the domain, not an artifact of the periodic image. Past
+the zero crossing R_uu settles to a shallow negative plateau (−0.21 to −0.25) rather than continuing
+toward zero: the periodic-box signature of a handful of large-scale structures spanning L_z = πD, the
+same minimal-domain character already on record for the channel (§63) and expected here — not a
+domain-width failure by the reviewer's own stated test, but worth knowing if the outer-scale spanwise
+structure itself is ever the target rather than the near-wake statistics V3 was gated on.
+
+**B — temporal spectrum.** All four probes show a clean decade of -5/3-consistent decay from
+f D/U ≈ 0.5 to a few, before steepening toward the grid/time-resolution cutoff — the same qualitative
+range Parnaudeau et al. 2008 report from their own probes (their Figs. 6–7, HWA and LES). No spurious
+pile-up or premature roll-off; WALE is not over-damping the resolved inertial range at this mesh.
+
+**Verdict.** Both reviewer criteria pass on the finished V3 mesh: the turbulence is confirmed
+three-dimensional with an adequate (if minimal) span, and the resolved spectrum carries a proper
+inertial range. Neither finding changes the V3 pass or motivates a rerun; they close out items A and B
+of the reviewer's list. C (shear-layer refinement) is running on Colab as of §65's refined-mesh setup;
+D (cross-wake PIV digitization at Parnaudeau's three stations) remains open.
