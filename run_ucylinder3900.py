@@ -25,7 +25,9 @@ ap.add_argument("--cfl-max", type=float, default=0.8); ap.add_argument("--T", ty
 ap.add_argument("--sgs", default="wale", choices=["none", "wale", "smagorinsky"]); ap.add_argument("--t-sgs", type=float, default=2.0, help="switch the SGS term on at this time: the impulsive start's wall gradient makes WALE blow up at t = 0"); ap.add_argument("--n-nonorth", type=int, default=3)
 ap.add_argument("--eps3d", type=float, default=0.02, help="amplitude of the spanwise-periodic w perturbation at the start")
 ap.add_argument("--device", default="cpu", choices=["cpu", "gpu"]); ap.add_argument("--tag", default=None); ap.add_argument("--outdir", default="results/ucyl3900")
-ap.add_argument("--checkpoint", type=int, default=2000); ap.add_argument("--restart", default=None); ap.add_argument("--report", type=int, default=250)
+ap.add_argument("--checkpoint", type=int, default=2000); ap.add_argument("--restart", default=None)
+ap.add_argument("--init-field", default=None, help="warm-start from a field interpolated onto THIS mesh (interpolate_cylinder3900_ic.py), e.g. a refinement study seeded from a finished coarser run; sets u,v,w,p and lets the solver's own lazy init_flux() bootstrap Ff on step 1 (mutually exclusive with --restart, which resumes an in-progress run on the SAME mesh)")
+ap.add_argument("--report", type=int, default=250)
 ap.add_argument("--stat-every", type=int, default=2); ap.add_argument("--nsteps", type=int, default=None)
 a = ap.parse_args(); os.makedirs(a.outdir, exist_ok=True)
 tag = a.tag or f"ucyl3900_{os.path.splitext(os.path.basename(a.mesh))[0]}_nz{a.nz}_{a.sgs}"
@@ -40,8 +42,14 @@ nu = 1.0 / a.Re
 s = PISO25(m, a.nz, a.Lz, nu, a.dt, BC(m, ku, vu), BC(m, kv, vv), BC(m, kw, vw), BC(m, kp, vp), n_nonorth=a.n_nonorth, device=a.device, solver=("amg" if a.device == "gpu" else "lu"), mom_rtol=1e-7)
 s.sgs_model = "none"; s.cfl_max = a.cfl_max; xp = s.xp
 C = m.centroid; blob = np.exp(-((C[:, 0] - 1.0) ** 2 + C[:, 1] ** 2))
-s.u[:] = 1.0; s.v[:] = s.asdev(0.05 * blob[:, None] * np.ones((1, a.nz)))
-s.w[:] = s.asdev(a.eps3d * blob[:, None] * (np.sin(2 * np.pi * s.z / a.Lz) + 0.5 * np.sin(6 * np.pi * s.z / a.Lz + 1.0))[None, :])
+if a.init_field:
+    ic = np.load(a.init_field)
+    assert ic["u"].shape[0] == m.ncell, f"{a.init_field} has {ic['u'].shape[0]} cells, this mesh has {m.ncell} -- wrong mesh, or re-run interpolate_cylinder3900_ic.py with --dst-mesh {a.mesh}"
+    s.u[:] = s.asdev(ic["u"]); s.v[:] = s.asdev(ic["v"]); s.w[:] = s.asdev(ic["w"]); s.p[:] = s.asdev(ic["p"])
+    print(f"  warm-started from {a.init_field} (interpolated from {ic['src_mesh']} at t = {float(ic['src_time']):.1f}); Ff bootstraps on step 1", flush=True)
+else:
+    s.u[:] = 1.0; s.v[:] = s.asdev(0.05 * blob[:, None] * np.ones((1, a.nz)))
+    s.w[:] = s.asdev(a.eps3d * blob[:, None] * (np.sin(2 * np.pi * s.z / a.Lz) + 0.5 * np.sin(6 * np.pi * s.z / a.Lz + 1.0))[None, :])
 # ---- forces and base pressure (device gathers, scalar results)
 wall = m.bfaces[bt == T_CYL]; wo = m.owner[wall]; Sw = m.normal[wall] * m.span; Aw = np.hypot(Sw[:, 0], Sw[:, 1]); e_in = -Sw / Aw[:, None]
 dn = ((m.fcentre[wall] - m.centroid[wo]) * (-e_in)).sum(axis=1); theta = np.degrees(np.arctan2(m.fcentre[wall, 1], m.fcentre[wall, 0]))     # 0 at the rear stagnation point, +-180 at the front
