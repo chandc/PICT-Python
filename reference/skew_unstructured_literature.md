@@ -3820,3 +3820,52 @@ finer than what was tried), or (b) the σ-model already on the open-items list (
 on record as over-dissipative in at least one other regime (the Taylor–Green laminar phase, V1); this
 may be the same mechanism showing up here, in which case no amount of mesh refinement fixes it and the
 model is the right thing to change next, not the mesh.
+
+## 66. HydroGym's own open-cavity benchmark, run on their own Firedrake backend (2026-09-28)
+
+A third-party reference point requested to compare against, run entirely on HydroGym's own code and
+mesh rather than rebuilt on UniFlow: the open-cavity flow (`hydrogym.firedrake.Cavity`, the
+Barbagallo et al. 2009 lineage, not a lid-driven cavity — inlet U=1, a leading-edge blowing/suction
+jet, a trailing-edge wall-shear-stress sensor), `Cavity_2D_Re7500_fine_FD`, uncontrolled, run in the
+`hgcmp` container on the Spark via `tools/hydrogym_cmp/hg_cavity.py` (adapted from HydroGym's own
+`examples/firedrake/advanced/cavity/unsteady.py`): Newton steady solve with Re ramped 500 → 1000 →
+2000 → 4000 → 7500, then a perturbed BDF transient on the fine mesh (1.02M dof), `mpirun -np 16`.
+
+Two fixes needed before it would run, both now in `hydrogym-spark-container` memory since they
+generalize beyond this flow: (1) `envs/cavity/{fine,medium}.msh` in the PyPI wheel are Git-LFS
+pointer stubs (133 bytes), the same trap already hit for the cylinder meshes — fetched the real files
+from `media.githubusercontent.com/media/dynamicslab/hydrogym/main/...` and overwrote the pointers;
+(2) `hgym.print()` takes one positional argument and no `flush` kwarg, unlike the builtin.
+
+HydroGym's own canonical example targets Tf=500 at dt=2.5e-4 (2M steps); at the measured 16-rank rate
+(≈0.91 s/step from a short smoke test) that is ≈21 days, infeasible to run as published, so Tf=50 was
+substituted and stated as a substitution rather than silently claimed as "the" benchmark number. The
+full run finished in 17.3 h (200,000 steps, 311.8 ms/step sustained) — notably faster than the smoke
+test's 51 h estimate, most likely because the 10-step smoke test's window still included solver/JIT
+compilation overhead not present once Firedrake's compiled forms are warm.
+
+`plot_utility/plot_hydrogym_cavity.py` analyzes `results/hydrogym_cmp/cavity_re7500_fine/stats.dat`
+(20,000 logged rows: t, CFL, KE, TKE, trailing-edge sensor). Findings:
+
+| quantity | value |
+|---|---|
+| saturated total KE | 0.967 |
+| saturated TKE (fluctuation vs base flow) | 0.0075 ± 0.0004 |
+| trailing-edge sensor, t>15 | mean 4.20, rms 3.29 |
+| dominant tone f₀ | 1.855 |
+| second harmonic | f 3.613, relative power 0.013 |
+
+TKE grows from a small perturbation and cleanly saturates by t≈20 (log-scale growth-then-plateau,
+`figures/hydrogym_cavity_re7500_reference.png` top-right panel), with total KE still drifting slowly
+upward through t=50 — a slow secondary transient, not yet at its final statistically-stationary level,
+consistent with the shear layer still settling into its limit cycle. The trailing-edge sensor is
+strongly periodic (bottom-left panel, t=15–20) with one dominant Rossiter-type tone and a weak second
+harmonic at 0.7% relative power — a single-mode-dominated limit cycle, not a broadband turbulent
+spectrum, which is the expected character of a 2D open-cavity shear-layer instability at this Re
+(consistent with Rossiter-mode cavity tones generally, not the DNS/LES broadband turbulence character
+of the Re 3900 cylinder wake in §65).
+
+**What this is and is not for.** This is HydroGym's own solver on HydroGym's own mesh — a reference
+data point to compare a future UniFlow rebuild of the same flow against, not a validation of UniFlow
+itself (nothing in UniFlow was exercised by this run). Committed alongside: `stats.dat`,
+`plot_utility/plot_hydrogym_cavity.py`, `figures/hydrogym_cavity_re7500_reference.png`.
