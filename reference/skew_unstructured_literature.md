@@ -3869,3 +3869,44 @@ of the Re 3900 cylinder wake in §65).
 data point to compare a future UniFlow rebuild of the same flow against, not a validation of UniFlow
 itself (nothing in UniFlow was exercised by this run). Committed alongside: `stats.dat`,
 `plot_utility/plot_hydrogym_cavity.py`, `figures/hydrogym_cavity_re7500_reference.png`.
+
+## 67. UniFlow's own open-cavity run, against the HydroGym Firedrake reference (2026-09-28/29)
+
+`run_ucavity_hg.py`: HydroGym's open-cavity flow (§66), rebuilt on UniFlow's own 2D unstructured PISO
+rather than run through their Firedrake solver, by reading their own `medium.msh` directly and
+reproducing `flow.py`'s exact per-component BCs (Inlet u=(1,0); Freestream/Slip both pin v=0 with u
+free; Wall/Control/Sensor no-slip, uncontrolled; Outlet p=0; nu=1/Re, no extra rescaling). Smoke-tested
+stable on both their meshes (medium: 0.55 s/step; fine: 2.9 s/step — a full T=50 run is ~7.6 h on
+medium against ~80 h on fine), so medium was run first: launched on the Spark's `upict25` container,
+finished cleanly at t=50, no divergence.
+
+`plot_utility/plot_ucavity_vs_hydrogym.py`, `figures/ucavity_vs_hydrogym_re7500.png` compares it
+against §66's Firedrake **fine**-mesh run (the only Firedrake data in hand at the time), window t>15
+for both (matched, not Firedrake's own longer-saturated t>40 tail used in §66):
+
+| quantity | Firedrake, fine (1.02M dof) | UniFlow, medium (65k cells) |
+|---|---|---|
+| KE | 0.9635 | 0.9662 |
+| TKE (fluct. vs running mean) | 0.00583 ± 0.00149 | 0.00344 ± 0.00117 |
+| sensor mean | 4.204 | 5.777 |
+| sensor rms (fluctuation, i.e. std) | 3.292 | 2.684 |
+| dominant tone f₀ | 1.8555 | 1.6857 |
+
+**This is not yet a controlled comparison** — it differs in mesh resolution (65k vs the equivalent of
+~113k boundary nodes) AND method (finite-volume PISO vs Taylor-Hood FEM) at once, so an ~9% shift in
+the dominant tone and a roughly 40% lower TKE cannot yet be attributed to either cause. What the
+comparison DOES show, and is worth recording as-is: two independent codes, independently discretized,
+starting from unrelated initial perturbations, both settle into the same qualitative limit cycle — a
+single dominant Rossiter-type tone within 9% of each other, over a near-identical KE range (0.96–0.97),
+with the sensor traces visibly in-phase for the first several periods of the t=15–25 window before
+drifting apart (expected from the frequency mismatch alone: at 9% apart, an 8-period window accumulates
+about 3/4 of a period of phase drift, matching what the trace plot shows). Also flagged: TKE has not
+saturated over t=15–50 for *either* code (§66 already noted Firedrake's own TKE keeps climbing through
+t=40+), so both the TKE values above and their gap should be read as still-developing, not final.
+
+**To separate resolution from method:** launched HydroGym's own Firedrake solver on the SAME `medium`
+mesh UniFlow just used (`tools/hydrogym_cmp/hg_cavity.py --mesh medium --Re 7500 --Tf 50 --dt 2.5e-4`,
+16 MPI ranks in `hgcmp`; smoke-tested at 138.5 ms/step, so a full run is ~7.7 h, launched 2026-09-29).
+Once that finishes, a genuine three-way read is possible: Firedrake-fine vs Firedrake-medium isolates
+the mesh effect on their own method; Firedrake-medium vs UniFlow-medium then isolates the method effect
+at matched resolution.
