@@ -36,7 +36,8 @@ ap.add_argument("--log-every", type=int, default=10)
 ap.add_argument("--nsteps", type=int, default=None, help="stop after this many steps regardless of --T (smoke testing)")
 ap.add_argument("--outdir", default="results/ucavity_hg")
 ap.add_argument("--checkpoint", type=int, default=5000)
-ap.add_argument("--restart", default=None)
+ap.add_argument("--restart", default=None, help="continue an in-progress run on the SAME mesh (resumes time/nstep)")
+ap.add_argument("--init-field", default=None, help="warm-start from a field interpolated onto THIS mesh (interpolate_cavity_ic.py), e.g. a refinement study seeded from a converged coarser run; sets u,v,p and restarts the clock at t=0 (mutually exclusive with --restart)")
 a = ap.parse_args(); os.makedirs(a.outdir, exist_ok=True)
 
 nodes, cells, ctag, edges, etag, names = read_gmsh22(a.mesh)
@@ -67,6 +68,12 @@ if a.restart:
     s.u[:], s.v[:], s.p[:] = d0["u"], d0["v"], d0["p"]
     t_start, k_start = float(d0["time"]), int(d0["nstep"])
     print(f"  restarted from {a.restart} at t={t_start:.3f}", flush=True)
+elif a.init_field:
+    ic = np.load(a.init_field)
+    assert ic["u"].shape[0] == m.ncell, f"--init-field cell count {ic['u'].shape[0]} != mesh cell count {m.ncell}"
+    s.u[:], s.v[:], s.p[:] = ic["u"], ic["v"], ic["p"]
+    t_start, k_start = 0.0, 0
+    print(f"  warm-started from {a.init_field} (interpolated from {ic['src_mesh']} at t={float(ic['src_time']):.2f}); clock reset to t=0", flush=True)
 else:
     # Freestream/inlet region starts at u=1 (outside the recess), recess starts at rest, plus a
     # small perturbation everywhere -- matches hg_cavity.py's "steady base flow + N(0, pert)" in
