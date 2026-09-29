@@ -3910,3 +3910,38 @@ mesh UniFlow just used (`tools/hydrogym_cmp/hg_cavity.py --mesh medium --Re 7500
 Once that finishes, a genuine three-way read is possible: Firedrake-fine vs Firedrake-medium isolates
 the mesh effect on their own method; Firedrake-medium vs UniFlow-medium then isolates the method effect
 at matched resolution.
+
+## 68. The three-way cavity comparison: the tone gap is a method effect, not a resolution effect (2026-09-29)
+
+Firedrake on their OWN medium mesh (`tools/hydrogym_cmp/hg_cavity.py --mesh medium`, the matched-mesh
+run §67 called for) finished: 200,000 steps in 5.9 h (107.0 ms/step, faster than the fine mesh's 311.8
+ms/step and than the ~7.7 h smoke-test estimate). `plot_utility` inline script →
+`figures/ucavity_threeway_comparison.png`, window t>15 for all three:
+
+| run | KE | TKE (fluct.) | sensor mean | sensor rms (fluct.) | dominant tone f₀ |
+|---|---|---|---|---|---|
+| Firedrake, fine (225k cells) | 0.9635 | 0.00583 ± 0.00149 | 4.204 | 3.292 | **1.8555** |
+| Firedrake, medium (65k cells) | 0.9648 | 0.00616 ± 0.00169 | 4.477 | 2.942 | **1.8555** |
+| UniFlow, medium (65k cells) | 0.9662 | 0.00344 ± 0.00117 | 5.777 | 2.684 | **1.6857** |
+
+**Firedrake's own tone is mesh-independent over this refinement range** — fine and medium give the
+identical 1.8555 to four figures, and their KE/TKE/sensor statistics agree closely (sensor trace
+panel: the two are visually the same waveform, in phase, for the whole t=15–22 window). That
+settles §67's open question: the ~9% tone gap between UniFlow and the Firedrake fine-mesh reference is
+**not a resolution artifact** — matching UniFlow's mesh exactly still leaves Firedrake at 1.8555, while
+UniFlow itself sits at 1.6857 on that same mesh. The gap is attributable to the method (finite-volume
+collocated PISO vs Taylor-Hood P2-P1 FEM) — most plausibly the discretization of the shear layer itself
+(a lower-order FV scheme diffusing/lagging the instability's growth rate slightly differently than a
+higher-order FEM velocity space), though this record does not yet isolate which specific piece (spatial
+scheme, time-stepping order, or the BDF2-vs-BDF3 difference between the two codes) is responsible.
+
+**What this does and does not establish.** UniFlow reproduces the qualitative flow (§67's vorticity
+comparison: same shear-layer roll-up, same-sign recirculation, same corner concentrations) and lands
+within 9% on the dominant frequency and the right order of magnitude on every statistic, on an
+independent code's own benchmark, with no tuning toward it. It does not yet match Firedrake to the
+precision the channel/cylinder gates hold UniFlow to elsewhere in this record (order-of-percent), and
+unlike those gates there is no independent third reference (DNS, experiment) to say which of the two
+codes is closer to the "true" cavity tone — Firedrake's own mesh-independence only proves Firedrake is
+self-consistent, not that 1.8555 is the physically correct value. A genuine resolution/refinement study
+of UniFlow's OWN discretization (finer than medium, on this flow) would be the next falsifiable step if
+closing this gap further becomes a priority; not attempted here.
