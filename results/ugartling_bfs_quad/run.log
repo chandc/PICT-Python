@@ -1,0 +1,26 @@
+Gartling BFS meshes/gartling_bfs_quad.msh: 9870 cells, Re=800.0, dt=0.005, 30000 steps to T=150.0
+  t=  10.00  max|du/dt| 1.518e-01  max|dv/dt| 4.415e-02  |u|max 1.495  |v|max 0.442  (119.46 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad/ckpt_t0020.npz
+  t=  20.00  max|du/dt| 1.127e-01  max|dv/dt| 5.592e-02  |u|max 1.496  |v|max 0.258  (112.19 ms/step)
+  t=  30.00  max|du/dt| 8.135e-02  max|dv/dt| 4.640e-02  |u|max 1.495  |v|max 0.375  (99.00 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad/ckpt_t0040.npz
+  t=  40.00  max|du/dt| 7.358e-02  max|dv/dt| 5.496e-02  |u|max 1.495  |v|max 0.335  (86.95 ms/step)
+  t=  50.00  max|du/dt| 5.405e-02  max|dv/dt| 4.051e-02  |u|max 1.495  |v|max 0.213  (79.79 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad/ckpt_t0060.npz
+  t=  60.00  max|du/dt| 3.289e-02  max|dv/dt| 1.684e-02  |u|max 1.495  |v|max 0.192  (77.08 ms/step)
+  t=  70.00  max|du/dt| 2.245e-02  max|dv/dt| 1.790e-02  |u|max 1.495  |v|max 0.187  (79.58 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad/ckpt_t0080.npz
+  t=  80.00  max|du/dt| 2.007e-02  max|dv/dt| 1.836e-02  |u|max 1.495  |v|max 0.187  (79.73 ms/step)
+  t=  90.00  max|du/dt| 8.434e-03  max|dv/dt| 7.728e-03  |u|max 1.495  |v|max 0.178  (79.85 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad/ckpt_t0100.npz
+  t= 100.00  max|du/dt| 2.333e-02  max|dv/dt| 2.541e-02  |u|max 1.495  |v|max 0.184  (79.39 ms/step)
+  t= 110.00  max|du/dt| 2.416e-02  max|dv/dt| 2.690e-02  |u|max 1.495  |v|max 0.181  (78.81 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad/ckpt_t0120.npz
+  t= 120.00  max|du/dt| 1.777e-02  max|dv/dt| 2.287e-02  |u|max 1.495  |v|max 0.175  (78.02 ms/step)
+  t= 130.00  max|du/dt| 1.846e-02  max|dv/dt| 2.095e-02  |u|max 1.496  |v|max 0.175  (77.43 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad/ckpt_t0140.npz
+  t= 140.00  max|du/dt| 1.669e-02  max|dv/dt| 1.691e-02  |u|max 1.495  |v|max 0.181  (76.72 ms/step)
+  t= 150.00  max|du/dt| 2.049e-02  max|dv/dt| 2.335e-02  |u|max 1.495  |v|max 0.193  (76.14 ms/step)
+RESULT lower-wall omega zero crossings (reattachment): ['6.091', '10.520', '11.097', '12.125', '12.644', '13.795', '14.211', '15.496', '15.770']  (Gartling/Chan: 6.1)
+RESULT upper-wall omega zero crossings (sep, reatt): ['4.827', '9.038', '9.587', '10.412', '11.305', '11.869', '12.972', '13.423', '14.657', '14.976']  (Gartling/Chan: 4.8, 10.5)
+wrote results/ugartling_bfs_quad/final.npz

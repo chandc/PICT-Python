@@ -4112,3 +4112,41 @@ all others are 15-50) and UniFlow fine starts from an already-correlated warm fi
 rest, so its own running-mean TKE has had less time to reflect the saturated fluctuation level. Not a
 finding, a measurement-window artifact; a matched-window fine rerun (continuing past t=25 to t=50 on
 UniFlow fine's own clock) would resolve it if the amplitude comparison becomes a priority.
+
+## 73. The quad-mesh BFS oscillation is sustained, not a slow transient -- settled by running to t=400 (2026-10-01)
+
+Extended the quad-mesh run (§69-70's companion case) from t=150 to t=400, the same duration Chan &
+Mittal needed to distinguish a genuine spurious limit cycle from a slowly-approaching steady state on
+their own mesh (§69's cited methodology). Result: **the residual does not decay further past t~90** --
+`figures/ugartling_bfs_quad_field_t400.png`, full history panel. max|du/dt| and max|dv/dt| plateau in
+the 0.012-0.036 range from t=90 straight through t=400, 250 more time units with no downward trend.
+This settles the open question from the T=150 result: it is a sustained oscillation, not a transient
+still decaying.
+
+| quantity | t=150 | t=400 | reference |
+|---|---|---|---|
+| lower reattachment (first crossing) | 6.091 | 6.166 | 6.1 |
+| upper separation | 4.827 | 4.917 | 4.8 |
+| upper reattachment (first clean crossing) | ~10.41 (noisy) | ~10.52 | 10.5 |
+
+The headline numbers stay close to the reference at both times (the oscillation's amplitude and phase
+wander slightly cycle to cycle, shifting the first-crossing location by a percent or so, but not by
+much) -- so the reattachment READ-OFF is robust to the sustained oscillation even though the flow
+itself has not reached a classical fixed point.
+
+**A plausible mechanism, not yet tested.** The triangular mesh (§70) reached a genuine steady state
+(residual to 1.8e-6 by t=400) and had STREAMWISE grading concentrated in the recirculation region
+(h_shear=0.055 for x<13). The quad mesh reached only a sustained limit cycle and has UNIFORM streamwise
+spacing (dx=17/141=0.121) despite much finer WALL-NORMAL resolution (dy_wall~0.0015). The streamline
+and vorticity panels show a chain of small eddies forming along the lower wall at x~7-11 -- right where
+the shear layer, now reattached, still carries strong cross-stream gradients at a coarser-than-the-
+triangular-mesh streamwise spacing. The natural hypothesis: this is an UNDER-RESOLVED-STREAMWISE
+artifact (a numerical analogue of Chan & Mittal's own coarse-grid finding, just along a different mesh
+dimension than theirs), not a wall-normal-resolution problem -- wall clustering made the near-wall
+numbers MORE accurate while leaving the downstream shear layer's streamwise resolution exactly as
+coarse as before. Untested: refining the quad mesh's streamwise spacing (independent of wall
+clustering) over x in [5,12] should, if this hypothesis is right, damp the oscillation the way the
+triangular mesh's own streamwise shear-layer grading did.
+
+**Not yet resolved either way** — flagged as the next falsifiable step if this case is revisited, not
+attempted here.
