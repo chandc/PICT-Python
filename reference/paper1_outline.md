@@ -39,6 +39,7 @@ are finite-difference-certified end to end and whose memory stays flat in the ho
 | C7 | A production-solver adjoint, field-for-field equal to the forward step (u 3e-9, p 5e-9), FD-exact through assembly, jets and forces (3.9e-7), memory 180 MB vs 581 MB tape at 3 steps (≈200 MB vs ≈15 GB projected at H = 80) | **landed as machinery** | `production_adjoint.md` 9.1–9.5 |
 | C8 | Training *on our solver* reproduces C1 on a shedding wake | **NOT landed** — 15 noisy DPC iterations (≈2% drag dips bought with lift, `figures/dpc_shed_regimes.png`); SAC flat below baseline on the shedding mesh (`figures/sac_mid_progress.png`) | commits `ed6714d`, `ac00343` |
 | C9 | The solver underneath is validated: Re 100 cylinder St 0.1673 / C_D 1.321; pinball and NACA0012 within 1–3% of HydroGym's Firedrake; **and, well beyond the control-task Reynolds number, a wall-resolved LES at Re 3900 passes St, C_D, C_pb and recirculation length against Parnaudeau/Kravchenko–Moin/Lehmkuhl/Norberg (V3, all four within the literature band), plus two structural diagnostics beyond the gate: spanwise two-point correlation decorrelates at 22–38% of the half-span (genuinely 3D, not a periodic-image artifact) and the temporal spectrum carries a clean −5/3 decade matching Parnaudeau's own probe spectra** | **landed** | `hydrogym_backend.md`, `cylrect_r11_adjustments.md`, §45–46, pinball commits; V3 and the diagnostics: `skew_unstructured_literature.md` §65, §65a, §65b |
+| C10 | On a SECOND, independent control task (NACA0012 gust rejection, not the cylinder wake of C1–C8), DPC trained through the certified adjoint (C7) reaches PPO's own recorded deterministic-evaluation return (−30.3) in a mean of 194,400 solver steps across 3 seeds, against 11,134,800 for PPO's one successful training lineage — a measured 57× gap, pulled directly from both codes' training logs, not estimated | **landed, but not seed-matched or metric-matched**: 3 DPC seeds vs PPO's single successful lineage (plus one abandoned `std_init` attempt), and DPC's curve is already its deterministic-eval metric while PPO's plotted curve is its noisier stochastic training-time return (PPO's own deterministic eval, available only at the end of each training stage, is −30.3; its training-time rolling mean is still −49 after the full budget) — a seed-matched, metric-matched rerun is needed before 57× is a publication-grade number, see item 10 below | `unstructured_adjoint.md` "The training histories, pulled and compared directly"; `figures/naca_ppo_vs_dpc_training.png`, `plot_utility/plot_naca_ppo_vs_dpc_training.py` |
 
 **The framing question to settle first.** C1 was obtained in *FluidGym's own* stack with its
 ordinary tape; memory did not bind on the GB10's unified memory. So the horizon result does not
@@ -58,7 +59,7 @@ depend on our adjoint. That leaves two honest framings:
 * Two families of learned flow control: model-free RL (Rabault et al. 2019 lineage) and
   differentiable physics (DPC / D-MPC). Benchmarks (FluidGym, HydroGym) now compare them head to head.
 * The published ordering (RL ahead) is being read as a property of the methods.
-* Contributions, as bullets C1, C3, C6, C7 (+ C8 under framing B).
+* Contributions, as bullets C1, C3, C6, C7, C10 (+ C8 under framing B).
 
 ### 2. Problem and environments (≈1 page)
 * CylinderJet2D-easy: Re 100, opposing ±90° jets, one scalar action held 25 solver steps,
@@ -66,6 +67,10 @@ depend on our adjoint. That leaves two honest framings:
 * Table: env spec (from `fluidgym_parity.md` top table).
 * HydroGym jet cylinder as shipped, and our ZNMF variant (§43–44).
 * **Table 1** — environment parity: uncontrolled C_D 3.3281 ± 0.0004 vs shipped 3.3281555.
+* A second, independent task for §8/C10: NACA0012 gust rejection (`naca_env.py`), a different
+  geometry and control objective from the cylinder wake above — one scalar actuator, deterministic
+  200-action evaluation episode, 54 real solver substeps per gym `env.step()` (`action_interval`
+  0.54 / `dt` 0.01, the factor the first pass at the training-history comparison missed).
 
 ### 3. Methods (≈2 pages)
 * 3.1 DPC trainer: MLP 453→64→64→1 (note: ours sees pressure, theirs velocity only — must be
@@ -109,14 +114,40 @@ depend on our adjoint. That leaves two honest framings:
 * ZNMF: chattering policy, 0.0% change (`figures/hydrogym_rl_training_znmf.png`).
 * Recommendation to benchmark maintainers: ZNMF jets plus an actuation cost.
 
-### 8. Discussion (≈1 page)
+### 8. Result 5 — a second task: gust rejection, and sample efficiency measured directly (≈1 page)
+* Why a second, unrelated control task (geometry, objective, actuator) matters for the paper's
+  thesis: C1–C7 show DPC closing the gap to RL on ONE task (cylinder wake suppression); this result
+  asks the complementary question — on a task where DPC trains cleanly to convergence (unlike C8's
+  noisy shedding-wake attempt), how does its sample cost compare to RL's, measured directly from
+  both codes' own training logs rather than estimated.
+* **Table 5** (C10) — solver steps to PPO's recorded return (−30.3): PPO successful lineage
+  11,134,800; PPO + abandoned `std_init = 1.0` attempt 13,294,800; DPC mean of 3 seeds ≈194,400;
+  ratio ≈57×.
+* **Figure 7** — training curves on the same solver-step axis, log scale
+  (`figures/naca_ppo_vs_dpc_training.png`): DPC's three seeds crossing PPO's final return before
+  PPO's first evaluation checkpoint; PPO's stochastic training-time rolling mean (grey cloud) sitting
+  well below its own deterministic-eval return throughout.
+* Honest limits of the comparison, stated plainly (not left for a referee to find): single PPO
+  training lineage vs 3 DPC seeds; DPC's curve is a deterministic-eval metric, PPO's plotted curve is
+  not — the two are not measuring quite the same thing at matched points, only at the final,
+  end-of-stage checkpoints where PPO's own eval score is known. The 57× should be read as "DPC needs
+  on the order of 1–2 fewer decades of solver steps," not as a precise multiplier, until the
+  seed-matched rerun (item 10) exists.
+* Relation to C8: this result does NOT land C8 (that claim is specifically about the cylinder
+  shedding wake, and remains not landed) — it is independent evidence for the same underlying thesis
+  on a task where training actually converged.
+
+### 9. Discussion (≈1 page)
 * Horizon as the controlling hyperparameter for DPC; why truncated BPTT cannot see the delayed
   drag benefit of opposing a forming vortex.
 * When memory-flat adjoints matter (larger meshes, 3D, smaller GPUs) and when they do not
   (C1 itself did not need them).
-* Limits: 2D, Re 100, single scalar actuator, one geometry.
+* Why a second task (C10) strengthens the sample-efficiency claim beyond one environment, and why
+  it is not yet a clean comparison (seed count, metric asymmetry) — the same caveat pattern as C1's
+  single-seed limitation, not a new category of weakness.
+* Limits: 2D, Re 100 (cylinder tasks), single scalar actuator, two geometries total.
 
-### 9. Conclusions (≈½ page)
+### 10. Conclusions (≈½ page)
 
 ### Appendices
 * A. Exact hyperparameters of every arm; FluidGym artefact provenance (HF dataset paths).
@@ -125,6 +156,10 @@ depend on our adjoint. That leaves two honest framings:
   spanwise-correlation/spectrum diagnostics).
 * D. Engineering notes needed to reproduce (container recipe, `sm_120` arch flag, weak-pointer
   keepalive for `set_state`).
+* E. C10 provenance: `rl_logs/` stage-by-stage PPO logs (recovered from the Spark's `hgrl`
+  container), `results/uadj_dpc/dpc_naca_h10_s{0,1,2}[_c2][_c3]` DPC seed logs, and the cold-start
+  bootstrap fix (`src/uadj_step.py`, commit `787c859`) with its measured negligible impact on the
+  three reported DPC returns (seed 0 −30.40→−30.41, seed 1 −28.96→−28.97, seed 2 −30.85→−30.85).
 
 ---
 
@@ -148,6 +183,11 @@ depend on our adjoint. That leaves two honest framings:
 8. **Contact the benchmark authors** about C3, C4 and C6 before submission. They are claims
    about others' published work and should be checked with them, not only against their artifacts.
 9. **Independent re-derivation** of every number in Tables 1–4 from the raw run files.
+10. **(C10) Seed- and metric-match the NACA comparison.** Train PPO with ≥3 independent seeds
+    (matching DPC's 3) instead of one successful lineage, and evaluate PPO's deterministic policy at
+    intermediate checkpoints (not only end-of-stage) so both curves are plotted on the same metric at
+    matched points. Until this is done, report 57× as an order-of-magnitude finding, not a precise
+    ratio.
 
 ## Threats to validity (to address in the text)
 
@@ -157,6 +197,9 @@ depend on our adjoint. That leaves two honest framings:
 * The HydroGym result is for PPO defaults, one CFD step per action, (C_L, C_D) observations; the
   ZNMF "learns nothing" finding is budget- and observation-limited, not a statement about ZNMF.
 * Everything is 2D, Re 100.
+* C10's 57× gap is single-lineage PPO vs 3-seed DPC, and compares DPC's deterministic-eval metric
+  against PPO's stochastic training-time return rather than PPO's own (less frequently measured)
+  deterministic eval — stated as a range/order-of-magnitude until item 10 is done, not as 57× flat.
 
 ## Authorship, lineage, licensing
 
