@@ -4076,3 +4076,39 @@ reports as the finding.
 Not yet done: a matched-duration, matched-window fine-mesh run (warm-started but continued to the same
 ~35-unit stats window as medium/Firedrake) would make the TKE comparison apples-to-apples too; flagged
 as the natural next step if that comparison becomes a priority.
+
+## 72. All four cavity runs together: the full method x resolution factorial (2026-10-01)
+
+Pulling §66-§71 into one comparison: Firedrake and UniFlow, each on their medium and fine meshes.
+`plot_utility/plot_ucavity_fourway.py`, `figures/ucavity_fourway_comparison.png`.
+
+| run | KE | TKE (fluct.) | sensor mean | sensor std | dominant tone f0 | window |
+|---|---|---|---|---|---|---|
+| Firedrake, medium (65k) | 0.9648 | 0.00616 ± 0.00169 | 4.477 | 2.942 | **1.8555** | t=15-50 |
+| Firedrake, fine (225k) | 0.9635 | 0.00583 ± 0.00149 | 4.204 | 3.292 | **1.8555** | t=15-50 |
+| UniFlow, medium (65k) | 0.9662 | 0.00344 ± 0.00117 | 5.777 | 2.684 | 1.6857 | t=15-50 |
+| UniFlow, fine (225k) | 0.9760 | 0.00127 ± 0.00023 | 3.477 | 3.491 | 1.8235 | t=8-25 |
+
+**The 2x2 factorial reads cleanly on the tone, the quantity that survives window-length differences.**
+Firedrake: 1.8555 at both resolutions -- flat row, mesh-independent. UniFlow: 1.6857 -> 1.8235 moving
+medium -> fine -- a real, resolution-driven shift of 8.2%, closing to within 1.7% of Firedrake's
+(mesh-independent) value. The spectrum panel shows this directly: both Firedrake curves and UniFlow's
+fine curve cluster at the same peak location; UniFlow's medium curve is the one that is visibly shifted
+left. The sensor-trace panel shows the same thing in the time domain -- UniFlow fine's oscillation
+period visibly tracks both Firedrake curves far more closely than UniFlow medium's does.
+
+**Conclusion, stated precisely:** this is a numerical-method convergence-rate difference, not a
+disagreement about the physics. Taylor-Hood P2-P1 FEM reaches its (mesh-independent, over this range)
+answer for the dominant tone already at 65k cells; UniFlow's collocated FV needs the finer 225k-cell
+mesh to approach the same value, and is still 1.7% away there, not yet demonstrated to have reached
+ITS OWN mesh-independent limit (no finer-than-fine UniFlow run exists). The honest open item: whether
+UniFlow's tone would continue converging toward exactly 1.8555 on a still-finer mesh, or asymptote
+to a slightly different value, is not yet answered -- would need a third UniFlow resolution point to
+see the convergence trend rather than two.
+
+**TKE and sensor amplitude do not read as cleanly** -- not because the method/resolution story
+reverses, but because the four runs do not share a common statistics window (UniFlow fine is 8-25,
+all others are 15-50) and UniFlow fine starts from an already-correlated warm field rather than from
+rest, so its own running-mean TKE has had less time to reflect the saturated fluctuation level. Not a
+finding, a measurement-window artifact; a matched-window fine rerun (continuing past t=25 to t=50 on
+UniFlow fine's own clock) would resolve it if the amplitude comparison becomes a priority.
