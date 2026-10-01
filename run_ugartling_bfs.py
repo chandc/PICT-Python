@@ -33,6 +33,7 @@ ap.add_argument("--T", type=float, default=300.0)
 ap.add_argument("--report", type=int, default=2000)
 ap.add_argument("--nsteps", type=int, default=None, help="stop after this many steps regardless of --T (smoke testing)")
 ap.add_argument("--conv-tol", type=float, default=1e-8, help="stop early once max|du/dt|,max|dv/dt| (per unit dt) fall below this, checked every --report steps")
+ap.add_argument("--ckpt-dt", type=float, default=None, help="write a separate checkpoint file every this many time units (e.g. 20), in addition to the final result")
 ap.add_argument("--outdir", default="results/ugartling_bfs")
 a = ap.parse_args(); os.makedirs(a.outdir, exist_ok=True)
 
@@ -68,10 +69,17 @@ print(f"Gartling BFS {a.mesh}: {m.ncell} cells, Re={a.Re}, dt={a.dt}, {nsteps} s
 u_prev, v_prev = s.u.copy(), s.v.copy()
 hist = []
 t0 = time.time()
+next_ckpt = a.ckpt_dt if a.ckpt_dt else None
 for k in range(nsteps):
     s.step()
     if not np.isfinite(s.u).all():
         print(f"  DIVERGED at step {k+1}", flush=True); break
+    if next_ckpt is not None and s.time >= next_ckpt - 1e-9:
+        fn = f"{a.outdir}/ckpt_t{round(next_ckpt):04d}.npz"
+        np.savez(fn, u=s.u, v=s.v, p=s.p, time=s.time, nstep=k + 1,
+                 centroid=m.centroid, nodes=m.nodes, cells=m.cells, nvert=m.nvert, btag=m.btag)
+        print(f"  wrote checkpoint {fn}", flush=True)
+        next_ckpt += a.ckpt_dt
     if (k + 1) % a.report == 0:
         du = np.abs(s.u - u_prev).max() / (a.report * a.dt)
         dv = np.abs(s.v - v_prev).max() / (a.report * a.dt)
