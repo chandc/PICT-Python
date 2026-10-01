@@ -4040,3 +4040,39 @@ mesh's resolution.
 
 **Mesh-grading instability (§69), closed out.** The BFS case is now a working, validated addition to
 the project: `meshes/make_gartling_bfs.py` (9872 cells, grading confined to x≤13), `run_ugartling_bfs.py`.
+
+## 71. The cavity fine-mesh run finished: resolution DOES move UniFlow's tone toward Firedrake's (2026-10-01)
+
+The warm-started fine-mesh UniFlow cavity run (224,849 cells, interpolated from the converged medium
+solution, §67) finished some time ago without a follow-up report -- found while checking on it now.
+`T=25` (own clock, reset at the warm start), stats from `t=8` (17 units, shorter than medium's 35
+because warm-starting needs less settling). `results/ucavity_hg_fine/stats.dat`,
+`figures/ucavity_fine_vs_medium_vs_firedrake.png`.
+
+| run | dominant tone f0 | vs Firedrake fine (1.8555) |
+|---|---|---|
+| UniFlow medium (65k cells) | 1.6857 | −9.2% |
+| **UniFlow fine (225k cells)** | **1.8235** | **−1.7%** |
+| Firedrake fine (225k cells) | 1.8555 | -- |
+| Firedrake medium (65k cells) | 1.8555 | (mesh-independent, §68) |
+
+**This refines §68's conclusion, it does not overturn it.** §68 found Firedrake's own tone is
+mesh-independent (medium and fine agree to four figures) and concluded the UniFlow-vs-Firedrake gap at
+matched (medium) resolution is a method effect, not a resolution effect -- that stands: Firedrake does
+not need the fine mesh to get the right answer. What this adds: **UniFlow does.** Refining UniFlow's
+own mesh closes most of the gap (9.2% -> 1.7%), meaning UniFlow's finite-volume discretization
+converges toward the same tone Firedrake's Taylor-Hood FEM already has at medium resolution, just at a
+slower rate with mesh refinement -- a convergence-RATE difference between the two methods, which is a
+more precise statement than "a method effect" left unqualified. Consistent with FV generally being
+lower-order than a P2-P1 FEM velocity space for resolving a thin, high-shear roll-up.
+
+**Caveat, same shape as before:** TKE is not directly comparable across the three runs (different
+window lengths -- 17 units for fine, 35 for medium and Firedrake -- and the fine run starts from an
+already-correlated warm field rather than from rest, so its own running-mean TKE has less time to
+reflect the true fluctuation level). The tone comparison is the robust one (a spectral peak location is
+far less sensitive to averaging-window length than an amplitude statistic), and is what this section
+reports as the finding.
+
+Not yet done: a matched-duration, matched-window fine-mesh run (warm-started but continued to the same
+~35-unit stats window as medium/Firedrake) would make the TKE comparison apples-to-apples too; flagged
+as the natural next step if that comparison becomes a priority.
