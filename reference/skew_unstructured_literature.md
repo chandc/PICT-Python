@@ -3945,3 +3945,65 @@ codes is closer to the "true" cavity tone — Firedrake's own mesh-independence 
 self-consistent, not that 1.8555 is the physically correct value. A genuine resolution/refinement study
 of UniFlow's OWN discretization (finer than medium, on this flow) would be the next falsifiable step if
 closing this gap further becomes a priority; not attempted here.
+
+## 69. Gartling's backward-facing step on UniFlow, and a mesh-grading instability found along the way (2026-10-01)
+
+A new case, not a continuation of the cylinder/cavity/channel work above: Gartling's BFS (Gartling
+1990, IJNMF 11:953), per the convention recorded independently in
+`~/Dropbox/Apple_MLX_CFD/sem_demo/GARTLING_VALIDATION.md` (a least-squares spectral-element
+reproduction of Chan & Mittal's CTR 1996 figures 3-6). Geometry is a single rectangle `[0,17]x[-0.5,0.5]`
+-- there is no meshed step, the "step" is purely the inflow boundary condition (parabolic over the
+upper half of the left edge only, `u = 24y(0.5-y)`, peak 1.5 mean 1; no-slip over the lower half, the
+step face). `nu = 1/800`, Re built on the inlet hydraulic diameter `2h=1` and mean velocity 1 -- NOT
+literally on the step height (that reading is flagged in the source note as a "viscosity trap";
+`nu=1/800` is what reproduces Gartling's own quoted reattachment of 6.1). Outlet: `p=0`, `u,v` free,
+UniFlow's usual analogue of their "P+Z" condition. Reference reattachment: lower 6.1, upper separation
+4.8, upper reattachment 10.5 (Chan & Mittal, reproducing Gartling).
+
+**A real instability, tracked down rather than worked around.** `meshes/make_gartling_bfs.py`,
+requested at ~10k cells, graded fine near the walls and the shear layer, coarser downstream. Two
+successive grading attempts were numerically unstable -- not slow to converge, but exponentially
+diverging within 50-250 steps, `max|u|` reaching 1e7 before a NaN killed the linear solve:
+
+1. **Box fields** (hard-edged spatial regions, blended only in VALUE via a `Thickness` parameter, not
+   in the field's spatial gradient). Min angle 14.3 deg at the box edge near x=13 -- a quality problem,
+   but a second attempt with a longer, gentler Thickness fixed the angle (27.8 deg, no cells below 20)
+   and was STILL unstable, now failing near the outlet corners instead.
+2. **Distance+Threshold fields** over the full-length wall curves (smooth in both value and gradient,
+   the standard robust Gmsh boundary-layer-grading approach) -- same failure mode, same location: a
+   single cell pair near an outlet corner grows an oscillating, sign-flipping `v` by nine orders of
+   magnitude while everything else in the domain stays bounded.
+
+**Diagnosis.** A plain UNIFORM mesh at a comparable cell count (14798 cells, h~0.052 uniform) was rock
+solid under the identical BCs and solver -- including plain first-order upwind convection, which rules
+out the central-scheme deferred correction as the cause (upwind's matrix is unconditionally diagonally
+dominant; the deferred correction isn't even active in that config). Tracking `argmax|v|`'s location
+step by step on each failing mesh showed the blow-up starting at ONE specific cell, always near a
+geometric corner where graded (small) wall-adjacent cells met the Outlet boundary, and always passing
+ordinary aggregate quality checks (min angle, neighbour volume ratio) that looked comparable to meshes
+already working fine elsewhere in this project -- aggregate stats did not predict the failure; location
+relative to the outlet corner did.
+
+**Fix.** Confine all grading (wall AND shear-layer) to `x <= 13` (split the wall curves at x=13, only
+the upstream segments feed the Distance field); `x` in `[13,17]`, including both outlet corners, is left
+close to uniform. 9872 cells. Verified stable 600 steps (`max|u|`, `max|v|` settling smoothly, not
+diverging) before trusting it -- this check is now load-bearing practice for this case, not assumed.
+
+**Scope of the finding.** Not yet established whether the root cause is specific to the Rhie-Chow
+time-step-independent formulation's `V/a_P` terms (which are directly cell-volume-dependent) reacting
+badly to the sudden size jump right where the Outlet's natural (Neumann) velocity BC meets a geometric
+corner, or something else about the outlet treatment -- the cylinder and cavity cases both have graded
+meshes AND an Outlet tag without this failure, so it is not graded-mesh-plus-Outlet in general, only
+this specific combination of strong grading reaching all the way into an outlet corner. Flagged as an
+open item rather than investigated further here, since confining the grading away from the outlet
+sidesteps it entirely for this case.
+
+`run_ugartling_bfs.py`: BCs per `GARTLING_VALIDATION.md`'s table (Inlet full Dirichlet parabola, Wall
+no-slip, Outlet p=0 with u,v free); initialised to the inflow profile extended uniformly downstream
+(not literal rest -- Chan's own "from rest" start is for a different, more dissipative VVP spectral
+scheme and triggers the same kind of impulsive-start shock on this collocated PISO that every other
+case in this project already avoids, e.g. `run_ucylinder.py: s.u[:] = 1.0`). Wall vorticity read via the
+same one-sided wall-normal-derivative convention as the cylinder/cavity forces(), giving the zero
+crossings directly comparable to Chan's Figure 4 independent check. Launched at dt=0.005, T=400
+(matching the reference's own time scale for genuine steady-state convergence on a fine grid), with
+early stopping once `max|du/dt|, max|dv/dt|` (per unit time) fall under 1e-8 -- result pending.
