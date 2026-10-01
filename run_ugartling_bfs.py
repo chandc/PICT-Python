@@ -35,6 +35,7 @@ ap.add_argument("--nsteps", type=int, default=None, help="stop after this many s
 ap.add_argument("--conv-tol", type=float, default=1e-8, help="stop early once max|du/dt|,max|dv/dt| (per unit dt) fall below this, checked every --report steps")
 ap.add_argument("--ckpt-dt", type=float, default=None, help="write a separate checkpoint file every this many time units (e.g. 20), in addition to the final result")
 ap.add_argument("--outdir", default="results/ugartling_bfs")
+ap.add_argument("--restart", default=None, help="continue from a saved u,v,p,time on the SAME mesh (e.g. a --ckpt-dt checkpoint or a previous final.npz); --T is the new, absolute target time, not an additional duration")
 a = ap.parse_args(); os.makedirs(a.outdir, exist_ok=True)
 
 nodes, cells, ctag, edges, etag, names = read_gmsh22(a.mesh)
@@ -53,23 +54,39 @@ vp = np.zeros(nb)
 nu = 1.0 / a.Re
 s = PISO(m, nu=nu, dt=a.dt, bc_u=BC(m, ku, vu), bc_v=BC(m, kv, vv), bc_p=BC(m, kp, vp),
          n_corr=2, n_nonorth=3, scheme="central", convect=True)
-# Chan & Mittal's figs 5/6 start "from rest" (u=v=0 everywhere), but that is their VVP spectral
-# scheme; on this collocated PISO, zero interior + the full parabolic inlet from step 1 is an
-# impulsive shock that blows up within ~50 steps (measured: |u|max 14 -> 116 over t=0.05-0.25).
-# Every other case in this project avoids exactly this by matching the interior IC to the inflow
-# (run_ucylinder.py: s.u[:] = 1.0), so initialise u to the inflow profile extended uniformly
-# downstream (0 below the step) instead of true rest -- still an impulsive guess, not a converged
-# base flow, just not a step discontinuity in both space AND the full Dirichlet value at once.
-Cy = m.centroid[:, 1]
-s.u[:] = np.clip(24.0 * Cy * (0.5 - Cy), 0.0, None)
+if a.restart:
+    d0 = np.load(a.restart)
+    assert d0["u"].shape[0] == m.ncell, f"--restart cell count {d0['u'].shape[0]} != mesh cell count {m.ncell}"
+    s.u[:], s.v[:], s.p[:] = d0["u"], d0["v"], d0["p"]
+    t_start = float(d0["time"])
+    print(f"  restarted from {a.restart} at t={t_start:.3f}", flush=True)
+else:
+    # Chan & Mittal's figs 5/6 start "from rest" (u=v=0 everywhere), but that is their VVP spectral
+    # scheme; on this collocated PISO, zero interior + the full parabolic inlet from step 1 is an
+    # impulsive shock that blows up within ~50 steps (measured: |u|max 14 -> 116 over t=0.05-0.25).
+    # Every other case in this project avoids exactly this by matching the interior IC to the inflow
+    # (run_ucylinder.py: s.u[:] = 1.0), so initialise u to the inflow profile extended uniformly
+    # downstream (0 below the step) instead of true rest -- still an impulsive guess, not a converged
+    # base flow, just not a step discontinuity in both space AND the full Dirichlet value at once.
+    Cy = m.centroid[:, 1]
+    s.u[:] = np.clip(24.0 * Cy * (0.5 - Cy), 0.0, None)
+    t_start = 0.0
 
-nsteps = a.nsteps or int(round(a.T / a.dt))
-print(f"Gartling BFS {a.mesh}: {m.ncell} cells, Re={a.Re}, dt={a.dt}, {nsteps} steps to T={nsteps*a.dt:.1f}", flush=True)
+nsteps = a.nsteps or int(round((a.T - t_start) / a.dt))
+print(f"Gartling BFS {a.mesh}: {m.ncell} cells, Re={a.Re}, dt={a.dt}, {nsteps} steps from t={t_start:.1f} to T={t_start + nsteps*a.dt:.1f}", flush=True)
+s.time = t_start
 
 u_prev, v_prev = s.u.copy(), s.v.copy()
 hist = []
 t0 = time.time()
-next_ckpt = a.ckpt_dt if a.ckpt_dt else None
+if a.ckpt_dt:
+    # first checkpoint strictly after t_start, on the ckpt_dt grid -- matters on --restart/--init-field,
+    # where t_start > 0 and starting next_ckpt back at a.ckpt_dt would fire immediately on step 1 with
+    # a stale, already-passed timestamp in the filename.
+    import math
+    next_ckpt = (math.floor(t_start / a.ckpt_dt) + 1) * a.ckpt_dt
+else:
+    next_ckpt = None
 for k in range(nsteps):
     s.step()
     if not np.isfinite(s.u).all():
