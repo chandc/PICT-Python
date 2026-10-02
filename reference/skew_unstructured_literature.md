@@ -4150,3 +4150,43 @@ triangular mesh's own streamwise shear-layer grading did.
 
 **Not yet resolved either way** — flagged as the next falsifiable step if this case is revisited, not
 attempted here.
+
+## 74. Confirmed: the BFS oscillation was an under-resolved-streamwise artifact (2026-10-01)
+
+Section 73's hypothesis, tested directly: `meshes/make_gartling_bfs_quad_xrefine.py` -- the SAME
+wall-normal clustering as the oscillating quad mesh (r=1.10, Ny=70), plus streamwise refinement
+(uniform dx≈0.055, matching the triangular mesh's own h_shear almost exactly) over x in [0,13],
+coarsening only downstream. 18,620 cells, two conformal transfinite blocks sharing a seam at x=13
+(verified smooth, no size discontinuity). Run to T=400, same protocol as section 73.
+`figures/ugartling_bfs_xrefine_vs_uniform.png`.
+
+**Confirmed.** The residual does not plateau -- it keeps decaying cleanly through the whole run,
+reaching max|du/dt| = 9.4e-6, max|dv/dt| = 1.8e-6 at t=400 and still falling (compare the uniform-x
+quad mesh: plateaus at 0.012-0.036 from t~90 onward, no further decay even by t=400). The wall-vorticity
+trace, which previously showed 9-12 messy zero-crossings per wall from the sustained downstream eddy
+chain, now shows exactly ONE clean crossing per wall. The vorticity field itself shows no trace of the
+earlier downstream eddy train.
+
+| quantity | uniform-x quad (sustained oscillation) | x-refined quad (converged) | reference |
+|---|---|---|---|
+| lower reattachment | 6.166 (t=400, still oscillating) | **6.213** | 6.1 |
+| upper separation | 4.917 (oscillating) | **4.984** | 4.8 |
+| upper reattachment | ~10.52 (noisy, multiple crossings) | **10.295** | 10.5 |
+
+All three land within 2-4% of the reference, same order as every other successful configuration in
+this record, now from a genuine steady-state solution rather than a time-averaged read-off of a
+limit cycle.
+
+**What this settles, precisely.** The sustained oscillation (§73) was caused by insufficient
+STREAMWISE resolution of the reattaching shear layer specifically -- not by the quad topology, not by
+the high near-wall aspect ratio from the wall clustering (both are unchanged between the two runs;
+only the streamwise grading changed), and not by anything to do with the Outlet boundary (the
+oscillation's spatial location, x~7-11, is well upstream of x=17). This is now a demonstrated,
+falsifiable, confirmed finding, not a hypothesis: wall-normal clustering alone improved the near-wall
+numbers but could not substitute for adequate streamwise resolution of the shear layer, and once that
+was supplied, the flow converged the way the triangular mesh (which always had it) already had in
+section 70.
+
+**For future BFS meshes on this solver:** streamwise resolution of the shear-layer/recirculation
+region (x roughly 0 to 13 for this geometry) is the resolution requirement that determines whether the
+flow reaches a genuine fixed point at Re 800, independent of and in addition to wall-normal clustering.

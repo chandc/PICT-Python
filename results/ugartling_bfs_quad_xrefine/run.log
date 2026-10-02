@@ -1,0 +1,64 @@
+Gartling BFS meshes/gartling_bfs_quad_xrefine.msh: 18620 cells, Re=800.0, dt=0.005, 80000 steps from t=0.0 to T=400.0
+  t=  10.00  max|du/dt| 1.367e-01  max|dv/dt| 4.013e-02  |u|max 1.497  |v|max 0.401  (189.05 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0020.npz
+  t=  20.00  max|du/dt| 1.090e-01  max|dv/dt| 4.999e-02  |u|max 1.497  |v|max 0.238  (186.76 ms/step)
+  t=  30.00  max|du/dt| 6.127e-02  max|dv/dt| 1.766e-02  |u|max 1.497  |v|max 0.196  (181.46 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0040.npz
+  t=  40.00  max|du/dt| 2.331e-02  max|dv/dt| 4.535e-03  |u|max 1.497  |v|max 0.191  (168.95 ms/step)
+  t=  50.00  max|du/dt| 1.380e-02  max|dv/dt| 2.305e-03  |u|max 1.497  |v|max 0.187  (160.94 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0060.npz
+  t=  60.00  max|du/dt| 8.181e-03  max|dv/dt| 1.188e-03  |u|max 1.497  |v|max 0.184  (153.50 ms/step)
+  t=  70.00  max|du/dt| 4.859e-03  max|dv/dt| 6.566e-04  |u|max 1.497  |v|max 0.181  (147.77 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0080.npz
+  t=  80.00  max|du/dt| 2.865e-03  max|dv/dt| 5.334e-04  |u|max 1.497  |v|max 0.179  (141.20 ms/step)
+  t=  90.00  max|du/dt| 2.204e-03  max|dv/dt| 4.360e-04  |u|max 1.497  |v|max 0.177  (136.21 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0100.npz
+  t= 100.00  max|du/dt| 1.821e-03  max|dv/dt| 3.595e-04  |u|max 1.497  |v|max 0.176  (132.19 ms/step)
+  t= 110.00  max|du/dt| 1.513e-03  max|dv/dt| 2.969e-04  |u|max 1.497  |v|max 0.174  (128.83 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0120.npz
+  t= 120.00  max|du/dt| 1.258e-03  max|dv/dt| 2.464e-04  |u|max 1.497  |v|max 0.173  (126.09 ms/step)
+  t= 130.00  max|du/dt| 1.049e-03  max|dv/dt| 2.050e-04  |u|max 1.497  |v|max 0.172  (123.82 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0140.npz
+  t= 140.00  max|du/dt| 8.761e-04  max|dv/dt| 1.707e-04  |u|max 1.497  |v|max 0.172  (121.81 ms/step)
+  t= 150.00  max|du/dt| 7.323e-04  max|dv/dt| 1.424e-04  |u|max 1.497  |v|max 0.171  (120.11 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0160.npz
+  t= 160.00  max|du/dt| 6.126e-04  max|dv/dt| 1.190e-04  |u|max 1.497  |v|max 0.171  (118.59 ms/step)
+  t= 170.00  max|du/dt| 5.132e-04  max|dv/dt| 9.958e-05  |u|max 1.497  |v|max 0.170  (117.25 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0180.npz
+  t= 180.00  max|du/dt| 4.304e-04  max|dv/dt| 8.341e-05  |u|max 1.497  |v|max 0.170  (116.05 ms/step)
+  t= 190.00  max|du/dt| 3.610e-04  max|dv/dt| 6.991e-05  |u|max 1.497  |v|max 0.169  (114.99 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0200.npz
+  t= 200.00  max|du/dt| 3.030e-04  max|dv/dt| 5.862e-05  |u|max 1.497  |v|max 0.169  (114.02 ms/step)
+  t= 210.00  max|du/dt| 2.544e-04  max|dv/dt| 4.918e-05  |u|max 1.497  |v|max 0.169  (113.15 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0220.npz
+  t= 220.00  max|du/dt| 2.136e-04  max|dv/dt| 4.128e-05  |u|max 1.497  |v|max 0.169  (112.35 ms/step)
+  t= 230.00  max|du/dt| 1.794e-04  max|dv/dt| 3.465e-05  |u|max 1.497  |v|max 0.168  (111.63 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0240.npz
+  t= 240.00  max|du/dt| 1.507e-04  max|dv/dt| 2.910e-05  |u|max 1.497  |v|max 0.168  (110.95 ms/step)
+  t= 250.00  max|du/dt| 1.267e-04  max|dv/dt| 2.445e-05  |u|max 1.497  |v|max 0.168  (110.37 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0260.npz
+  t= 260.00  max|du/dt| 1.065e-04  max|dv/dt| 2.054e-05  |u|max 1.497  |v|max 0.168  (109.79 ms/step)
+  t= 270.00  max|du/dt| 8.949e-05  max|dv/dt| 1.726e-05  |u|max 1.497  |v|max 0.168  (109.26 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0280.npz
+  t= 280.00  max|du/dt| 7.523e-05  max|dv/dt| 1.451e-05  |u|max 1.497  |v|max 0.168  (108.76 ms/step)
+  t= 290.00  max|du/dt| 6.325e-05  max|dv/dt| 1.220e-05  |u|max 1.497  |v|max 0.168  (108.31 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0300.npz
+  t= 300.00  max|du/dt| 5.319e-05  max|dv/dt| 1.025e-05  |u|max 1.497  |v|max 0.168  (107.88 ms/step)
+  t= 310.00  max|du/dt| 4.473e-05  max|dv/dt| 8.623e-06  |u|max 1.497  |v|max 0.168  (107.45 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0320.npz
+  t= 320.00  max|du/dt| 3.761e-05  max|dv/dt| 7.251e-06  |u|max 1.497  |v|max 0.168  (107.03 ms/step)
+  t= 330.00  max|du/dt| 3.163e-05  max|dv/dt| 6.097e-06  |u|max 1.497  |v|max 0.168  (106.63 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0340.npz
+  t= 340.00  max|du/dt| 2.661e-05  max|dv/dt| 5.128e-06  |u|max 1.497  |v|max 0.168  (106.26 ms/step)
+  t= 350.00  max|du/dt| 2.238e-05  max|dv/dt| 4.313e-06  |u|max 1.497  |v|max 0.168  (105.90 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0360.npz
+  t= 360.00  max|du/dt| 1.882e-05  max|dv/dt| 3.627e-06  |u|max 1.497  |v|max 0.168  (105.57 ms/step)
+  t= 370.00  max|du/dt| 1.583e-05  max|dv/dt| 3.051e-06  |u|max 1.497  |v|max 0.168  (105.26 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0380.npz
+  t= 380.00  max|du/dt| 1.332e-05  max|dv/dt| 2.566e-06  |u|max 1.497  |v|max 0.168  (104.97 ms/step)
+  t= 390.00  max|du/dt| 1.120e-05  max|dv/dt| 2.159e-06  |u|max 1.497  |v|max 0.168  (104.68 ms/step)
+  wrote checkpoint results/ugartling_bfs_quad_xrefine/ckpt_t0400.npz
+  t= 400.00  max|du/dt| 9.423e-06  max|dv/dt| 1.816e-06  |u|max 1.497  |v|max 0.168  (104.41 ms/step)
+RESULT lower-wall omega zero crossings (reattachment): ['0.092', '6.213']  (Gartling/Chan: 6.1)
+RESULT upper-wall omega zero crossings (sep, reatt): ['4.984', '10.295']  (Gartling/Chan: 4.8, 10.5)
+wrote results/ugartling_bfs_quad_xrefine/final.npz
