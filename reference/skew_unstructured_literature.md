@@ -4190,3 +4190,56 @@ section 70.
 **For future BFS meshes on this solver:** streamwise resolution of the shear-layer/recirculation
 region (x roughly 0 to 13 for this geometry) is the resolution requirement that determines whether the
 flow reaches a genuine fixed point at Re 800, independent of and in addition to wall-normal clustering.
+
+## 75. Matched-density triangular mesh also converges cleanly -- but its wall trace is visibly noisier (2026-10-02)
+
+The controlled comparison completes: `gartling_bfs_tri_matched.msh` (18,382 cells, 9,816 nodes, same
+x-grading profile as the x-refined quad, warm-started by interpolating the quad's converged t=400
+field) finished its own T=400 run. `figures/ugartling_bfs_tri_vs_quad_xrefine.png`.
+
+**Convergence: both topologies reach genuine steady states, cleanly, at comparable rates.** Residual
+decays monotonically the whole way on both meshes, no plateau on either — triangular reaches
+max|du/dt|=1.1e-7 at t=400 (quad: 9.4e-6), both from the same qualitative shape, triangular if
+anything converging to a slightly tighter final residual. **This settles the question raised a few
+turns ago ("is it fair to say quads are more accurate"): no, not as a blanket claim.** At matched
+streamwise resolution and matched cell count, triangle and quad topology both converge to a true fixed
+point. The earlier §73 oscillation was never a triangle-vs-quad issue; it was specifically the
+uniform-x quad's missing streamwise resolution, now isolated and confirmed in both directions (§74
+fixed it on the quad side; this section shows a triangular mesh with the same resolution needed no
+fix in the first place).
+
+**But a real, separate difference showed up: the triangular mesh's wall-vorticity trace is visibly
+noisier than the quad's**, even fully converged (bottom panel: plot the two upper-wall traces
+together). The quad's trace is a smooth, single-valued curve; the triangular mesh's has small,
+persistent spatial wiggles along its whole length, not just near the zero crossings -- i.e. this is
+general roughness in the near-wall gradient reconstruction on an unstructured triangulation, not
+specifically a shallow-slope artifact (the earlier guess). The practical consequence: automated
+zero-crossing detection on the triangular mesh's upper wall returns a tight CLUSTER of 3-5 crossings
+within about 0.15-0.2 of the true location, rather than one clean value --
+
+| quantity | quad x-refined | tri matched (cluster mean) | reference |
+|---|---|---|---|
+| lower reattachment | 6.213 | 5.984 | 6.1 |
+| upper separation | 4.984 | ~4.88 (cluster 4.78-4.95) | 4.8 |
+| upper reattachment | 10.295 | ~10.10 (cluster 10.08-10.13) | 10.5 |
+
+Both within a few percent of the reference either way (the cluster means are still good estimates),
+but the triangular mesh needs that extra cluster-averaging step to extract a clean number, where the
+quad mesh does not.
+
+**Likely mechanism, not yet isolated further.** Our Gradient operator's face interpolation and
+skewness correction (`src/uops.py`) treat every face by the same formula regardless of mesh
+regularity, but an unstructured Delaunay triangulation has face-to-face orientation and
+centroid-to-centroid distance varying irregularly cell to cell, even on a mesh with good aggregate
+quality metrics (min angle 30°, §70's investigation already established aggregate stats don't
+predict everything about a mesh's behavior). A structured quad grid's rows are, by construction,
+perfectly regular in this sense. This is consistent with — though not yet directly tied to — the
+general finding that FV gradient reconstruction on unstructured triangulations carries more
+cell-to-cell noise than on a structured grid, independent of nominal cell size or angle quality.
+
+**Bottom line for "quad vs triangle" going forward:** prefer structured/quad grids when a clean,
+noise-free wall-gradient signal matters (e.g. automated reattachment detection, local separation
+diagnostics); triangular grids remain fully adequate for bulk quantities and for geometries where a
+structured block topology isn't practical, provided streamwise/shear-layer resolution is adequate --
+which is the one factor shown here to actually control whether the solver reaches a steady state at
+all.
