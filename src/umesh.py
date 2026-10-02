@@ -350,6 +350,62 @@ class Mesh:
             out.append(f"[warn] {untagged} boundary faces untagged")
         return out
 
+    def quality(self, max_ratio_warn=2.5, max_ratio_fail=4.0, min_angle_warn=20.0, n_worst=5):
+        """Local-defect diagnostics NOT required for correctness (unlike audit()) but predictive of
+        solver trouble on an unstructured triangulation. Checks the worst-case local irregularity,
+        not aggregate statistics -- a mesh can have a fine global min angle and a fine 99th-percentile
+        neighbour-volume ratio while still containing one or two outlier cells that nucleate
+        unphysical structure. Measured case (skew_unstructured_literature.md section 76): on a
+        35,146-cell BFS mesh with min angle 29.7 deg and 99th-pct ratio 1.90 (both comfortably good
+        by the usual aggregate standard), the single worst neighbour-volume-ratio pair (3.52, right
+        at a wall) sat exactly where the converged solution grew a small, persistent, unphysical
+        stationary vortex -- confirmed by checking the #1 and #2 worst pairs in the whole mesh against
+        the two vortex locations found in the solution. A structured/transfinite quad grid cannot
+        have this defect: every cell's size relative to its neighbour is set by one deterministic
+        geometric ratio everywhere. Call this BEFORE trusting an unstructured triangular mesh, not
+        only after a run surfaces a mystery.
+
+        Returns a list of strings ([FAIL]/[warn]-prefixed like audit()), including the location of
+        the worst few outlier pairs so they can be inspected or locally fixed.
+        """
+        out = []
+        i = self.interior
+        if i.any():
+            ratio = np.maximum(self.vol[self.owner[i]] / self.vol[self.neigh[i]],
+                                self.vol[self.neigh[i]] / self.vol[self.owner[i]])
+            worst = np.argsort(ratio)[::-1][:n_worst]
+            n_fail = int((ratio > max_ratio_fail).sum())
+            n_warn = int((ratio > max_ratio_warn).sum())
+            if n_fail:
+                out.append(f"[FAIL] {n_fail} interior faces with neighbour cell-volume ratio > {max_ratio_fail} (worst {ratio.max():.2f})")
+            elif n_warn:
+                out.append(f"[warn] {n_warn} interior faces with neighbour cell-volume ratio > {max_ratio_warn} "
+                            f"(worst {ratio.max():.2f}) -- ratio > ~3 right at a wall was enough to nucleate a "
+                            f"spurious stationary vortex in section 76's measured case")
+            if n_warn:
+                for k in worst:
+                    if ratio[k] <= max_ratio_warn:
+                        break
+                    o, n = self.owner[i][k], self.neigh[i][k]
+                    out.append(f"    ratio {ratio[k]:.2f} at ({self.centroid[o, 0]:.4f}, {self.centroid[o, 1]:.4f})"
+                                f" vs ({self.centroid[n, 0]:.4f}, {self.centroid[n, 1]:.4f})")
+        if (self.nvert == 3).all():
+            tris = self.cells[:, :3]
+            P = self.nodes[tris]
+            e = [P[:, (k + 1) % 3] - P[:, k] for k in range(3)]
+            angs = []
+            for k in range(3):
+                v1, v2 = e[k], -e[(k - 1) % 3]
+                cosang = (v1 * v2).sum(axis=1) / (np.linalg.norm(v1, axis=1) * np.linalg.norm(v2, axis=1))
+                angs.append(np.degrees(np.arccos(np.clip(cosang, -1, 1))))
+            min_ang = np.min(angs, axis=0)
+            n_sharp = int((min_ang < min_angle_warn).sum())
+            if n_sharp:
+                j = np.argmin(min_ang)
+                out.append(f"[warn] {n_sharp} triangles with min angle < {min_angle_warn} deg "
+                            f"(worst {min_ang.min():.1f} deg at cell centroid ({self.centroid[j, 0]:.4f}, {self.centroid[j, 1]:.4f}))")
+        return out
+
     def __repr__(self):
         return (f"Mesh({self.ncell} cells, {self.nface} faces, "
                 f"{int(self.boundary.sum())} boundary, area {self.area.sum():.4f})")

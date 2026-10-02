@@ -18,12 +18,30 @@ A plain UNIFORM mesh at a comparable cell count was rock solid in both cases (sa
 even plain first-order upwind). The common factor was grading reaching all the way to the outlet
 corners; this version confines all refinement to x <= 13, leaving the outlet region genuinely close to
 uniform. Verified stable 400 steps before being trusted for a real run (see run log in the record).
-    python meshes/make_gartling_bfs.py [--h-wall 0.03 --h-shear 0.055 --h-far 0.4 --name gartling_bfs]"""
+
+A THIRD, subtler defect (section 76): even with grading confined away from the outlet, this Distance+
+Threshold field leaves a handful of LOCAL cell-size outliers behind (one cell 3x+ smaller than its
+immediate neighbour) purely from Delaunay insertion-order path-dependence -- invisible to aggregate
+quality stats (global min angle, 99th-percentile neighbour-volume ratio all looked fine), but at a
+wall, severe enough to nucleate a small, persistent, unphysical stationary vortex in the converged
+solution. Gmsh's own Optimize pass, its Netgen optimizer, and 1000 iterations of Laplacian smoothing
+were all tried and confirmed to have ZERO effect (byte-identical output). What DOES work, measured:
+widening the Threshold fields' DistMin/DistMax (the h_wall/h_shear -> h_far transition zone) by
+--grading-mult -- a gentler local gradient in the sizing field gives the Delaunay algorithm more slack
+and reliably avoids the outlier, at the cost of more cells (measured on this geometry: mult=2.5 takes
+the worst neighbour-volume ratio from 3.52 to 2.34, cell count up ~1.5-1.6x). `Mesh.quality()` (see
+src/umesh.py) is run automatically below and prints a [FAIL]/[warn] report -- do not trust a build that
+still fails it; raise --grading-mult (or, cheaper, --quality-ratio to just see the margin) until it's
+clean, matching the fix path that produced the current default.
+    python meshes/make_gartling_bfs.py [--h-wall 0.03 --h-shear 0.055 --h-far 0.4 --grading-mult 2.5 --name gartling_bfs]"""
 import argparse, subprocess, sys
+import numpy as np
 ap = argparse.ArgumentParser()
 ap.add_argument("--h-wall", type=float, default=0.03, help="target cell size at the walls, x in [0,13]")
 ap.add_argument("--h-shear", type=float, default=0.055, help="target cell size along the shear-layer line, x in [0,13]")
 ap.add_argument("--h-far", type=float, default=0.4, help="target cell size everywhere else, including all of x in [13,17]")
+ap.add_argument("--grading-mult", type=float, default=2.5, help="widens DistMin/DistMax (the sizing field's transition zone) by this factor -- section 76's fix for local cell-size outliers; 2.5 was the measured sweet spot on this geometry (clean at a ~1.5-1.6x cell-count cost), 1.0 reproduces the original (defect-prone) field")
+ap.add_argument("--fail-ratio", type=float, default=2.5, help="exit nonzero if the worst neighbour cell-volume ratio exceeds this after the build")
 ap.add_argument("--name", default="gartling_bfs")
 a = ap.parse_args()
 
@@ -54,16 +72,19 @@ out += [
     "Field[1] = Distance;", "Field[1].CurvesList = {1, 5, 7};", "Field[1].Sampling = 200;",  # fine wall segments only
     "Field[2] = Threshold;", "Field[2].InField = 1;",
     f"Field[2].SizeMin = {a.h_wall};", f"Field[2].SizeMax = {a.h_far};",
-    "Field[2].DistMin = 0.02;", "Field[2].DistMax = 0.5;",
+    f"Field[2].DistMin = {0.02 * a.grading_mult};", f"Field[2].DistMax = {0.5 * a.grading_mult};",
     "Field[3] = Distance;", "Field[3].CurvesList = {8};", "Field[3].Sampling = 200;",
     "Field[4] = Threshold;", "Field[4].InField = 3;",
     f"Field[4].SizeMin = {a.h_shear};", f"Field[4].SizeMax = {a.h_far};",
-    "Field[4].DistMin = 0.1;", "Field[4].DistMax = 3.0;",
+    f"Field[4].DistMin = {0.1 * a.grading_mult};", f"Field[4].DistMax = {3.0 * a.grading_mult};",
     "Field[5] = Min;", "Field[5].FieldsList = {2, 4};",
     "Background Field = 5;",
     "Mesh.CharacteristicLengthExtendFromBoundary = 0;",
     "Mesh.Smoothing = 20;",
     "Mesh.Optimize = 1;",
+    # Gmsh's own Optimize pass, OptimizeNetgen, and heavy Laplacian smoothing were all tried for the
+    # local size-ratio outlier (section 76) and confirmed to do nothing on this mesh -- the actual
+    # fix is --grading-mult above (a gentler sizing-field gradient), not a post-process option.
 ]
 geo = f"meshes/{a.name}.geo"; open(geo, "w").write("\n".join(out) + "\n")
 subprocess.run(["gmsh", "-2", "-format", "msh2", "-o", f"meshes/{a.name}.msh", geo, "-v", "2"], check=True)
@@ -73,3 +94,11 @@ from src.umesh import Mesh, read_gmsh22
 nodes, cells, ctag, edges, etag, names = read_gmsh22(f"meshes/{a.name}.msh")
 m = Mesh(nodes, cells, edges, etag, names)
 print(f"{a.name}: {m.ncell} cells, {m.nbface} boundary faces, audit {m.audit()}")
+qlines = m.quality(max_ratio_warn=a.fail_ratio, max_ratio_fail=1e9)
+for line in qlines:
+    print(" ", line)
+if any("[warn]" in l and "neighbour cell-volume ratio" in l for l in qlines):
+    i = m.interior
+    worst = np.maximum(m.vol[m.owner[i]] / m.vol[m.neigh[i]], m.vol[m.neigh[i]] / m.vol[m.owner[i]]).max()
+    sys.exit(f"[FAIL] worst neighbour cell-volume ratio {worst:.2f} exceeds --fail-ratio {a.fail_ratio} -- "
+             f"raise --grading-mult (currently {a.grading_mult}) and rebuild before trusting this mesh (section 76)")
