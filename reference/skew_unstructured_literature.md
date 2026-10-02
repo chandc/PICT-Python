@@ -4292,3 +4292,23 @@ geometries without a natural block decomposition), a post-generation local-ratio
 diagnostic used here, computed BEFORE running rather than after -- is cheap and would catch this class
 of defect in advance; not yet made into a standard pre-flight check for this project's mesh generators,
 flagged as a natural addition if unstructured triangular meshing is relied on again.
+
+## 77. Fix confirmed end-to-end: the spurious vortices are gone (2026-10-02)
+
+Warm-started both fixed triangular meshes (section 76's --grading-mult fix) directly from the OLD,
+defective solutions, specifically to test whether the two spurious vortices actually dissipate rather
+than just trusting the mesh-quality metric in isolation. `figures/gartling_bfs_fix_before_after.png`.
+
+**Confirmed.** On the fine mesh, at t=60 (not even fully converged yet), the wall-vorticity trace shows
+exactly 2 crossings per wall -- the spurious near-step one plus the real separation/reattachment point
+-- where the defective mesh showed 4 per wall at full convergence. The vorticity field itself (direct
+visual comparison, before/after at the same x in [3,8] window) shows the two small stationary vortices
+at x~4.4 and x~6.2 simply are not there anymore. The coarse mesh (its own milder defect, worst ratio
+2.71) shows the same clean result.
+
+This closes out the investigation opened in section 75: confirmed root cause (section 76), confirmed
+fix (--grading-mult in make_gartling_bfs.py, now the default), confirmed the fix actually removes the
+unphysical structure in a real solve, not just in a static mesh-quality number. Mesh.quality() (src/
+umesh.py) is now a standing pre-check -- run automatically by make_gartling_bfs.py and failing loudly
+if the worst local outlier ratio is too high, so this defect class cannot pass silently into a future
+run the way it did here.
