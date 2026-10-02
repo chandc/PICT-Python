@@ -4243,3 +4243,52 @@ diagnostics); triangular grids remain fully adequate for bulk quantities and for
 structured block topology isn't practical, provided streamwise/shear-layer resolution is adequate --
 which is the one factor shown here to actually control whether the solver reaches a steady state at
 all.
+
+## 76. Root cause of the triangular mesh's spurious vortices: local cell-size outliers, not vertex valence (2026-10-02)
+
+Dug into the two small stationary vortices found in §75's follow-on 2x-density run (visible directly in
+the vorticity field at x~4.4 near the bottom wall and x~6.2 near the top wall, `figures/
+gartling_bfs_fine_near_far_vorticity.png`). `figures/gartling_bfs_tri_defect_zoom.png`.
+
+**Found and confirmed by direct measurement, not inference.** Ranked every interior face's
+neighbour-cell-volume ratio on the 35,146-cell triangular mesh: the #1 and #2 worst pairs in the
+ENTIRE mesh sit at (4.44,-0.44) [ratio 3.52] and (6.23,0.43) [ratio 3.03] -- exactly the two vortex
+locations. A "control" region (x~8, same wall distance, no visible vortex) has ratio ~1.9-2.0 at the
+same local density.
+
+**Ruled out:** vertex valence (number of triangles meeting at one node). Max valence anywhere on the
+mesh is 8; the defect sites show local valences of 7-8, same as the control region's 7s. So the
+visual "fan" in the zoomed figure is NOT a classic high-valence pinwheel -- it is a handful of
+triangles with normal connectivity but highly mismatched SIZE relative to their immediate neighbour,
+squeezed into an otherwise regular-valence vertex neighbourhood.
+
+**Mechanism.** Gmsh's Delaunay/frontal-Delaunay algorithm builds the mesh incrementally; even with a
+perfectly smooth background sizing field (this mesh's Distance+Threshold field has no discontinuity by
+construction, verified in section 69/74's own build), the insertion order and local retriangulation
+history has path-dependence that can leave a handful of outlier cells behind purely by algorithmic
+happenstance -- not because the field itself is discontinuous. Measured: 317 of the mesh's interior
+faces have a neighbour ratio > 2.0, scattered essentially at random through the domain, but only the
+top 2 (ratio > 3, both right at a wall where the flow's own gradients are least forgiving of a local
+reconstruction error) visibly nucleated a coherent vortex. There is an apparent threshold, not
+precisely characterised, combining size-ratio severity with proximity to a high-gradient region.
+
+**Relation to section 69.** Same family of defect as the original grading instability -- a tiny number
+of outlier cells invisible to aggregate quality statistics (global min angle, 99th-percentile ratio
+all looked fine on this mesh too) -- but far less severe in consequence: there, an outlier near an
+outflow corner blew up the whole solution; here, outliers in an otherwise well-resolved interior
+nucleate two small, bounded, persistent-but-contained vortices instead. Unstructured Delaunay meshing
+appears to reliably produce a handful of such outliers regardless of sizing-field smoothness, and no
+quality metric checked BEFORE running (not min angle, not aggregate volume-ratio percentiles) flagged
+these two cells in advance -- both were found only by running the solver to convergence and working
+backward from the converged vorticity field to the worst local ratios.
+
+**Practical conclusion for this project.** A structured/transfinite quad grid has no such outliers by
+construction -- every cell's size relative to its neighbour is set by one deterministic geometric
+ratio everywhere, which is why the quad mesh at the same density shows neither the spurious vortices
+nor the general wall-trace roughness of section 75. For geometries where a structured block topology
+is available (as it is for this simple rectangular BFS domain), it should be preferred when a
+clean, defect-free near-wall signal matters. Where only unstructured triangulation is practical (complex
+geometries without a natural block decomposition), a post-generation local-ratio scan -- exactly the
+diagnostic used here, computed BEFORE running rather than after -- is cheap and would catch this class
+of defect in advance; not yet made into a standard pre-flight check for this project's mesh generators,
+flagged as a natural addition if unstructured triangular meshing is relied on again.
