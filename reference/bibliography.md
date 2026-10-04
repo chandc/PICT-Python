@@ -131,3 +131,25 @@ Read directly for `reference/les_learning_plan.md`. Quotations used there, with 
 **A caution worth recording.** An automated summary of this same PDF reported that the learned
 model outputs an *eddy viscosity*. It does not — it outputs a correcting force, as the first row
 above shows. The summary's "quotes" were paraphrase. Read the source.
+
+---
+
+## Flow control and reinforcement learning
+
+**[V] Montalà, R., Font, B., Suárez, P., Rabault, J., Lehmkuhl, O., Vinuesa, R. & Rodriguez, I.
+(2025).** *Deep Reinforcement Learning for Active Flow Control around a Three-Dimensional
+Flow-Separated Wing at Re = 1,000.* arXiv:2509.10195v1 [cs.CE], 12 September 2025.
+DOI: [10.48550/arXiv.2509.10195](https://doi.org/10.48550/arXiv.2509.10195) ·
+[abs](https://arxiv.org/abs/2509.10195) ·
+**archived in this repo** (CC BY 4.0): `reference/papers/montala2025_drl_wing/`
+
+PPO driving jet actuation on a 3D NACA0012 at Re = 1,000, AoA = 20°; GPU spectral-element solver
+SOD2D coupled to TF-Agents over Redis, 30 parallel trajectories per action, 67 episodes to plateau.
+Read directly; the archive README records which numbers were checked against the paper's own figures.
+
+**One number in it does not check out, and is flagged rather than repeated.** The paper states
+`ΔC_l,rms = −124%` twice (body p. 6, Conclusions p. 9). A >100% reduction of a root-mean-square is
+not possible, and it is not reproducible from their Fig. 4a (≈0.20 → ≈0.115, i.e. ≈43%) or Fig. 5a
+(fluctuation RMS down roughly 70–75%). Their drag figure, `ΔC_d = −21%`, *is* consistent with
+Fig. 5b. Do not cite the lift-RMS number without checking with the authors — same rule as the PICT
+caution above: read the source, and when the source itself is inconsistent, say so.
